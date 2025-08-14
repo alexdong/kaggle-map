@@ -12,7 +12,7 @@ test-coverage:
 	uv run pytest --cov=. --cov-report=html --cov-report=term --duration=5 
 
 web:
-	uv run python -m python_template.web
+	uv run python -m kaggle_map.web
 
 serve:
 	./tools/run_with_tunnel.sh
