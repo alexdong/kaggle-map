@@ -1,6 +1,6 @@
-# python-template
+# kaggle-map
 
-A modern Python project template with comprehensive tooling and documentation ready for GitHub Pages hosting.
+Map charting student math misunderstandings with comprehensive tooling and documentation.
 
 ## Features
 

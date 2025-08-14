@@ -1,7 +1,7 @@
 [project]
-name = "quinn"
+name = "kaggle-map"
 version = "0.1.0"
-description = "AI-powered email rubber duck for guided problem-solving"
+description = "Map charting student math misunderstandings"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic",
@@ -17,13 +17,14 @@ dependencies = [
     "plotly>=5.0.0",
     "streamlit>=1.0.0",
     "pytest-asyncio>=1.0.0",
+    "kaggle>=1.7.4.5",
 ]
 
 [project.scripts]
-quinn = "quinn.cli:main"
+kaggle-map = "kaggle_map.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["quinn*"]
+include = ["kaggle_map*"]
 exclude = ["llms*"]
 
 [tool.uv]
@@ -90,7 +91,7 @@ extend-ignore = [
 max-complexity = 5
 
 [tool.pytest.ini_options]
-testpaths = ["quinn", "tests"]
+testpaths = ["kaggle_map", "tests"]
 python_files = ["*_test.py"]
 addopts = "-vv --tb=short"
 asyncio_mode = "auto"
