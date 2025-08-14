@@ -1,0 +1,7 @@
+tunnel: 15d92086-d9d1-4dc8-99fd-0c88d948ad66
+credentials-file: /Users/alexdong/.cloudflared/15d92086-d9d1-4dc8-99fd-0c88d948ad66.json
+
+ingress:
+  - hostname: python-template.alexdong.com
+    service: http://localhost:8000
+  - service: http_status:404

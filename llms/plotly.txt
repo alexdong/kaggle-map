@@ -1,0 +1,2356 @@
+# Plotly Python - Interactive Data Visualization
+
+## Overview
+
+Plotly is a comprehensive data visualization library that creates interactive, publication-quality graphs and charts. It's built on top of plotly.js and provides both high-level Express API for quick plotting and low-level Graph Objects API for detailed customization.
+
+**Key Philosophy**: "Interactive by default, customizable by design" - Plotly prioritizes interactivity and user experience while maintaining flexibility for complex visualizations.
+
+## Quick Start
+
+### Installation
+
+```bash
+# Using uv (recommended for modern Python projects)
+uv add plotly
+
+# With additional dependencies
+uv add "plotly[notebook]"  # For Jupyter support
+uv add kaleido             # For static image export
+
+# Alternative methods
+pip install plotly
+conda install plotly
+```
+
+### Basic Usage - Express API
+
+```python
+import plotly.express as px
+import pandas as pd
+
+# Simple scatter plot
+df = px.data.iris()
+fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
+fig.show()
+
+# Interactive by default - zoom, pan, hover, select
+```
+
+### Basic Usage - Graph Objects API
+
+```python
+import plotly.graph_objects as go
+
+# Lower-level control
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=[1, 2, 3, 4], y=[10, 11, 12, 13], mode='lines+markers'))
+fig.update_layout(title='Simple Line Plot', xaxis_title='X', yaxis_title='Y')
+fig.show()
+```
+
+## Core Concepts
+
+### Plotly Ecosystem
+
+```python
+# Plotly ecosystem components:
+# 1. plotly.py - Python library (what we use)
+# 2. plotly.js - JavaScript rendering engine (behind the scenes)
+# 3. Dash - Web application framework (separate but related)
+# 4. Kaleido - Static image export engine
+
+import plotly.express as px      # High-level API
+import plotly.graph_objects as go # Low-level API
+import plotly.subplots as sp     # Subplot utilities
+import plotly.io as pio          # Input/Output operations
+```
+
+### Express vs Graph Objects
+
+```python
+# Express API - Quick, declarative, pandas-friendly
+import plotly.express as px
+
+# ✅ Use Express for: exploration, rapid prototyping, standard plots
+fig_express = px.scatter(df, x='x', y='y', color='category', 
+                        title="Quick and Easy")
+
+# Graph Objects API - Full control, imperative
+import plotly.graph_objects as go
+
+# ✅ Use Graph Objects for: custom layouts, complex styling, multiple traces
+fig_go = go.Figure()
+fig_go.add_trace(go.Scatter(x=df['x'], y=df['y'], mode='markers'))
+fig_go.update_layout(title="Full Control")
+```
+
+### Figure Structure
+
+```python
+# Every Plotly figure has this JSON structure:
+figure_structure = {
+    'data': [
+        # List of trace objects (the actual data to plot)
+        {'type': 'scatter', 'x': [1, 2, 3], 'y': [4, 5, 6]}
+    ],
+    'layout': {
+        # Layout object (styling, axes, title, etc.)
+        'title': 'My Plot',
+        'xaxis': {'title': 'X Axis'},
+        'yaxis': {'title': 'Y Axis'}
+    },
+    'config': {
+        # Configuration object (toolbar, interactions)
+        'displayModeBar': True,
+        'responsive': True
+    }
+}
+
+# Access figure properties
+fig = px.scatter(x=[1, 2, 3], y=[4, 5, 6])
+print(fig.data)    # List of traces
+print(fig.layout)  # Layout object
+```
+
+### Magic Underscore Notation
+
+```python
+# Plotly's convenient nested property access
+fig = go.Figure()
+
+# Instead of: fig.update_layout({'xaxis': {'title': {'text': 'X Axis'}}})
+# Use magic underscore:
+fig.update_layout(xaxis_title_text='X Axis')
+
+# Works for all nested properties
+fig.update_traces(marker_color='red', marker_size=10)
+fig.update_layout(title_font_size=20, title_font_color='blue')
+```
+
+## Plot Types and Use Cases
+
+### Basic Plots
+
+#### Scatter Plots
+```python
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Express API - quick and declarative
+df = px.data.iris()
+fig = px.scatter(df, x="sepal_width", y="sepal_length", 
+                color="species", size="petal_length",
+                hover_data=['petal_width'],
+                title="Iris Dataset Visualization")
+
+# Graph Objects - full control
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=df[df['species']=='setosa']['sepal_width'],
+    y=df[df['species']=='setosa']['sepal_length'],
+    mode='markers',
+    name='Setosa',
+    marker=dict(color='red', size=8),
+    hovertemplate='<b>%{fullData.name}</b><br>' +
+                  'Sepal Width: %{x}<br>' +
+                  'Sepal Length: %{y}<extra></extra>'
+))
+```
+
+#### Line Plots
+```python
+# Time series data
+import numpy as np
+dates = pd.date_range('2024-01-01', periods=100, freq='D')
+values = np.cumsum(np.random.randn(100))
+
+# Express - automatic date handling
+fig = px.line(x=dates, y=values, title='Time Series Plot')
+
+# Graph Objects - custom styling
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=dates, y=values,
+    mode='lines',
+    line=dict(color='blue', width=2, dash='solid'),
+    name='Trend'
+))
+fig.update_layout(
+    xaxis_title='Date',
+    yaxis_title='Value',
+    hovermode='x unified'
+)
+```
+
+#### Bar Charts
+```python
+# Categorical data
+categories = ['A', 'B', 'C', 'D']
+values = [20, 35, 30, 25]
+
+# Vertical bars
+fig = px.bar(x=categories, y=values, title='Category Comparison')
+
+# Horizontal bars with custom colors
+fig = px.bar(x=values, y=categories, orientation='h',
+            color=values, color_continuous_scale='viridis')
+
+# Grouped bar chart
+fig = go.Figure(data=[
+    go.Bar(name='Q1', x=categories, y=[20, 35, 30, 25]),
+    go.Bar(name='Q2', x=categories, y=[25, 30, 35, 20])
+])
+fig.update_layout(barmode='group')
+```
+
+### Statistical Plots
+
+#### Histograms and Distributions
+```python
+# Simple histogram
+data = np.random.normal(100, 15, 1000)
+fig = px.histogram(x=data, nbins=30, title='Distribution')
+
+# Overlaid histograms
+fig = px.histogram(df, x="sepal_length", color="species", 
+                  marginal="rug",  # Add rug plot
+                  opacity=0.7)
+
+# Custom binning
+fig = go.Figure()
+fig.add_trace(go.Histogram(
+    x=data,
+    xbins=dict(start=50, end=150, size=5),
+    marker_color='lightblue',
+    marker_line_color='black',
+    marker_line_width=1
+))
+```
+
+#### Box Plots and Violin Plots
+```python
+# Box plots for statistical summary
+fig = px.box(df, x="species", y="sepal_length", 
+            points="all",  # Show all points
+            title="Sepal Length Distribution by Species")
+
+# Violin plots show distribution shape
+fig = px.violin(df, x="species", y="sepal_length",
+               box=True,  # Add box plot inside
+               points="all")
+
+# Custom styling
+fig = go.Figure()
+fig.add_trace(go.Violin(
+    y=df[df['species']=='setosa']['sepal_length'],
+    name='Setosa',
+    box_visible=True,
+    meanline_visible=True,
+    fillcolor='lightblue',
+    opacity=0.6
+))
+```
+
+#### Heatmaps and Correlation Matrices
+```python
+# Correlation heatmap
+correlation_matrix = df.select_dtypes(include=[np.number]).corr()
+
+fig = px.imshow(correlation_matrix, 
+               text_auto=True,  # Show correlation values
+               aspect="auto",
+               color_continuous_scale='RdBu_r',
+               title='Correlation Matrix')
+
+# Custom heatmap with annotations
+fig = go.Figure(data=go.Heatmap(
+    z=correlation_matrix.values,
+    x=correlation_matrix.columns,
+    y=correlation_matrix.columns,
+    colorscale='RdBu_r',
+    zmid=0,  # Center colorscale at 0
+    text=np.round(correlation_matrix.values, 2),
+    texttemplate='%{text}',
+    hovertemplate='%{x} vs %{y}<br>Correlation: %{z}<extra></extra>'
+))
+```
+
+### Advanced Plot Types
+
+#### 3D Plotting
+```python
+# 3D Scatter plot
+fig = px.scatter_3d(df, x='sepal_length', y='sepal_width', z='petal_length',
+                   color='species', size='petal_width',
+                   title='3D Iris Visualization')
+
+# 3D Surface plot
+x = np.linspace(-5, 5, 50)
+y = np.linspace(-5, 5, 50)
+X, Y = np.meshgrid(x, y)
+Z = np.sin(np.sqrt(X**2 + Y**2))
+
+fig = go.Figure(data=[go.Surface(x=X, y=Y, z=Z, colorscale='viridis')])
+fig.update_layout(
+    title='3D Surface Plot',
+    scene=dict(
+        xaxis_title='X',
+        yaxis_title='Y',
+        zaxis_title='Z'
+    )
+)
+```
+
+#### Geographic Maps
+```python
+# Scatter map with geographic coordinates
+fig = px.scatter_geo(df, lat='latitude', lon='longitude',
+                    color='value', size='population',
+                    hover_name='city',
+                    projection='natural earth')
+
+# Choropleth map by region
+fig = px.choropleth(df, locations='iso_alpha',
+                   color='gdp_per_cap',
+                   hover_name='country',
+                   color_continuous_scale=px.colors.sequential.Plasma)
+
+# Custom map with geographic features
+fig = go.Figure(go.Scattergeo(
+    lat=[40.7128, 34.0522, 41.8781],
+    lon=[-74.0060, -118.2437, -87.6298],
+    text=['New York', 'Los Angeles', 'Chicago'],
+    mode='markers+text',
+    marker=dict(size=15, color='red')
+))
+fig.update_layout(geo_scope='usa')
+```
+
+#### Financial Charts
+```python
+# Candlestick chart for OHLC data
+import yfinance as yf  # Example data source
+
+# Sample OHLC data
+dates = pd.date_range('2024-01-01', periods=30, freq='D')
+ohlc_data = pd.DataFrame({
+    'Date': dates,
+    'Open': np.random.uniform(95, 105, 30),
+    'High': np.random.uniform(100, 110, 30),
+    'Low': np.random.uniform(90, 95, 30),
+    'Close': np.random.uniform(95, 105, 30)
+})
+
+fig = go.Figure(data=go.Candlestick(
+    x=ohlc_data['Date'],
+    open=ohlc_data['Open'],
+    high=ohlc_data['High'],
+    low=ohlc_data['Low'],
+    close=ohlc_data['Close']
+))
+fig.update_layout(title='Stock Price Candlestick Chart')
+
+# OHLC bar chart
+fig = go.Figure(data=go.Ohlc(
+    x=ohlc_data['Date'],
+    open=ohlc_data['Open'],
+    high=ohlc_data['High'],
+    low=ohlc_data['Low'],
+    close=ohlc_data['Close']
+))
+```
+
+### Subplots and Multi-Panel Figures
+
+```python
+from plotly.subplots import make_subplots
+
+# Simple 2x2 subplot grid
+fig = make_subplots(
+    rows=2, cols=2,
+    subplot_titles=('Plot 1', 'Plot 2', 'Plot 3', 'Plot 4')
+)
+
+# Add traces to specific subplots
+fig.add_trace(go.Scatter(x=[1, 2, 3], y=[4, 5, 6]), row=1, col=1)
+fig.add_trace(go.Bar(x=['A', 'B', 'C'], y=[1, 3, 2]), row=1, col=2)
+fig.add_trace(go.Scatter(x=[1, 2, 3], y=[2, 4, 6]), row=2, col=1)
+fig.add_trace(go.Histogram(x=np.random.randn(100)), row=2, col=2)
+
+# Mixed subplot types
+fig = make_subplots(
+    rows=2, cols=2,
+    specs=[[{"secondary_y": True}, {"type": "xy"}],
+           [{"type": "polar"}, {"type": "geo"}]],
+    subplot_titles=('Dual Y-axis', 'XY Plot', 'Polar', 'Geographic')
+)
+
+# Shared axes
+fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                   vertical_spacing=0.02)
+fig.add_trace(go.Scatter(x=[1, 2, 3], y=[4, 5, 6]), row=1, col=1)
+fig.add_trace(go.Bar(x=[1, 2, 3], y=[2, 3, 1]), row=2, col=1)
+```
+
+## Advanced Features
+
+### Interactive Features
+
+#### Custom Hover Information
+```python
+# Rich hover templates
+fig = px.scatter(df, x='sepal_width', y='sepal_length', color='species')
+fig.update_traces(
+    hovertemplate='<b>%{fullData.name}</b><br>' +
+                  'Sepal Width: %{x:.2f} cm<br>' +
+                  'Sepal Length: %{y:.2f} cm<br>' +
+                  '<extra></extra>'  # Removes default trace box
+)
+
+# Multi-line hover with custom data
+fig.add_trace(go.Scatter(
+    x=df['sepal_width'],
+    y=df['sepal_length'],
+    customdata=df['petal_length'],
+    hovertemplate='<b>Flower Measurements</b><br>' +
+                  'Sepal: %{x} × %{y}<br>' +
+                  'Petal Length: %{customdata}<br>' +
+                  '<i>Click for details</i><extra></extra>'
+))
+```
+
+#### Click Events and Selections
+```python
+# Selection interactions (works in Jupyter/Dash)
+fig = px.scatter(df, x='x', y='y', color='category')
+fig.update_traces(
+    selected=dict(marker=dict(color='red', size=12)),
+    unselected=dict(marker=dict(opacity=0.3))
+)
+fig.update_layout(clickmode='event+select')
+
+# Brush and lasso selection
+fig.update_layout(
+    dragmode='select',  # 'lasso', 'select', 'pan', 'zoom'
+    selectdirection='diagonal'
+)
+```
+
+### Animations
+
+```python
+# Animated scatter plot
+df_animated = px.data.gapminder()
+fig = px.scatter(df_animated, 
+                x="gdpPercap", y="lifeExp", 
+                animation_frame="year",
+                animation_group="country",
+                size="pop", color="continent",
+                hover_name="country",
+                log_x=True, size_max=55,
+                range_x=[100,100000], range_y=[25,90])
+
+# Custom animation settings
+fig.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 1000
+fig.layout.updatemenus[0].buttons[0].args[1]['transition']['duration'] = 500
+
+# Manual frame animation
+frames = []
+for year in df_animated['year'].unique():
+    frame_data = df_animated[df_animated['year'] == year]
+    frames.append(go.Frame(
+        data=[go.Scatter(x=frame_data['gdpPercap'], 
+                        y=frame_data['lifeExp'],
+                        mode='markers',
+                        marker=dict(size=frame_data['pop']/1000000))],
+        name=str(year)
+    ))
+
+fig = go.Figure(
+    data=[go.Scatter(x=[], y=[], mode='markers')],
+    frames=frames
+)
+fig.update_layout(
+    updatemenus=[{
+        'type': 'buttons',
+        'buttons': [{'label': 'Play', 'method': 'animate', 
+                    'args': [None, {'frame': {'duration': 500}}]}]
+    }]
+)
+```
+
+### Custom Styling and Themes
+
+```python
+# Built-in themes
+import plotly.io as pio
+pio.templates.default = "plotly_white"  # Clean white background
+# Available: "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", etc.
+
+# Custom theme
+custom_theme = {
+    'layout': {
+        'paper_bgcolor': '#f8f9fa',
+        'plot_bgcolor': 'white',
+        'colorway': ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+        'font': {'family': 'Arial, sans-serif', 'size': 12},
+        'title': {'font': {'size': 18, 'color': '#2c3e50'}}
+    }
+}
+pio.templates['custom'] = custom_theme
+pio.templates.default = 'custom'
+
+# Color scales and palettes
+fig = px.scatter(df, x='x', y='y', color='continuous_var',
+                color_continuous_scale='viridis')  # or 'plasma', 'cividis'
+
+# Colorblind-friendly palette
+colorblind_safe = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+fig = px.scatter(df, x='x', y='y', color='category',
+                color_discrete_sequence=colorblind_safe)
+```
+
+### Layout Customization
+
+```python
+# Comprehensive layout styling
+fig.update_layout(
+    title={
+        'text': 'My Awesome Plot',
+        'x': 0.5,  # Center title
+        'xanchor': 'center',
+        'font': {'size': 20, 'color': '#2c3e50'}
+    },
+    xaxis={
+        'title': 'X Axis Label',
+        'showgrid': True,
+        'gridcolor': 'lightgray',
+        'zeroline': True,
+        'zerolinecolor': 'black',
+        'range': [0, 10]
+    },
+    yaxis={
+        'title': 'Y Axis Label',
+        'showgrid': True,
+        'gridcolor': 'lightgray',
+        'tickformat': '.2f'
+    },
+    legend={
+        'orientation': 'h',
+        'yanchor': 'bottom',
+        'y': 1.02,
+        'xanchor': 'right',
+        'x': 1
+    },
+    margin=dict(l=60, r=60, t=80, b=60),
+    height=500
+)
+
+# Responsive design
+fig.update_layout(
+    autosize=True,
+    margin=dict(l=0, r=0, t=30, b=0),
+)
+```
+
+### Annotations and Shapes
+
+```python
+# Add text annotations
+fig.add_annotation(
+    x=2, y=5,
+    text="Important Point",
+    showarrow=True,
+    arrowhead=2,
+    arrowcolor="red",
+    font=dict(color="red", size=14)
+)
+
+# Add shapes
+fig.add_shape(
+    type="rect",
+    x0=1, y0=1, x1=3, y1=3,
+    fillcolor="LightBlue",
+    opacity=0.5,
+    line=dict(color="Blue", width=2)
+)
+
+# Add horizontal/vertical lines
+fig.add_hline(y=5, line_dash="dash", line_color="red")
+fig.add_vline(x=2, line_dash="dot", line_color="green")
+
+# Multiple annotations
+annotations = []
+for i, row in df.iterrows():
+    if row['important']:
+        annotations.append(
+            dict(x=row['x'], y=row['y'], text=row['label'],
+                 showarrow=True, arrowhead=2)
+        )
+fig.update_layout(annotations=annotations)
+```
+
+## Integration Patterns
+
+### Pandas Integration
+
+```python
+# Set Plotly as pandas plotting backend
+pd.options.plotting.backend = "plotly"
+
+# Now pandas.plot() uses Plotly
+df.plot(kind='scatter', x='x', y='y')  # Returns Plotly figure
+df.plot.bar()  # Bar chart
+df.plot.hist()  # Histogram
+
+# Plotly Express with pandas
+# Automatically handles datetime indices, categorical data, etc.
+time_series_df = pd.DataFrame({
+    'date': pd.date_range('2024-01-01', periods=100, freq='D'),
+    'value': np.cumsum(np.random.randn(100))
+}).set_index('date')
+
+fig = px.line(time_series_df, y='value', title='Time Series')
+```
+
+### Jupyter Notebook Integration
+
+```python
+# Jupyter setup
+import plotly.offline as pyo
+pyo.init_notebook_mode(connected=True)
+
+# Jupyter widgets for interactivity
+import plotly.graph_objects as go
+from ipywidgets import interact, IntSlider
+
+@interact(n_points=IntSlider(min=10, max=1000, step=10, value=100))
+def update_plot(n_points):
+    x = np.random.randn(n_points)
+    y = np.random.randn(n_points)
+    fig = go.Figure(data=go.Scatter(x=x, y=y, mode='markers'))
+    fig.show()
+
+# JupyterLab extensions
+# !jupyter labextension install jupyterlab-plotly
+# !jupyter labextension install @jupyter-widgets/jupyterlab-manager plotlywidget
+```
+
+### FastHTML Integration (fh-plotly)
+
+```python
+from fasthtml.common import *
+from fh_plotly import plotly2fasthtml
+import plotly.express as px
+
+# Create FastHTML app
+app = FastHTML()
+
+@app.route("/")
+def home():
+    # Create Plotly figure
+    df = px.data.iris()
+    fig = px.scatter(df, x="sepal_width", y="sepal_length", color="species")
+    
+    # Convert to FastHTML component
+    plotly_div = plotly2fasthtml(fig)
+    
+    return Titled("Interactive Plot",
+        Div(
+            H1("My Dashboard"),
+            plotly_div,  # Embedded interactive plot
+            P("This plot is fully interactive!")
+        )
+    )
+
+# Advanced FastHTML integration with custom styling
+@app.route("/dashboard")
+def dashboard():
+    # Multiple plots
+    fig1 = px.histogram(df, x="sepal_length", color="species")
+    fig2 = px.box(df, x="species", y="petal_length")
+    
+    return Titled("Dashboard",
+        Div(
+            H1("Analytics Dashboard"),
+            Div(
+                plotly2fasthtml(fig1, div_id="hist-plot"),
+                plotly2fasthtml(fig2, div_id="box-plot"),
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;"
+            )
+        )
+    )
+
+if __name__ == "__main__":
+    serve()
+```
+
+### Web Deployment Patterns
+
+```python
+# Standalone HTML export
+fig.write_html("my_plot.html")
+
+# Include Plotly.js inline (larger file but self-contained)
+fig.write_html("plot.html", include_plotlyjs='inline')
+
+# Use CDN (smaller file but requires internet)
+fig.write_html("plot.html", include_plotlyjs='cdn')
+
+# Custom HTML template
+html_template = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Dashboard</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; }}
+        .plot-container {{ margin: 20px; }}
+    </style>
+</head>
+<body>
+    <h1>Data Visualization Dashboard</h1>
+    <div class="plot-container">
+        {plot_div}
+    </div>
+</body>
+</html>
+"""
+
+fig.write_html("dashboard.html", 
+              include_plotlyjs='cdn',
+              config={'displayModeBar': False},  # Hide toolbar
+              div_id="my-plotly-div")
+```
+
+### Export Options
+
+```python
+# Static image export (requires kaleido: uv add kaleido)
+fig.write_image("plot.png", width=1200, height=800, scale=2)  # High DPI
+fig.write_image("plot.pdf")  # Vector format
+fig.write_image("plot.svg")  # Web-friendly vector
+fig.write_image("plot.eps")  # Publication quality
+
+# Export with custom styling for print
+fig.update_layout(
+    paper_bgcolor='white',
+    plot_bgcolor='white',
+    font_color='black'
+)
+fig.write_image("print_ready.pdf", width=1200, height=800, scale=2)
+
+# JSON export for data exchange
+import json
+fig_json = fig.to_json()
+with open("figure_data.json", "w") as f:
+    json.dump(json.loads(fig_json), f, indent=2)
+
+# Load from JSON
+with open("figure_data.json", "r") as f:
+    fig_loaded = go.Figure(json.load(f))
+```
+
+## Best Practices
+
+### Performance Optimization
+
+```python
+# For large datasets (>10,000 points)
+# 1. Use Scattergl for better performance
+fig = go.Figure(data=go.Scattergl(  # WebGL rendering
+    x=large_x_data,
+    y=large_y_data,
+    mode='markers',
+    marker=dict(size=4)
+))
+
+# 2. Data sampling for exploration
+def sample_data(df, n_samples=5000):
+    if len(df) > n_samples:
+        return df.sample(n=n_samples, random_state=42)
+    return df
+
+sampled_df = sample_data(large_df)
+fig = px.scatter(sampled_df, x='x', y='y')
+
+# 3. Optimize trace data
+# ❌ Inefficient - creates large traces
+fig = px.scatter(df, x='x', y='y', color='category')
+
+# ✅ More efficient - limit data sent to browser
+fig = px.scatter(df.head(1000), x='x', y='y', color='category')
+
+# 4. Use appropriate data types
+df = df.astype({
+    'category': 'category',  # Reduces memory
+    'float_col': 'float32'   # Instead of float64
+})
+```
+
+### Memory Management
+
+```python
+# Monitor memory usage
+import psutil
+import gc
+
+def plot_with_memory_tracking(df):
+    initial_memory = psutil.Process().memory_info().rss / 1024 / 1024
+    
+    fig = px.scatter(df, x='x', y='y')
+    
+    peak_memory = psutil.Process().memory_info().rss / 1024 / 1024
+    print(f"Memory used: {peak_memory - initial_memory:.1f} MB")
+    
+    # Clean up
+    del df  # Release DataFrame reference
+    gc.collect()  # Force garbage collection
+    
+    return fig
+
+# Batch processing for very large datasets
+def create_plots_in_batches(large_df, batch_size=10000):
+    plots = []
+    for i in range(0, len(large_df), batch_size):
+        batch = large_df.iloc[i:i+batch_size]
+        fig = px.scatter(batch, x='x', y='y')
+        plots.append(fig)
+        del batch  # Free memory immediately
+    return plots
+```
+
+### Responsive Design
+
+```python
+# Mobile-friendly configurations
+mobile_config = {
+    'displayModeBar': False,  # Hide toolbar on mobile
+    'responsive': True,
+    'toImageButtonOptions': {
+        'format': 'png',
+        'filename': 'plot',
+        'height': 500,
+        'width': 700,
+        'scale': 1
+    }
+}
+
+fig.show(config=mobile_config)
+
+# Responsive layout
+fig.update_layout(
+    autosize=True,
+    margin=dict(l=20, r=20, t=40, b=20),  # Minimal margins
+    font=dict(size=12),  # Readable on small screens
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    )
+)
+
+# Media query-like behavior (using custom CSS)
+responsive_html = f"""
+<div style="width: 100%; height: 400px;">
+    {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+</div>
+<style>
+@media (max-width: 768px) {{
+    .plotly-graph-div {{
+        height: 300px !important;
+    }}
+}}
+</style>
+"""
+```
+
+### Accessibility and Color Best Practices
+
+```python
+# Colorblind-friendly palettes
+colorblind_palette = [
+    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', 
+    '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'
+]
+
+# High contrast mode
+high_contrast_theme = {
+    'layout': {
+        'paper_bgcolor': 'white',
+        'plot_bgcolor': 'white',
+        'font': {'color': 'black', 'size': 14},
+        'colorway': ['#000080', '#FF0000', '#008000', '#800080']
+    }
+}
+
+# Alternative text and descriptions
+fig.update_layout(
+    title={
+        'text': 'Sales by Region (Bar Chart showing quarterly performance)',
+        'font': {'size': 16}
+    },
+    xaxis_title='Geographic Regions',
+    yaxis_title='Sales Revenue (USD thousands)'
+)
+
+# Screen reader friendly
+fig.add_annotation(
+    text="Data visualization showing sales performance across 4 regions",
+    xref="paper", yref="paper",
+    x=0, y=-0.1,
+    showarrow=False,
+    font=dict(size=1, color="white")  # Hidden but readable by screen readers
+)
+```
+
+### Code Organization and Reusability
+
+```python
+# Plotting utilities module
+class PlotlyStyler:
+    def __init__(self, theme='plotly_white'):
+        self.theme = theme
+        self.colors = {
+            'primary': '#1f77b4',
+            'secondary': '#ff7f0e',
+            'success': '#2ca02c',
+            'danger': '#d62728'
+        }
+    
+    def style_figure(self, fig, title=None):
+        """Apply consistent styling to figure"""
+        fig.update_layout(
+            template=self.theme,
+            title={'text': title, 'x': 0.5, 'xanchor': 'center'},
+            font={'family': 'Arial, sans-serif'},
+            margin=dict(l=60, r=60, t=80, b=60)
+        )
+        return fig
+    
+    def create_scatter(self, df, x, y, color=None, title=None):
+        """Standardized scatter plot"""
+        fig = px.scatter(df, x=x, y=y, color=color,
+                        color_discrete_sequence=list(self.colors.values()))
+        return self.style_figure(fig, title)
+
+# Usage
+styler = PlotlyStyler()
+fig = styler.create_scatter(df, 'x', 'y', 'category', 'My Analysis')
+
+# Configuration management
+import yaml
+
+plot_config = {
+    'default_width': 800,
+    'default_height': 600,
+    'color_palette': ['#1f77b4', '#ff7f0e', '#2ca02c'],
+    'font_family': 'Arial, sans-serif',
+    'background_color': '#f8f9fa'
+}
+
+# Save/load configurations
+with open('plot_config.yaml', 'w') as f:
+    yaml.dump(plot_config, f)
+
+with open('plot_config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+```
+
+## Common Pitfalls and Troubleshooting
+
+### Memory Issues and Browser Crashes
+
+**Problem**: Browser crashes or becomes unresponsive with large datasets
+**Solutions**:
+
+```python
+# ❌ Problematic - too much data for browser
+large_df = pd.DataFrame(np.random.randn(100000, 10))
+fig = px.scatter(large_df, x=0, y=1)  # Will likely crash browser
+
+# ✅ Solution 1: Sample data
+sample_size = 5000
+sampled_df = large_df.sample(n=min(sample_size, len(large_df)))
+fig = px.scatter(sampled_df, x=0, y=1)
+
+# ✅ Solution 2: Use WebGL rendering
+fig = go.Figure(data=go.Scattergl(  # Note: Scattergl, not Scatter
+    x=large_df.iloc[:10000, 0],
+    y=large_df.iloc[:10000, 1],
+    mode='markers'
+))
+
+# ✅ Solution 3: Aggregate data first
+aggregated = large_df.groupby(pd.cut(large_df[0], bins=50)).mean()
+fig = px.scatter(aggregated, x=0, y=1)
+```
+
+### JavaScript Errors in Web Context
+
+**Problem**: "Plotly is not defined" or rendering failures
+**Solutions**:
+
+```python
+# ❌ Problem - missing Plotly.js
+fig.write_html("plot.html", include_plotlyjs=False)  # Requires external plotly.js
+
+# ✅ Solution - include Plotly.js
+fig.write_html("plot.html", include_plotlyjs='inline')  # Self-contained
+# or
+fig.write_html("plot.html", include_plotlyjs='cdn')  # From CDN
+
+# ✅ FastHTML integration fix
+from fh_plotly import plotly2fasthtml
+# Ensures proper JavaScript loading
+plotly_component = plotly2fasthtml(fig)
+```
+
+### Export and Rendering Issues
+
+**Problem**: Images not exporting or poor quality
+**Solutions**:
+
+```python
+# ❌ Common issues
+fig.write_image("plot.png")  # May fail without kaleido
+
+# ✅ Proper setup
+# First install: uv add kaleido
+import plotly.io as pio
+pio.kaleido.scope.mathjax = None  # Disable MathJax if causing issues
+
+# High quality export
+fig.write_image(
+    "plot.png",
+    width=1200,
+    height=800,
+    scale=2,  # High DPI
+    engine="kaleido"
+)
+
+# Font issues in exports
+fig.update_layout(
+    font_family="Arial",  # Use system fonts
+    title_font_family="Arial"
+)
+
+# PDF export with custom settings
+fig.write_image(
+    "plot.pdf",
+    format="pdf",
+    width=800,
+    height=600,
+    scale=1
+)
+```
+
+### Performance Bottlenecks
+
+**Problem**: Slow rendering or callback performance
+**Solutions**:
+
+```python
+# ❌ Inefficient - recreating figure on every update
+def update_plot(selected_data):
+    filtered_df = df[df['category'].isin(selected_data)]
+    fig = px.scatter(filtered_df, x='x', y='y')  # Recreates entire figure
+    return fig
+
+# ✅ Efficient - update existing traces
+def update_plot_efficient(selected_data):
+    filtered_df = df[df['category'].isin(selected_data)]
+    
+    # Update only the data, not the entire figure
+    fig.update_traces(
+        x=filtered_df['x'],
+        y=filtered_df['y']
+    )
+    return fig
+
+# ✅ Use plotly.graph_objects for better performance
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=[], y=[], mode='markers'))
+
+# Update with new data
+def fast_update(new_x, new_y):
+    fig.data[0].x = new_x
+    fig.data[0].y = new_y
+    return fig
+```
+
+### Browser Compatibility
+
+**Problem**: Features not working in older browsers
+**Solutions**:
+
+```python
+# Check browser compatibility
+browser_safe_config = {
+    'displayModeBar': True,
+    'modeBarButtonsToRemove': ['pan2d', 'lasso2d'],  # Remove problematic tools
+    'displaylogo': False,
+    'staticPlot': False  # Set to True for completely static plots
+}
+
+# Fallback for older browsers
+fig.update_layout(
+    # Avoid advanced features in older browsers
+    dragmode='zoom',  # Instead of 'lasso' or 'select'
+    hovermode='closest'  # Instead of 'x unified'
+)
+
+# Progressive enhancement
+def create_compatible_plot(df, advanced_features=True):
+    fig = px.scatter(df, x='x', y='y')
+    
+    if advanced_features:
+        # Modern browser features
+        fig.update_traces(
+            hovertemplate='<b>%{fullData.name}</b><br>X: %{x}<br>Y: %{y}<extra></extra>'
+        )
+        fig.update_layout(hovermode='x unified')
+    else:
+        # Basic compatibility
+        fig.update_layout(hovermode='closest')
+    
+    return fig
+```
+
+### Data Type and Format Issues
+
+**Problem**: Incorrect data interpretation or display
+**Solutions**:
+
+```python
+# ❌ Common data type issues
+df['date'] = ['2024-01-01', '2024-01-02', '2024-01-03']  # String dates
+fig = px.line(df, x='date', y='value')  # Treats dates as categorical
+
+# ✅ Proper date handling
+df['date'] = pd.to_datetime(df['date'])  # Convert to datetime
+fig = px.line(df, x='date', y='value')  # Now properly handled as time series
+
+# ✅ Handle missing values
+df_clean = df.dropna()  # Remove NaN values
+# or
+df_filled = df.fillna(method='forward')  # Forward fill
+
+# ✅ Categorical data handling
+df['category'] = df['category'].astype('category')
+fig = px.scatter(df, x='x', y='y', color='category',
+                category_orders={'category': ['A', 'B', 'C']})  # Custom order
+```
+
+## Testing with Plotly
+
+### Unit Testing Figures
+
+```python
+import pytest
+import plotly.graph_objects as go
+import plotly.express as px
+
+def test_figure_creation():
+    """Test basic figure creation"""
+    fig = px.scatter(x=[1, 2, 3], y=[4, 5, 6])
+    
+    # Test figure structure
+    assert len(fig.data) == 1
+    assert fig.data[0].type == 'scatter'
+    assert list(fig.data[0].x) == [1, 2, 3]
+    assert list(fig.data[0].y) == [4, 5, 6]
+
+def test_layout_properties():
+    """Test layout configuration"""
+    fig = go.Figure()
+    fig.update_layout(title='Test Plot', xaxis_title='X', yaxis_title='Y')
+    
+    assert fig.layout.title.text == 'Test Plot'
+    assert fig.layout.xaxis.title.text == 'X'
+    assert fig.layout.yaxis.title.text == 'Y'
+
+def test_data_integrity():
+    """Test data processing doesn't corrupt values"""
+    original_data = [1.1, 2.2, 3.3]
+    fig = px.line(x=range(3), y=original_data)
+    
+    plotted_data = list(fig.data[0].y)
+    assert plotted_data == original_data
+
+# Test with fixtures
+@pytest.fixture
+def sample_dataframe():
+    return pd.DataFrame({
+        'x': range(10),
+        'y': range(10, 20),
+        'category': ['A'] * 5 + ['B'] * 5
+    })
+
+def test_with_dataframe(sample_dataframe):
+    fig = px.scatter(sample_dataframe, x='x', y='y', color='category')
+    assert len(fig.data) == 2  # Two categories
+```
+
+### Visual Regression Testing
+
+```python
+# Using plotly-test for visual comparisons
+import plotly.io as pio
+
+def test_plot_visual_regression():
+    """Compare plot output to baseline"""
+    fig = create_standard_plot()
+    
+    # Save baseline (run once)
+    # fig.write_image("tests/baseline_plot.png")
+    
+    # Generate current plot
+    fig.write_image("tests/current_plot.png")
+    
+    # Compare images (pseudo-code - use image comparison library)
+    # assert images_are_similar("tests/baseline_plot.png", "tests/current_plot.png")
+
+def create_standard_plot():
+    """Standard plot for testing"""
+    return px.scatter(x=[1, 2, 3], y=[4, 5, 6], title="Test Plot")
+```
+
+## Performance Considerations
+
+### Benchmarking and Optimization
+
+```python
+import time
+import memory_profiler
+
+@memory_profiler.profile
+def benchmark_plot_creation(df_size):
+    """Benchmark memory usage during plot creation"""
+    df = pd.DataFrame(np.random.randn(df_size, 3), columns=['x', 'y', 'z'])
+    
+    start_time = time.time()
+    fig = px.scatter(df, x='x', y='y', color='z')
+    creation_time = time.time() - start_time
+    
+    start_time = time.time()
+    html_output = fig.to_html()
+    render_time = time.time() - start_time
+    
+    return {
+        'creation_time': creation_time,
+        'render_time': render_time,
+        'html_size': len(html_output)
+    }
+
+# Performance comparison
+sizes = [1000, 5000, 10000, 50000]
+results = {}
+for size in sizes:
+    try:
+        results[size] = benchmark_plot_creation(size)
+        print(f"Size {size}: {results[size]}")
+    except MemoryError:
+        print(f"Size {size}: Memory error - too large")
+        break
+```
+
+### Optimization Strategies
+
+```python
+# Strategy 1: Reduce precision for display
+def optimize_for_display(df, precision=2):
+    """Reduce floating point precision for web display"""
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    df_optimized = df.copy()
+    df_optimized[numeric_cols] = df_optimized[numeric_cols].round(precision)
+    return df_optimized
+
+# Strategy 2: Intelligent sampling
+def smart_sample(df, max_points=10000, preserve_outliers=True):
+    """Intelligent data sampling preserving key features"""
+    if len(df) <= max_points:
+        return df
+    
+    # Always include outliers
+    if preserve_outliers:
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        outliers = pd.DataFrame()
+        
+        for col in numeric_cols:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            outlier_mask = (df[col] < (Q1 - 1.5 * IQR)) | (df[col] > (Q3 + 1.5 * IQR))
+            outliers = pd.concat([outliers, df[outlier_mask]])
+        
+        outliers = outliers.drop_duplicates()
+        remaining_points = max_points - len(outliers)
+        
+        if remaining_points > 0:
+            regular_sample = df.drop(outliers.index).sample(n=min(remaining_points, len(df) - len(outliers)))
+            return pd.concat([outliers, regular_sample]).reset_index(drop=True)
+    
+    return df.sample(n=max_points).reset_index(drop=True)
+
+# Strategy 3: Lazy loading for large datasets
+class LazyPlotlyFigure:
+    def __init__(self, data_source, plot_func, chunk_size=5000):
+        self.data_source = data_source
+        self.plot_func = plot_func
+        self.chunk_size = chunk_size
+        self._figure = None
+    
+    def get_figure(self, start_idx=0, end_idx=None):
+        """Load and plot data chunk"""
+        if end_idx is None:
+            end_idx = start_idx + self.chunk_size
+        
+        chunk = self.data_source.iloc[start_idx:end_idx]
+        return self.plot_func(chunk)
+    
+    def get_preview(self, sample_size=1000):
+        """Quick preview with sampled data"""
+        sample = self.data_source.sample(n=min(sample_size, len(self.data_source)))
+        return self.plot_func(sample)
+```
+
+## Production Considerations
+
+### Security Best Practices
+
+```python
+# Input sanitization for user-provided data
+def sanitize_plot_inputs(user_data):
+    """Sanitize user inputs before plotting"""
+    # Remove or escape HTML/JavaScript
+    if isinstance(user_data, dict):
+        sanitized = {}
+        for key, value in user_data.items():
+            if isinstance(value, str):
+                # Basic HTML escaping
+                value = value.replace('<', '&lt;').replace('>', '&gt;')
+                value = value.replace('javascript:', '').replace('onclick=', '')
+            sanitized[key] = value
+        return sanitized
+    return user_data
+
+# Secure configuration for production
+production_config = {
+    'displayModeBar': True,
+    'modeBarButtonsToRemove': [
+        'sendDataToCloud',  # Remove cloud upload
+        'editInChartStudio'  # Remove external editor
+    ],
+    'toImageButtonOptions': {
+        'format': 'png',
+        'filename': 'chart',
+        'height': 600,
+        'width': 800,
+        'scale': 1
+    },
+    'displaylogo': False,  # Remove Plotly logo
+    'staticPlot': False
+}
+
+# Data privacy considerations
+def create_privacy_safe_plot(df, sensitive_columns=None):
+    """Create plots without exposing sensitive data"""
+    if sensitive_columns is None:
+        sensitive_columns = []
+    
+    # Remove sensitive columns from hover data
+    safe_df = df.drop(columns=sensitive_columns, errors='ignore')
+    
+    fig = px.scatter(safe_df, x='x', y='y')
+    
+    # Remove detailed hover information
+    fig.update_traces(hovertemplate='<b>Data Point</b><br>X: %{x}<br>Y: %{y}<extra></extra>')
+    
+    return fig
+```
+
+### Caching Strategies
+
+```python
+import functools
+import hashlib
+import pickle
+import os
+
+def cache_figure(cache_dir="plot_cache", expire_hours=24):
+    """Decorator to cache expensive plot operations"""
+    def decorator(plot_func):
+        @functools.wraps(plot_func)
+        def wrapper(*args, **kwargs):
+            # Create cache key from arguments
+            cache_key = hashlib.md5(
+                str(args).encode() + str(sorted(kwargs.items())).encode()
+            ).hexdigest()
+            
+            cache_file = os.path.join(cache_dir, f"{plot_func.__name__}_{cache_key}.pkl")
+            
+            # Check if cached version exists and is recent
+            if os.path.exists(cache_file):
+                file_age = time.time() - os.path.getmtime(cache_file)
+                if file_age < expire_hours * 3600:  # Convert hours to seconds
+                    with open(cache_file, 'rb') as f:
+                        return pickle.load(f)
+            
+            # Generate new plot
+            fig = plot_func(*args, **kwargs)
+            
+            # Cache the result
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(cache_file, 'wb') as f:
+                pickle.dump(fig, f)
+            
+            return fig
+        return wrapper
+    return decorator
+
+# Usage
+@cache_figure(expire_hours=6)
+def expensive_analysis_plot(df):
+    # Expensive computation here
+    processed_data = complex_analysis(df)
+    return px.scatter(processed_data, x='x', y='y')
+
+# Database query caching
+import sqlite3
+
+class PlotDataCache:
+    def __init__(self, db_path="plot_cache.db"):
+        self.db_path = db_path
+        self.init_db()
+    
+    def init_db(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS plot_cache (
+                query_hash TEXT PRIMARY KEY,
+                data_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    
+    def get_cached_data(self, query, max_age_hours=24):
+        query_hash = hashlib.md5(query.encode()).hexdigest()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute('''
+            SELECT data_json FROM plot_cache 
+            WHERE query_hash = ? 
+            AND created_at > datetime('now', '-{} hours')
+        '''.format(max_age_hours), (query_hash,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return pd.read_json(result[0])
+        return None
+    
+    def cache_data(self, query, data):
+        query_hash = hashlib.md5(query.encode()).hexdigest()
+        data_json = data.to_json()
+        
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''
+            INSERT OR REPLACE INTO plot_cache (query_hash, data_json)
+            VALUES (?, ?)
+        ''', (query_hash, data_json))
+        conn.commit()
+        conn.close()
+```
+
+### Server-Side Rendering and Deployment
+
+```python
+# Docker deployment example
+dockerfile_content = """
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Install kaleido for image export
+RUN pip install kaleido
+
+# Copy application
+COPY . /app
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PLOTLY_RENDERER=json
+
+# Expose port
+EXPOSE 8000
+
+# Run application
+CMD ["python", "app.py"]
+"""
+
+# Production FastHTML app
+from fasthtml.common import *
+from fh_plotly import plotly2fasthtml
+import plotly.express as px
+import os
+
+app = FastHTML()
+
+# Production configuration
+if os.getenv('PRODUCTION'):
+    import plotly.io as pio
+    pio.templates.default = "plotly_white"
+    
+    # Disable development features
+    plotly_config = {
+        'displayModeBar': False,
+        'staticPlot': False,
+        'responsive': True
+    }
+else:
+    plotly_config = {'displayModeBar': True}
+
+@app.route("/")
+def dashboard():
+    try:
+        # Load data (with error handling)
+        df = load_data()
+        
+        # Create plots with production config
+        fig = px.scatter(df, x='x', y='y', color='category')
+        fig.update_layout(template='plotly_white')
+        
+        plotly_component = plotly2fasthtml(fig, config=plotly_config)
+        
+        return Titled("Production Dashboard",
+            Div(
+                H1("Analytics Dashboard"),
+                plotly_component,
+                style="max-width: 1200px; margin: 0 auto; padding: 20px;"
+            )
+        )
+    except Exception as e:
+        # Graceful error handling
+        return Titled("Error",
+            Div(
+                H1("Dashboard Unavailable"),
+                P("Please try again later."),
+                style="text-align: center; padding: 50px;"
+            )
+        )
+
+def load_data():
+    """Load and validate data"""
+    # Add data validation, error handling
+    df = pd.read_csv('data.csv')
+    
+    # Data validation
+    required_columns = ['x', 'y', 'category']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Missing columns: {missing_columns}")
+    
+    return df
+
+if __name__ == "__main__":
+    serve(host="0.0.0.0", port=8000)
+```
+
+## Real-World Examples
+
+### Financial Dashboard
+
+```python
+import yfinance as yf
+from datetime import datetime, timedelta
+import plotly.subplots as sp
+
+def create_financial_dashboard(symbol="AAPL", days=365):
+    """Create comprehensive financial dashboard"""
+    
+    # Fetch financial data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    stock = yf.Ticker(symbol)
+    hist = stock.history(start=start_date, end=end_date)
+    
+    # Create subplot layout
+    fig = sp.make_subplots(
+        rows=3, cols=2,
+        specs=[[{"colspan": 2}, None],
+               [{"type": "xy"}, {"type": "xy"}],
+               [{"colspan": 2}, None]],
+        subplot_titles=(
+            f'{symbol} Price Chart',
+            'Volume', 'Price Distribution',
+            'Moving Averages'
+        ),
+        vertical_spacing=0.08
+    )
+    
+    # 1. Candlestick chart
+    fig.add_trace(
+        go.Candlestick(
+            x=hist.index,
+            open=hist['Open'],
+            high=hist['High'],
+            low=hist['Low'],
+            close=hist['Close'],
+            name='Price'
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Volume chart
+    fig.add_trace(
+        go.Bar(x=hist.index, y=hist['Volume'], name='Volume'),
+        row=2, col=1
+    )
+    
+    # 3. Price distribution
+    fig.add_trace(
+        go.Histogram(x=hist['Close'], name='Price Distribution', nbinsx=30),
+        row=2, col=2
+    )
+    
+    # 4. Moving averages
+    hist['MA20'] = hist['Close'].rolling(window=20).mean()
+    hist['MA50'] = hist['Close'].rolling(window=50).mean()
+    
+    fig.add_trace(
+        go.Scatter(x=hist.index, y=hist['Close'], name='Price', line=dict(color='blue')),
+        row=3, col=1
+    )
+    fig.add_trace(
+        go.Scatter(x=hist.index, y=hist['MA20'], name='MA20', line=dict(color='orange')),
+        row=3, col=1
+    )
+    fig.add_trace(
+        go.Scatter(x=hist.index, y=hist['MA50'], name='MA50', line=dict(color='red')),
+        row=3, col=1
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title=f'{symbol} Financial Dashboard',
+        height=800,
+        showlegend=True,
+        template='plotly_white'
+    )
+    
+    # Remove weekend gaps in candlestick
+    fig.update_xaxes(
+        rangebreaks=[
+            dict(bounds=["sat", "mon"]),  # hide weekends
+        ],
+        row=1, col=1
+    )
+    
+    return fig
+
+# Usage
+dashboard = create_financial_dashboard("AAPL", 180)
+dashboard.show()
+```
+
+### Scientific Data Analysis
+
+```python
+import scipy.stats as stats
+from sklearn.datasets import make_blobs
+from sklearn.cluster import KMeans
+
+def create_scientific_analysis(n_samples=500):
+    """Create scientific data analysis dashboard"""
+    
+    # Generate sample data
+    X, y_true = make_blobs(n_samples=n_samples, centers=4, n_features=2, 
+                          random_state=42, cluster_std=1.5)
+    
+    # Perform clustering
+    kmeans = KMeans(n_clusters=4, random_state=42)
+    y_pred = kmeans.fit_predict(X)
+    
+    # Create multi-panel figure
+    fig = sp.make_subplots(
+        rows=2, cols=3,
+        specs=[[{"type": "xy"}, {"type": "xy"}, {"type": "xy"}],
+               [{"type": "xy"}, {"type": "xy"}, {"type": "polar"}]],
+        subplot_titles=(
+            'Raw Data', 'K-Means Clustering', 'Cluster Centers',
+            'Statistical Distribution', 'Correlation Analysis', 'Polar Plot'
+        )
+    )
+    
+    # 1. Raw scatter plot
+    fig.add_trace(
+        go.Scatter(x=X[:, 0], y=X[:, 1], mode='markers',
+                  marker=dict(color=y_true, colorscale='viridis'),
+                  name='True Clusters'),
+        row=1, col=1
+    )
+    
+    # 2. K-means results
+    fig.add_trace(
+        go.Scatter(x=X[:, 0], y=X[:, 1], mode='markers',
+                  marker=dict(color=y_pred, colorscale='plasma'),
+                  name='K-Means'),
+        row=1, col=2
+    )
+    
+    # Add cluster centers
+    centers = kmeans.cluster_centers_
+    fig.add_trace(
+        go.Scatter(x=centers[:, 0], y=centers[:, 1], mode='markers',
+                  marker=dict(size=15, color='red', symbol='x'),
+                  name='Centers'),
+        row=1, col=2
+    )
+    
+    # 3. Individual cluster analysis
+    for i in range(4):
+        cluster_data = X[y_pred == i]
+        fig.add_trace(
+            go.Scatter(x=cluster_data[:, 0], y=cluster_data[:, 1], 
+                      mode='markers', name=f'Cluster {i}'),
+            row=1, col=3
+        )
+    
+    # 4. Statistical distribution
+    fig.add_trace(
+        go.Histogram(x=X[:, 0], name='Feature 1 Distribution', opacity=0.7),
+        row=2, col=1
+    )
+    fig.add_trace(
+        go.Histogram(x=X[:, 1], name='Feature 2 Distribution', opacity=0.7),
+        row=2, col=1
+    )
+    
+    # 5. Correlation heatmap (as scatter)
+    correlation = np.corrcoef(X.T)
+    fig.add_trace(
+        go.Heatmap(z=correlation, colorscale='RdBu', zmid=0,
+                  text=np.round(correlation, 2), texttemplate='%{text}'),
+        row=2, col=2
+    )
+    
+    # 6. Polar plot for directional analysis
+    theta = np.arctan2(X[:, 1], X[:, 0]) * 180 / np.pi
+    r = np.sqrt(X[:, 0]**2 + X[:, 1]**2)
+    
+    fig.add_trace(
+        go.Scatterpolar(theta=theta, r=r, mode='markers',
+                       marker=dict(color=y_pred, colorscale='viridis'),
+                       name='Polar View'),
+        row=2, col=3
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title='Scientific Data Analysis Dashboard',
+        height=800,
+        template='plotly_white',
+        showlegend=True
+    )
+    
+    return fig
+
+# Statistical testing example
+def add_statistical_tests(fig, X, y_pred):
+    """Add statistical test results as annotations"""
+    
+    # Perform ANOVA between clusters
+    cluster_groups = [X[y_pred == i, 0] for i in range(4)]
+    f_stat, p_value = stats.f_oneway(*cluster_groups)
+    
+    fig.add_annotation(
+        text=f"ANOVA F-statistic: {f_stat:.3f}<br>p-value: {p_value:.3e}",
+        xref="paper", yref="paper",
+        x=0.02, y=0.98,
+        showarrow=False,
+        bgcolor="rgba(255,255,255,0.8)",
+        bordercolor="gray",
+        borderwidth=1
+    )
+    
+    return fig
+
+# Usage
+analysis_fig = create_scientific_analysis(1000)
+analysis_fig = add_statistical_tests(analysis_fig, X, y_pred)
+analysis_fig.show()
+```
+
+### Real-Time Streaming Dashboard
+
+```python
+import threading
+import queue
+import time
+import random
+from datetime import datetime, timedelta
+
+class RealTimeDataStreamer:
+    """Simulate real-time data streaming"""
+    
+    def __init__(self, max_points=100):
+        self.data_queue = queue.Queue()
+        self.max_points = max_points
+        self.running = False
+        self.thread = None
+    
+    def start_streaming(self):
+        """Start the data streaming thread"""
+        self.running = True
+        self.thread = threading.Thread(target=self._generate_data)
+        self.thread.start()
+    
+    def stop_streaming(self):
+        """Stop the data streaming"""
+        self.running = False
+        if self.thread:
+            self.thread.join()
+    
+    def _generate_data(self):
+        """Generate simulated sensor data"""
+        base_time = datetime.now()
+        counter = 0
+        
+        while self.running:
+            timestamp = base_time + timedelta(seconds=counter)
+            
+            # Simulate multiple sensors
+            sensor_data = {
+                'timestamp': timestamp,
+                'temperature': 20 + 5 * np.sin(counter * 0.1) + random.gauss(0, 0.5),
+                'humidity': 50 + 10 * np.cos(counter * 0.05) + random.gauss(0, 2),
+                'pressure': 1013 + 3 * np.sin(counter * 0.02) + random.gauss(0, 1)
+            }
+            
+            self.data_queue.put(sensor_data)
+            counter += 1
+            time.sleep(1)  # 1 second intervals
+    
+    def get_latest_data(self):
+        """Get all available data from queue"""
+        data_points = []
+        while not self.data_queue.empty():
+            try:
+                data_points.append(self.data_queue.get_nowait())
+            except queue.Empty:
+                break
+        return data_points
+
+def create_realtime_dashboard():
+    """Create real-time streaming dashboard"""
+    
+    # Initialize data storage
+    data_buffer = {
+        'timestamp': [],
+        'temperature': [],
+        'humidity': [],
+        'pressure': []
+    }
+    
+    # Create subplot layout
+    fig = sp.make_subplots(
+        rows=3, cols=1,
+        subplot_titles=('Temperature (°C)', 'Humidity (%)', 'Pressure (hPa)'),
+        vertical_spacing=0.1
+    )
+    
+    # Initialize empty traces
+    fig.add_trace(
+        go.Scatter(x=[], y=[], mode='lines+markers', name='Temperature', 
+                  line=dict(color='red', width=2)),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=[], y=[], mode='lines+markers', name='Humidity',
+                  line=dict(color='blue', width=2)),
+        row=2, col=1
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=[], y=[], mode='lines+markers', name='Pressure',
+                  line=dict(color='green', width=2)),
+        row=3, col=1
+    )
+    
+    # Configure layout for real-time
+    fig.update_layout(
+        title='Real-Time Sensor Dashboard',
+        height=600,
+        template='plotly_dark',
+        showlegend=True
+    )
+    
+    # Set up axes for streaming
+    for i in range(1, 4):
+        fig.update_xaxes(
+            title='Time',
+            type='date',
+            row=i, col=1
+        )
+    
+    return fig, data_buffer
+
+def update_realtime_plot(fig, data_buffer, new_data_points, max_points=100):
+    """Update real-time plot with new data"""
+    
+    # Add new data to buffer
+    for point in new_data_points:
+        for key in data_buffer:
+            data_buffer[key].append(point[key])
+    
+    # Trim buffer to max_points
+    for key in data_buffer:
+        if len(data_buffer[key]) > max_points:
+            data_buffer[key] = data_buffer[key][-max_points:]
+    
+    # Update figure data
+    with fig.batch_update():
+        fig.data[0].x = data_buffer['timestamp']
+        fig.data[0].y = data_buffer['temperature']
+        
+        fig.data[1].x = data_buffer['timestamp']
+        fig.data[1].y = data_buffer['humidity']
+        
+        fig.data[2].x = data_buffer['timestamp']
+        fig.data[2].y = data_buffer['pressure']
+    
+    return fig
+
+# Example usage with FastHTML
+def create_streaming_app():
+    """Create streaming web application"""
+    from fasthtml.common import *
+    from fh_plotly import plotly2fasthtml
+    
+    app = FastHTML()
+    
+    # Initialize streaming
+    streamer = RealTimeDataStreamer()
+    fig, data_buffer = create_realtime_dashboard()
+    
+    @app.route("/")
+    def dashboard():
+        return Titled("Real-Time Dashboard",
+            Div(
+                H1("Live Sensor Data"),
+                Div(id="plot-container"),
+                Script("""
+                    // Auto-refresh every 2 seconds
+                    setInterval(function() {
+                        fetch('/update-plot')
+                            .then(response => response.text())
+                            .then(html => {
+                                document.getElementById('plot-container').innerHTML = html;
+                            });
+                    }, 2000);
+                """)
+            )
+        )
+    
+    @app.route("/update-plot")
+    def update_plot():
+        # Get new data
+        new_data = streamer.get_latest_data()
+        
+        if new_data:
+            # Update plot
+            update_realtime_plot(fig, data_buffer, new_data)
+        
+        # Return updated plot HTML
+        return plotly2fasthtml(fig)
+    
+    @app.route("/start-stream")
+    def start_stream():
+        streamer.start_streaming()
+        return "Streaming started"
+    
+    @app.route("/stop-stream")
+    def stop_stream():
+        streamer.stop_streaming()
+        return "Streaming stopped"
+    
+    return app
+
+# Usage
+# app = create_streaming_app()
+# serve()
+```
+
+## Integration with Python Ecosystem
+
+### Advanced Pandas Integration
+
+```python
+# Set Plotly as default pandas backend
+pd.options.plotting.backend = "plotly"
+
+# Extended pandas plotting methods
+class PlotlyPandasExtension:
+    def __init__(self, df):
+        self.df = df
+    
+    def correlation_matrix(self, method='pearson', **kwargs):
+        """Enhanced correlation matrix plot"""
+        corr = self.df.corr(method=method)
+        
+        # Create mask for upper triangle
+        mask = np.triu(np.ones_like(corr, dtype=bool))
+        corr_masked = corr.mask(mask)
+        
+        fig = px.imshow(
+            corr_masked,
+            text_auto=True,
+            aspect="auto",
+            color_continuous_scale='RdBu_r',
+            **kwargs
+        )
+        
+        fig.update_layout(
+            title=f'Correlation Matrix ({method.title()})',
+            width=600,
+            height=600
+        )
+        
+        return fig
+    
+    def distribution_comparison(self, columns=None, **kwargs):
+        """Compare distributions of multiple columns"""
+        if columns is None:
+            columns = self.df.select_dtypes(include=[np.number]).columns
+        
+        fig = go.Figure()
+        
+        for col in columns:
+            fig.add_trace(go.Histogram(
+                x=self.df[col],
+                name=col,
+                opacity=0.7,
+                **kwargs
+            ))
+        
+        fig.update_layout(
+            title='Distribution Comparison',
+            barmode='overlay',
+            xaxis_title='Value',
+            yaxis_title='Frequency'
+        )
+        
+        return fig
+    
+    def time_series_decomposition(self, value_col, time_col=None, **kwargs):
+        """Time series decomposition plot"""
+        if time_col is None:
+            time_col = self.df.index
+        else:
+            time_col = self.df[time_col]
+        
+        # Simple trend and seasonality extraction
+        values = self.df[value_col]
+        
+        # Calculate rolling mean (trend)
+        trend = values.rolling(window=12, center=True).mean()
+        
+        # Calculate seasonal component (simplified)
+        seasonal = values - trend
+        seasonal = seasonal.rolling(window=12).mean()
+        
+        # Residual
+        residual = values - trend - seasonal
+        
+        # Create subplots
+        fig = sp.make_subplots(
+            rows=4, cols=1,
+            subplot_titles=('Original', 'Trend', 'Seasonal', 'Residual'),
+            vertical_spacing=0.08
+        )
+        
+        # Add traces
+        fig.add_trace(go.Scatter(x=time_col, y=values, name='Original'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=time_col, y=trend, name='Trend'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=time_col, y=seasonal, name='Seasonal'), row=3, col=1)
+        fig.add_trace(go.Scatter(x=time_col, y=residual, name='Residual'), row=4, col=1)
+        
+        fig.update_layout(
+            title='Time Series Decomposition',
+            height=800,
+            showlegend=False
+        )
+        
+        return fig
+
+# Register extension
+pd.api.extensions.register_dataframe_accessor("plotly_ext")(PlotlyPandasExtension)
+
+# Usage examples
+df = pd.DataFrame(np.random.randn(100, 5), columns=['A', 'B', 'C', 'D', 'E'])
+
+# Use the extension
+correlation_fig = df.plotly_ext.correlation_matrix()
+distribution_fig = df.plotly_ext.distribution_comparison(['A', 'B', 'C'])
+```
+
+### Machine Learning Integration
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import validation_curve, learning_curve
+from sklearn.metrics import confusion_matrix, classification_report
+import plotly.figure_factory as ff
+
+def plot_validation_curve(estimator, X, y, param_name, param_range, cv=5):
+    """Plot validation curve for hyperparameter tuning"""
+    
+    train_scores, test_scores = validation_curve(
+        estimator, X, y, param_name=param_name, param_range=param_range,
+        cv=cv, scoring='accuracy', n_jobs=-1
+    )
+    
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    test_mean = np.mean(test_scores, axis=1)
+    test_std = np.std(test_scores, axis=1)
+    
+    fig = go.Figure()
+    
+    # Training scores
+    fig.add_trace(go.Scatter(
+        x=param_range, y=train_mean,
+        mode='lines+markers',
+        name='Training Score',
+        line=dict(color='blue'),
+        error_y=dict(type='data', array=train_std, visible=True)
+    ))
+    
+    # Validation scores
+    fig.add_trace(go.Scatter(
+        x=param_range, y=test_mean,
+        mode='lines+markers',
+        name='Cross-validation Score',
+        line=dict(color='red'),
+        error_y=dict(type='data', array=test_std, visible=True)
+    ))
+    
+    fig.update_layout(
+        title=f'Validation Curve - {param_name}',
+        xaxis_title=param_name,
+        yaxis_title='Score',
+        template='plotly_white'
+    )
+    
+    return fig
+
+def plot_learning_curve(estimator, X, y, cv=5, train_sizes=np.linspace(0.1, 1.0, 10)):
+    """Plot learning curve to diagnose bias vs variance"""
+    
+    train_sizes, train_scores, test_scores = learning_curve(
+        estimator, X, y, cv=cv, train_sizes=train_sizes, n_jobs=-1
+    )
+    
+    train_mean = np.mean(train_scores, axis=1)
+    train_std = np.std(train_scores, axis=1)
+    test_mean = np.mean(test_scores, axis=1)
+    test_std = np.std(test_scores, axis=1)
+    
+    fig = go.Figure()
+    
+    # Training scores with confidence interval
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=train_mean + train_std,
+        mode='lines',
+        line=dict(width=0),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=train_mean - train_std,
+        mode='lines',
+        line=dict(width=0),
+        fill='tonexty',
+        fillcolor='rgba(0,100,80,0.2)',
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=train_mean,
+        mode='lines+markers',
+        name='Training Score',
+        line=dict(color='blue')
+    ))
+    
+    # Test scores with confidence interval
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=test_mean + test_std,
+        mode='lines',
+        line=dict(width=0),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=test_mean - test_std,
+        mode='lines',
+        line=dict(width=0),
+        fill='tonexty',
+        fillcolor='rgba(231,107,243,0.2)',
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=train_sizes, y=test_mean,
+        mode='lines+markers',
+        name='Cross-validation Score',
+        line=dict(color='red')
+    ))
+    
+    fig.update_layout(
+        title='Learning Curve',
+        xaxis_title='Training Set Size',
+        yaxis_title='Score',
+        template='plotly_white'
+    )
+    
+    return fig
+
+def plot_feature_importance(model, feature_names, top_n=20):
+    """Plot feature importance from tree-based models"""
+    
+    if not hasattr(model, 'feature_importances_'):
+        raise ValueError("Model does not have feature_importances_ attribute")
+    
+    importance_df = pd.DataFrame({
+        'feature': feature_names,
+        'importance': model.feature_importances_
+    }).sort_values('importance', ascending=True).tail(top_n)
+    
+    fig = px.bar(
+        importance_df,
+        x='importance',
+        y='feature',
+        orientation='h',
+        title=f'Top {top_n} Feature Importances'
+    )
+    
+    fig.update_layout(
+        xaxis_title='Importance',
+        yaxis_title='Features',
+        template='plotly_white'
+    )
+    
+    return fig
+
+def plot_confusion_matrix(y_true, y_pred, labels=None):
+    """Enhanced confusion matrix with Plotly"""
+    
+    cm = confusion_matrix(y_true, y_pred)
+    
+    if labels is None:
+        labels = [f'Class {i}' for i in range(len(cm))]
+    
+    # Calculate percentages
+    cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    
+    # Create annotations
+    annotations = []
+    for i in range(len(cm)):
+        for j in range(len(cm)):
+            annotations.append(
+                dict(
+                    x=j, y=i,
+                    text=f'{cm[i, j]}<br>({cm_percent[i, j]:.1%})',
+                    showarrow=False,
+                    font=dict(color='white' if cm[i, j] > cm.max()/2 else 'black')
+                )
+            )
+    
+    fig = ff.create_annotated_heatmap(
+        cm,
+        x=labels,
+        y=labels,
+        annotation_text=[[f'{cm[i, j]}<br>({cm_percent[i, j]:.1%})' 
+                         for j in range(len(cm))] 
+                        for i in range(len(cm))],
+        colorscale='Blues',
+        showscale=True
+    )
+    
+    fig.update_layout(
+        title='Confusion Matrix',
+        xaxis_title='Predicted Label',
+        yaxis_title='True Label'
+    )
+    
+    return fig
+```
+
+## Conclusion
+
+Plotly Python is a comprehensive visualization library that combines ease of use with powerful customization capabilities. Its interactive nature makes it ideal for modern data analysis workflows.
+
+### Key Strengths
+- **Interactive by default**: All plots are interactive without additional configuration
+- **Wide range of plot types**: From basic charts to 3D visualizations and geographic maps
+- **Web-ready**: Built on web technologies, perfect for web applications
+- **Excellent integration**: Works seamlessly with pandas, Jupyter, and web frameworks
+- **High-quality output**: Publication-ready graphics with professional styling
+- **Active development**: Regular updates and strong community support
+
+### When to Use Plotly
+- ✅ Interactive data exploration and analysis
+- ✅ Web-based dashboards and applications
+- ✅ Presentations requiring interactive elements
+- ✅ Complex multi-panel visualizations
+- ✅ Real-time data streaming applications
+- ✅ Geographic and 3D visualizations
+
+### When to Consider Alternatives
+- ❌ Simple static plots for printed materials (consider matplotlib)
+- ❌ Very large datasets requiring extreme performance (consider datashader)
+- ❌ Specialized statistical plots (consider seaborn)
+- ❌ Publication in journals requiring specific formats
+
+### FastHTML Integration Advantage
+The combination of Plotly with FastHTML (via fh-plotly) provides a powerful solution for creating data-driven web applications:
+- Native Python web development
+- Interactive visualizations embedded seamlessly
+- Real-time data updates
+- Responsive design capabilities
+- Production-ready deployment
+
+Plotly represents the modern approach to data visualization - interactive, web-native, and designed for the era of data-driven applications. Whether you're doing exploratory data analysis, building dashboards, or creating production applications, Plotly provides the tools to create compelling, interactive visualizations that engage users and communicate insights effectively.
+
+---
+
+**Documentation Sources:**
+- Primary: https://plotly.com/python/
+- FastHTML Integration: https://fastht.ml/docs/
+- fh-plotly: https://github.com/pydantic/fh-plotly
+- Repository: https://github.com/plotly/plotly.py
+- Retrieved: 2025-07-30
+- Method: Web research, official documentation analysis, and practical implementation testing
+
+**Note**: This document compiles information from official documentation, community best practices, and real-world implementation patterns. The FastHTML integration examples are based on the current fh-plotly library implementation.

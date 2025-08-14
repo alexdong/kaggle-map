@@ -1,0 +1,767 @@
+# Loguru - Python Logging Made Simple
+
+## Overview
+
+Loguru is a Python library that makes logging both simple and powerful. Its philosophy is "Python logging made (stupidly) simple" - it eliminates the complexity of Python's standard logging module while providing advanced features out-of-the-box.
+
+**Key Philosophy**: Single pre-configured logger instance that works immediately without setup, while offering extensive customization when needed.
+
+## Quick Start
+
+### Basic Usage
+```python
+from loguru import logger
+
+# Works immediately - no configuration needed
+logger.debug("Debug message")
+logger.info("Information message")
+logger.success("Success message")  # Unique to loguru
+logger.warning("Warning message")
+logger.error("Error message")
+logger.critical("Critical message")
+logger.trace("Trace message")    # Most verbose level
+```
+
+### Installation
+```bash
+uv add loguru
+# or
+pip install loguru
+```
+
+## Core Concepts
+
+### Single Logger Instance
+Unlike standard logging, loguru provides a single pre-configured logger:
+
+```python
+from loguru import logger
+
+# No need for logging.getLogger(__name__)
+# No need for handler/formatter setup
+logger.info("Just works!")
+```
+
+### Modern String Formatting
+Loguru uses modern Python string formatting (braces) exclusively:
+
+```python
+# ✅ Correct - use braces
+logger.info("User {user} logged in with ID {id}", user="John", id=123)
+
+# ❌ Avoid - old % formatting not supported
+# logger.info("User %s logged in", user)
+```
+
+### Lazy Evaluation
+Expensive operations are only evaluated when the log level is active:
+
+```python
+# This expensive_operation() only runs if DEBUG level is enabled
+logger.debug("Debug info: {result}", result=expensive_operation())
+```
+
+## Configuration and Setup
+
+### Handler Management
+
+#### Remove Default Handler
+```python
+# Remove default stderr handler to prevent duplication
+logger.remove()
+
+# Add custom handlers
+logger.add(sys.stderr, level="INFO")
+logger.add("app.log", level="DEBUG")
+```
+
+#### File Handlers with Rotation
+```python
+logger.add(
+    "app.log",
+    rotation="500 MB",      # Rotate when file reaches 500MB
+    retention="10 days",    # Keep logs for 10 days
+    compression="zip",      # Compress old logs
+    level="INFO"
+)
+```
+
+#### Multiple Handlers Pattern
+```python
+# Different handlers for different purposes
+logger.add("error.log", level="ERROR", format="{time} {level} {message}")
+logger.add("debug.log", level="DEBUG", backtrace=True, diagnose=True)
+logger.add(sys.stdout, level="INFO", format="{time} - {message}")
+```
+
+### Production vs Development Configuration
+
+#### Development Setup
+```python
+# Development - full debugging info
+logger.remove()
+logger.add(
+    sys.stderr,
+    level="DEBUG",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    backtrace=True,
+    diagnose=True
+)
+```
+
+#### Production Setup
+```python
+# Production - security conscious
+logger.remove()
+logger.add(
+    "production.log",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    backtrace=False,    # Don't expose code paths
+    diagnose=False,     # Don't expose variable values
+    rotation="100 MB",
+    retention="30 days",
+    compression="zip"
+)
+```
+
+## Advanced Features
+
+### Exception Handling
+
+#### Decorator Pattern
+```python
+@logger.catch
+def risky_function():
+    return 10 / 0  # This exception will be logged automatically
+
+# Usage
+risky_function()  # Exception logged with full traceback
+```
+
+#### Context Manager Pattern
+```python
+with logger.catch():
+    risky_operation()
+    another_risky_operation()
+```
+
+#### Manual Exception Logging
+```python
+try:
+    risky_operation()
+except Exception as e:
+    logger.exception("Operation failed")
+    # or
+    logger.opt(exception=True).error("Operation failed")
+```
+
+### Structured Logging
+
+#### JSON Serialization
+```python
+# Log as JSON for structured logging systems
+logger.add("structured.log", serialize=True)
+
+logger.info("User action", user_id=123, action="login", ip="192.168.1.1")
+# Output: {"text": "User action", "record": {"extra": {"user_id": 123, "action": "login", "ip": "192.168.1.1"}, ...}}
+```
+
+#### Context Binding
+```python
+# Bind context to logger instance
+context_logger = logger.bind(user_id=123, request_id="abc-123")
+context_logger.info("User performed action")
+context_logger.error("Action failed")
+
+# Or bind for single message
+logger.bind(user="John", session="xyz").info("User login attempt")
+```
+
+### Custom Formatting
+
+#### Advanced Format String
+```python
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+           "<level>{level: <8}</level> | "
+           "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+           "<level>{message}</level>"
+)
+```
+
+#### Dynamic Formatting Function
+```python
+def custom_formatter(record):
+    # Color based on log level
+    colors = {
+        "TRACE": "dim",
+        "DEBUG": "cyan",
+        "INFO": "white",
+        "SUCCESS": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "bold red"
+    }
+    color = colors.get(record["level"].name, "white")
+    
+    return (
+        "<green>{time:HH:mm:ss}</green> | "
+        f"<{color}>{{level: <8}}</{color}> | "
+        "<cyan>{name}</cyan>:<cyan>{line}</cyan> - "
+        f"<{color}>{{message}}</{color}>\n{{exception}}"
+    )
+
+logger.add(sys.stderr, format=custom_formatter)
+```
+
+### Custom Log Levels
+
+#### Creating Custom Levels
+```python
+# Add custom level
+logger.level("AUDIT", no=35, color="<yellow>", icon="📋")
+
+# Use custom level
+logger.log("AUDIT", "User {user} accessed sensitive data", user="john")
+
+# Create convenience method
+def audit(message, **kwargs):
+    logger.log("AUDIT", message, **kwargs)
+
+audit("Sensitive operation performed", user_id=123)
+```
+
+## Framework Integration
+
+### FastHTML Integration
+```python
+from fasthtml import *
+from loguru import logger
+
+# Configure for web application
+logger.remove()
+logger.add("web.log", level="INFO", rotation="daily")
+logger.add(sys.stderr, level="WARNING")
+
+app = FastHTML()
+
+@app.get("/")
+def home():
+    logger.info("Home page accessed")
+    return Html(Body(H1("Hello World")))
+```
+
+### pytest Integration
+```python
+# conftest.py
+import pytest
+from loguru import logger
+
+@pytest.fixture(autouse=True)
+def setup_logging():
+    # Configure logger for tests
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG", format="{time} {level} {message}")
+    yield
+    logger.remove()
+```
+
+### CLI Application with Click
+```python
+import click
+from loguru import logger
+
+@click.command()
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option('--log-file', help='Log file path')
+def main(verbose, log_file):
+    # Configure logging based on CLI options
+    logger.remove()
+    
+    level = "DEBUG" if verbose else "INFO"
+    logger.add(sys.stderr, level=level)
+    
+    if log_file:
+        logger.add(log_file, level="DEBUG", rotation="10 MB")
+    
+    logger.info("Application starting")
+    # Your application logic here
+```
+
+## Best Practices
+
+### Security Best Practices
+
+#### Production Security
+```python
+# ✅ Secure production configuration
+logger.add(
+    "production.log",
+    backtrace=False,    # Don't expose code structure
+    diagnose=False,     # Don't expose variable values
+    format="{time} | {level} | {name}:{function} - {message}"  # No line numbers
+)
+
+# ❌ Insecure - exposes internals
+logger.add("debug.log", backtrace=True, diagnose=True)  # Only for development
+```
+
+#### Input Sanitization
+```python
+# ✅ Safe - parameters are safely formatted
+user_input = "'; DROP TABLE users; --"
+logger.info("User input received: {input}", input=user_input)
+
+# ❌ Potentially unsafe with untrusted format strings
+# Don't do: logger.info(untrusted_format_string)
+```
+
+### Performance Best Practices
+
+#### Lazy Evaluation
+```python
+# ✅ Expensive operation only runs if DEBUG is enabled
+logger.debug("Expensive calculation: {result}", result=expensive_calculation())
+
+# ❌ Always runs expensive operation
+logger.debug(f"Expensive calculation: {expensive_calculation()}")
+```
+
+#### Multiprocessing Safety
+```python
+# ✅ Thread-safe configuration
+logger.add("file.log", enqueue=True)  # Use queue for thread safety
+
+# Proper multiprocessing setup
+if __name__ == "__main__":
+    logger.remove()
+    logger.add("app.log", enqueue=True)
+    # Start multiprocessing here
+```
+
+### Migration from Standard Logging
+
+#### Common Replacements
+```python
+# Standard logging → Loguru
+# logging.getLogger(__name__) → from loguru import logger
+# logger.info("msg", extra={"key": "value"}) → logger.bind(key="value").info("msg")
+# logger.exception("error") → logger.opt(exception=True).error("error")
+# logger.info("User: %s", user) → logger.info("User: {user}", user=user)
+```
+
+#### Compatibility Layer
+```python
+# If you need to work with standard logging
+import logging
+from loguru import logger
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # Get corresponding Loguru level if it exists
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # Find caller from where originated the logged message
+        frame, depth = logging.currentframe(), 2
+        while frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+# Redirect standard logging to loguru
+logging.basicConfig(handlers=[InterceptHandler()], level=0)
+```
+
+## Common Pitfalls and Troubleshooting
+
+### Duplicate Log Messages
+**Problem**: Messages appear multiple times
+**Solution**: Remove default handler before adding custom handlers
+
+```python
+# ❌ This creates duplicate messages
+logger.add("file.log")  # Adds to existing stderr handler
+
+# ✅ Correct approach
+logger.remove()  # Remove default handler first
+logger.add(sys.stderr, level="INFO")
+logger.add("file.log", level="DEBUG")
+```
+
+### Recursive Logging Issues
+**Problem**: "RuntimeError: deadlock avoided"
+**Solution**: Avoid logging in custom formatters or sinks
+
+```python
+# ❌ This can cause recursion
+def bad_formatter(record):
+    logger.info("Formatting record")  # Don't log in formatter!
+    return "{time} - {message}"
+
+# ✅ Safe formatter
+def good_formatter(record):
+    return f"{record['time']:%H:%M:%S} - {record['message']}"
+```
+
+### F-string Formatting Errors
+**Problem**: Braces in f-strings conflict with loguru formatting
+**Solution**: Use loguru's parameter system
+
+```python
+# ❌ Problematic with f-strings
+name = "John"
+logger.info(f"User {name} logged in")  # Can cause issues with complex formatting
+
+# ✅ Use loguru's parameter system
+logger.info("User {name} logged in", name=name)
+```
+
+### File Handle Issues
+**Problem**: "ValueError: I/O operation on closed file"
+**Solution**: Proper cleanup and context management
+
+```python
+# ✅ Proper cleanup
+def shutdown_logging():
+    logger.remove()  # Removes all handlers and closes files
+
+# Or use context manager for temporary handlers
+def temporary_logging():
+    handler_id = logger.add("temp.log")
+    try:
+        logger.info("Temporary logging")
+    finally:
+        logger.remove(handler_id)
+```
+
+## Testing with Loguru
+
+### Capturing Logs in Tests
+```python
+import pytest
+from loguru import logger
+
+def test_logging_output(caplog):
+    # Configure logger for testing
+    logger.remove()
+    logger.add(caplog.handler, format="{message}")
+    
+    # Your code that logs
+    logger.info("Test message")
+    
+    # Assert log contents
+    assert "Test message" in caplog.text
+
+# Alternative: Using loguru's testing utilities
+from loguru import logger
+import io
+import sys
+
+def test_with_custom_handler():
+    # Capture logs to string
+    log_stream = io.StringIO()
+    logger.remove()
+    logger.add(log_stream, format="{message}")
+    
+    logger.info("Test message")
+    
+    assert "Test message" in log_stream.getvalue()
+```
+
+### Mock Testing
+```python
+from unittest.mock import patch
+from loguru import logger
+
+def test_error_logging():
+    with patch.object(logger, 'error') as mock_error:
+        # Code that should log an error
+        dangerous_operation()
+        
+        # Verify error was logged
+        mock_error.assert_called_once()
+```
+
+## Performance Considerations
+
+### Benchmarking Claims
+- Loguru claims to be "10x faster than built-in logging" in many scenarios
+- Performance benefits come from simplified architecture and optimized formatting
+- Lazy evaluation prevents expensive operations when logging is disabled
+
+### Optimization Tips
+```python
+# ✅ Use appropriate log levels
+logger.debug("Detailed debug info: {data}", data=complex_data_structure)
+
+# ✅ Conditional logging for expensive operations
+if logger.level("DEBUG").no >= logger._core.min_level:
+    logger.debug("Expensive debug info: {data}", data=expensive_operation())
+
+# ✅ Use enqueue for high-throughput applications
+logger.add("high_volume.log", enqueue=True, format="{time} {message}")
+```
+
+## Real-World Examples
+
+### Web Application Logging
+```python
+from fasthtml import *
+from loguru import logger
+import uuid
+
+# Configure application logging
+logger.remove()
+logger.add("app.log", rotation="daily", retention="1 month", level="INFO")
+logger.add("error.log", level="ERROR", backtrace=True)
+logger.add(sys.stderr, level="WARNING")
+
+app = FastHTML()
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+    
+    # Log request start
+    logger.bind(request_id=request_id).info(
+        "Request started: {method} {url}",
+        method=request.method,
+        url=str(request.url)
+    )
+    
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+        
+        # Log successful response
+        logger.bind(request_id=request_id).info(
+            "Request completed: {status} in {duration:.3f}s",
+            status=response.status_code,
+            duration=duration
+        )
+        return response
+        
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.bind(request_id=request_id).error(
+            "Request failed after {duration:.3f}s: {error}",
+            duration=duration,
+            error=str(e)
+        )
+        raise
+```
+
+### CLI Application with Rich Output
+```python
+import click
+from loguru import logger
+from rich.console import Console
+from rich.progress import track
+
+console = Console()
+
+def setup_logging(verbose: bool, log_file: str = None):
+    """Setup logging configuration"""
+    logger.remove()
+    
+    # Console output with rich formatting
+    level = "DEBUG" if verbose else "INFO"
+    logger.add(
+        lambda msg: console.print(msg, end=""),
+        level=level,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}"
+    )
+    
+    # File output if specified
+    if log_file:
+        logger.add(log_file, level="DEBUG", rotation="10 MB")
+
+@click.command()
+@click.option('--verbose', '-v', is_flag=True)
+@click.option('--log-file', help='Log file path')
+def process_files(verbose, log_file):
+    setup_logging(verbose, log_file)
+    
+    files = ["file1.txt", "file2.txt", "file3.txt"]
+    
+    logger.info("Starting file processing")
+    
+    for file in track(files, description="Processing files..."):
+        try:
+            logger.debug("Processing file: {file}", file=file)
+            # Simulate file processing
+            time.sleep(0.5)
+            logger.success("Completed: {file}", file=file)
+        except Exception as e:
+            logger.error("Failed to process {file}: {error}", file=file, error=e)
+    
+    logger.info("All files processed")
+```
+
+### Data Pipeline with Structured Logging
+```python
+from loguru import logger
+import json
+from datetime import datetime
+
+# Configure structured logging for data pipeline
+logger.remove()
+logger.add(
+    "pipeline.jsonl",
+    serialize=True,
+    level="INFO",
+    format="{message}",
+    rotation="daily"
+)
+
+class DataPipeline:
+    def __init__(self, pipeline_id: str):
+        self.pipeline_id = pipeline_id
+        self.logger = logger.bind(
+            pipeline_id=pipeline_id,
+            component="data_pipeline"
+        )
+    
+    def process_batch(self, batch_id: str, data: list):
+        batch_logger = self.logger.bind(batch_id=batch_id)
+        
+        batch_logger.info(
+            "Batch processing started",
+            record_count=len(data),
+            start_time=datetime.utcnow().isoformat()
+        )
+        
+        processed = 0
+        errors = 0
+        
+        for record in data:
+            try:
+                self.process_record(record)
+                processed += 1
+            except Exception as e:
+                errors += 1
+                batch_logger.error(
+                    "Record processing failed",
+                    record_id=record.get('id'),
+                    error=str(e),
+                    record_data=record
+                )
+        
+        batch_logger.info(
+            "Batch processing completed",
+            processed_count=processed,
+            error_count=errors,
+            success_rate=processed / len(data) if data else 0,
+            end_time=datetime.utcnow().isoformat()
+        )
+        
+        return processed, errors
+    
+    def process_record(self, record):
+        # Simulate record processing
+        if record.get('corrupt'):
+            raise ValueError("Corrupt record detected")
+        return record
+
+# Usage
+pipeline = DataPipeline("data-pipeline-001")
+test_data = [
+    {"id": 1, "value": "good"},
+    {"id": 2, "value": "also good"},
+    {"id": 3, "corrupt": True}  # This will cause an error
+]
+
+pipeline.process_batch("batch-001", test_data)
+```
+
+## Integration with Python Ecosystem
+
+### Popular Framework Integrations
+
+#### Django Integration
+```python
+# settings.py
+import sys
+from loguru import logger
+
+# Remove Django's default logging
+LOGGING_CONFIG = None
+
+# Configure loguru
+logger.remove()
+logger.add(sys.stderr, level="INFO")
+logger.add("django.log", rotation="daily", level="DEBUG")
+
+# In views.py
+from loguru import logger
+
+def my_view(request):
+    logger.bind(user_id=request.user.id).info("User accessed view")
+    # View logic here...
+```
+
+#### Pydantic Integration
+```python
+from pydantic import BaseModel, validator
+from loguru import logger
+
+class UserModel(BaseModel):
+    name: str
+    age: int
+    
+    @validator('age')
+    def validate_age(cls, v):
+        if v < 0:
+            logger.warning("Negative age provided: {age}", age=v)
+            raise ValueError("Age cannot be negative")
+        return v
+
+# Usage logs validation warnings automatically
+try:
+    user = UserModel(name="John", age=-5)
+except ValueError:
+    logger.error("User validation failed")
+```
+
+## Conclusion
+
+Loguru successfully eliminates the complexity of Python's standard logging while providing powerful features:
+
+### Key Advantages
+- **Zero configuration**: Works immediately out of the box
+- **Modern API**: Uses contemporary Python patterns and formatting
+- **Rich features**: Exception catching, structured logging, custom levels
+- **High performance**: Optimized for speed and efficiency
+- **Thread-safe**: Built for concurrent applications
+- **Extensive customization**: Flexible formatting and handler options
+
+### When to Use Loguru
+- ✅ New Python projects
+- ✅ Applications requiring structured logging
+- ✅ Projects needing simple logging setup
+- ✅ High-performance applications
+- ✅ Development environments requiring rich debugging
+
+### When to Consider Alternatives
+- ❌ Legacy systems heavily integrated with standard logging
+- ❌ Corporate environments requiring specific logging standards
+- ❌ Libraries that should not impose logging dependencies on users
+
+Loguru represents the modern approach to Python logging - simple by default, powerful when needed, and enjoyable to use throughout the development lifecycle.
+
+---
+
+**Documentation Sources:**
+- Primary: https://loguru.readthedocs.io/
+- Repository: https://github.com/Delgan/loguru
+- Retrieved: 2025-07-30
+- Method: Web research and official documentation analysis
+
+**Note**: No official llms.txt files exist for loguru. This document was compiled from official documentation, source code analysis, and established best practices from the Python logging community.
