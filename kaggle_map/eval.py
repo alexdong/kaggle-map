@@ -47,12 +47,32 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
     ground_truth = _load_ground_truth(ground_truth_path)
     submissions = _load_submissions(submission_path)
 
+    # Log data loading results
+    logger.info(f"📊 Ground truth loaded: {len(ground_truth)} rows")
+    logger.info(f"📊 Submissions loaded: {len(submissions)} rows")
+
     # Calculate MAP@3 over common row_ids
     total_score = 0.0
     perfect_predictions = 0
     valid_predictions = 0
 
     common_row_ids = set(ground_truth.keys()) & set(submissions.keys())
+
+    # Log intersection analysis
+    gt_only = set(ground_truth.keys()) - set(submissions.keys())
+    sub_only = set(submissions.keys()) - set(ground_truth.keys())
+
+    logger.info(f"📊 Common row_ids for evaluation: {len(common_row_ids)}")
+    if gt_only:
+        logger.warning(
+            f"⚠️  {len(gt_only)} row_ids in ground truth but not in submissions"
+        )
+        logger.debug(f"Ground truth only row_ids (first 10): {sorted(gt_only)[:10]}")
+    if sub_only:
+        logger.warning(
+            f"⚠️  {len(sub_only)} row_ids in submissions but not in ground truth"
+        )
+        logger.debug(f"Submissions only row_ids (first 10): {sorted(sub_only)[:10]}")
 
     for row_id in common_row_ids:
         gt_prediction = ground_truth[row_id]
@@ -376,6 +396,60 @@ def _run_cross_validation(console: Console) -> None:
         )
 
 
+def _log_data_quality_issues(train_df: pd.DataFrame) -> None:
+    """Log data quality issues in the training DataFrame."""
+    logger.info(f"📊 Loaded train.csv with {len(train_df)} total rows")
+    logger.info(f"📊 DataFrame shape: {train_df.shape}")
+    logger.info(f"📊 Columns: {list(train_df.columns)}")
+
+    # Check for missing values in critical columns
+    critical_columns = [
+        "row_id",
+        "QuestionId",
+        "QuestionText",
+        "MC_Answer",
+        "StudentExplanation",
+        "Category",
+    ]
+    for col in critical_columns:
+        missing_count = train_df[col].isna().sum()
+        if missing_count > 0:
+            logger.warning(f"⚠️  Column '{col}' has {missing_count} missing values")
+
+    # Check for duplicate row_ids
+    duplicate_row_ids = train_df["row_id"].duplicated().sum()
+    if duplicate_row_ids > 0:
+        logger.warning(f"⚠️  Found {duplicate_row_ids} duplicate row_ids")
+
+
+def _convert_to_test_rows(train_df: pd.DataFrame) -> list[TestRow]:
+    """Convert DataFrame rows to TestRow objects."""
+    test_rows = []
+    failed_conversions = 0
+
+    for idx, row in train_df.iterrows():
+        try:
+            test_row = TestRow(
+                row_id=int(row["row_id"]),
+                question_id=int(row["QuestionId"]),
+                question_text=str(row["QuestionText"]),
+                mc_answer=str(row["MC_Answer"]),
+                student_explanation=str(row["StudentExplanation"]),
+            )
+            test_rows.append(test_row)
+        except (ValueError, TypeError) as e:
+            failed_conversions += 1
+            logger.warning(f"⚠️  Failed to convert row {idx} to TestRow: {e}")
+            logger.debug(f"Problematic row data: {dict(row)}")
+
+    if failed_conversions > 0:
+        logger.warning(
+            f"⚠️  Failed to convert {failed_conversions} rows to TestRow objects"
+        )
+
+    return test_rows
+
+
 def _prepare_cross_validation_data(
     train_csv_path: Path,
 ) -> tuple[list[TestRow], pd.DataFrame]:
@@ -383,36 +457,34 @@ def _prepare_cross_validation_data(
     train_df = pd.read_csv(train_csv_path)
     assert not train_df.empty, "Training CSV cannot be empty"
 
-    # Convert to TestRow objects (strip away ground truth columns)
-    test_rows = []
-    for _, row in train_df.iterrows():
-        test_row = TestRow(
-            row_id=int(row["row_id"]),
-            question_id=int(row["QuestionId"]),
-            question_text=str(row["QuestionText"]),
-            mc_answer=str(row["MC_Answer"]),
-            student_explanation=str(row["StudentExplanation"]),
-        )
-        test_rows.append(test_row)
+    _log_data_quality_issues(train_df)
+    test_rows = _convert_to_test_rows(train_df)
 
     # Prepare ground truth data for evaluation
     ground_truth_data = train_df[["row_id", "Category", "Misconception"]].copy()
 
-    logger.debug(
-        f"Prepared {len(test_rows)} test rows and ground truth for {len(ground_truth_data)} observations"
-    )
+    logger.info(f"✅ Successfully prepared {len(test_rows)} test rows")
+    logger.info(f"✅ Ground truth data has {len(ground_truth_data)} rows")
+
     return test_rows, ground_truth_data
 
 
 def _save_submission_csv(predictions: list, submission_path: Path) -> None:
     """Save predictions in submission CSV format."""
+    logger.info(f"📊 Processing {len(predictions)} prediction rows for submission")
+
     submission_data = []
+    row_ids_seen = set()
+    total_individual_predictions = 0
 
     for submission_row in predictions:
         # Convert Prediction objects to space-separated string format
         prediction_strings = [
             pred.value for pred in submission_row.predicted_categories
         ]
+
+        total_individual_predictions += len(prediction_strings)
+        row_ids_seen.add(submission_row.row_id)
 
         submission_data.append(
             {
@@ -423,9 +495,19 @@ def _save_submission_csv(predictions: list, submission_path: Path) -> None:
 
     submission_df = pd.DataFrame(submission_data)
     submission_df.to_csv(submission_path, index=False)
-    logger.debug(
-        f"Saved submission CSV with {len(submission_data)} predictions to {submission_path}"
+
+    logger.info(f"✅ Saved submission CSV with {len(submission_data)} rows")
+    logger.info(f"📊 Total individual predictions: {total_individual_predictions}")
+    logger.info(f"📊 Unique row_ids in submission: {len(row_ids_seen)}")
+    logger.info(
+        f"📊 Average predictions per row: {total_individual_predictions / len(submission_data):.2f}"
     )
+
+    # Check for duplicate row_ids in predictions
+    if len(row_ids_seen) != len(submission_data):
+        logger.warning("⚠️  Duplicate row_ids detected in predictions!")
+
+    logger.debug(f"Submission file saved to: {submission_path}")
 
 
 def _display_cross_validation_results(
