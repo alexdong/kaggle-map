@@ -3,7 +3,8 @@
 from pathlib import Path
 import pytest
 import pandas as pd
-from kaggle_map.models import MAPModel, Category, Prediction, TestRow
+from kaggle_map.models import Category, Prediction, TestRow
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def simple_model():
     
     common_misconceptions = {101: "AdditionError", 102: "MultiplicationMistake"}
     
-    return MAPModel(
+    return BaselineStrategy(
         correct_answers=correct_answers,
         category_frequencies=category_frequencies,
         common_misconceptions=common_misconceptions

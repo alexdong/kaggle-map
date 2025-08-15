@@ -7,13 +7,13 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.models import MAPModel, save_model
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 def fit_model(
     train_csv_path: Path = Path("dataset/train.csv"),
     model_output_path: Path = Path("baseline_model.json"),
-) -> MAPModel:
+) -> BaselineStrategy:
     """Fit a baseline model from training data and save it.
 
     Args:
@@ -21,12 +21,12 @@ def fit_model(
         model_output_path: Path where to save the fitted model
 
     Returns:
-        Fitted MAPModel
+        Fitted BaselineStrategy
     """
     logger.info(f"Starting model fitting from {train_csv_path}")
 
     # Fit the model
-    model = MAPModel.fit(train_csv_path)
+    model = BaselineStrategy.fit(train_csv_path)
     logger.info("Model fitting completed successfully")
 
     # Display model statistics
@@ -42,7 +42,7 @@ def fit_model(
     logger.info(f"Extracted misconceptions for {misconception_count} questions")
 
     # Save the model
-    save_model(model, model_output_path)
+    model.save(model_output_path)
     logger.info(f"Model saved to {model_output_path}")
 
     return model

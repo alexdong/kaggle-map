@@ -18,8 +18,8 @@ from kaggle_map.models import (
     EvaluationResult,
     Prediction,
     TestRow,
-    load_model,
 )
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 # Performance assessment thresholds for MAP@3 scores
 EXCELLENT_THRESHOLD = 0.8
@@ -320,7 +320,7 @@ def _run_cross_validation(console: Console) -> None:
 
     with console.status("[bold green]Loading baseline model..."):
         logger.info(f"Loading model from {model_path}")
-        model = load_model(model_path)
+        model = BaselineStrategy.load(model_path)
         logger.info("Model loaded successfully")
 
     console.print("✅ [bold green]Baseline model loaded[/bold green]")

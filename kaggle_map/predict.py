@@ -8,7 +8,8 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.models import TestRow, load_model
+from kaggle_map.models import TestRow
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 def make_predictions(
@@ -29,7 +30,7 @@ def make_predictions(
     logger.info(f"Loading model from {model_path}")
 
     # Load the trained model
-    model = load_model(model_path)
+    model = BaselineStrategy.load(model_path)
     logger.info("Model loaded successfully")
 
     # Load test data

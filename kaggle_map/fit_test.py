@@ -3,7 +3,8 @@
 from pathlib import Path
 import pytest
 import pandas as pd
-from kaggle_map.models import MAPModel, Category, Prediction
+from kaggle_map.models import Category, Prediction
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def test_model_fitting(test_case, temp_train_csv):
     train_path = temp_train_csv(test_case["training_data"])
     
     # Fit the model
-    model = MAPModel.fit(train_path)
+    model = BaselineStrategy.fit(train_path)
     
     # Check basic structure
     assert len(model.correct_answers) == test_case["expected_questions"]
@@ -67,13 +68,12 @@ def test_model_serialization(temp_train_csv):
     }
     
     train_path = temp_train_csv(training_data)
-    original_model = MAPModel.fit(train_path)
+    original_model = BaselineStrategy.fit(train_path)
     
     # Save and load
     save_path = train_path.parent / "test_model.json"
-    from kaggle_map.models import save_model, load_model
-    save_model(original_model, save_path)
-    loaded_model = load_model(save_path)
+    original_model.save(save_path)
+    loaded_model = BaselineStrategy.load(save_path)
     
     # Verify loaded model matches original
     assert loaded_model.correct_answers == original_model.correct_answers
@@ -94,7 +94,7 @@ def test_model_prediction_format(temp_train_csv):
     }
     
     train_path = temp_train_csv(training_data)
-    model = MAPModel.fit(train_path)
+    model = BaselineStrategy.fit(train_path)
     
     # Create test data
     from kaggle_map.models import TestRow

@@ -11,14 +11,12 @@ from pydantic import ValidationError
 from kaggle_map.models import (
     Category,
     EvaluationResult,
-    MAPModel,
     Prediction,
     SubmissionRow,
     TestRow,
     TrainingRow,
-    load_model,
-    save_model,
 )
+from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 # =============================================================================
@@ -233,13 +231,13 @@ def temp_training_csv():
 
 
 # =============================================================================
-# MAPModel Core Behavior Tests
+# BaselineStrategy Core Behavior Tests
 # =============================================================================
 
 
 def test_model_fit_extracts_correct_answers_from_training_data(temp_training_csv):
     """Model extracts correct answer for each question from True_Correct entries."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     expected_answers = {100: "4", 101: "6"}
     assert model.correct_answers == expected_answers
@@ -247,7 +245,7 @@ def test_model_fit_extracts_correct_answers_from_training_data(temp_training_csv
 
 def test_model_fit_builds_category_patterns_by_answer_correctness(temp_training_csv):
     """Model builds category frequency patterns based on answer correctness."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     # Question 100: student answered "4" (correct) -> True_Correct, student answered "5" (wrong) -> False_Misconception
     assert Category.TRUE_CORRECT in model.category_frequencies[100][True]
@@ -256,7 +254,7 @@ def test_model_fit_builds_category_patterns_by_answer_correctness(temp_training_
 
 def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_csv):
     """Model identifies the most common misconception for each question."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     assert model.common_misconceptions[100] == "Adding_across"
     # Question 101 has no misconceptions, so it won't be in the dictionary
@@ -265,7 +263,7 @@ def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_c
 
 def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv, sample_test_data):
     """Model predictions contain at most 3 categories per test row."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     predictions = model.predict(sample_test_data)
     
     for prediction in predictions:
@@ -275,7 +273,7 @@ def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv
 
 def test_model_predict_applies_misconceptions_to_misconception_categories(temp_training_csv):
     """Model applies misconception tags to misconception categories in predictions."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     # Test with incorrect answer to trigger misconception categories
     test_row = TestRow(
@@ -295,7 +293,7 @@ def test_model_predict_applies_misconceptions_to_misconception_categories(temp_t
 
 def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv):
     """Model orders predictions by frequency from training data."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     test_row = TestRow(
         row_id=9999,
@@ -312,7 +310,7 @@ def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv)
 
 
 # =============================================================================
-# MAPModel Edge Cases & Error Handling Tests
+# BaselineStrategy Edge Cases & Error Handling Tests
 # =============================================================================
 
 
@@ -333,7 +331,7 @@ def test_model_fit_handles_training_data_without_misconceptions():
         temp_path = Path(f.name)
         
         try:
-            model = MAPModel.fit(temp_path)
+            model = BaselineStrategy.fit(temp_path)
             # No misconceptions means the question won't be in the dictionary
             assert 100 not in model.common_misconceptions or model.common_misconceptions[100] is None
         finally:
@@ -358,7 +356,7 @@ def test_model_fit_raises_error_for_conflicting_correct_answers():
         
         try:
             with pytest.raises(AssertionError, match="Conflicting correct answers"):
-                MAPModel.fit(temp_path)
+                BaselineStrategy.fit(temp_path)
         finally:
             temp_path.unlink()
 
@@ -381,14 +379,14 @@ def test_model_fit_requires_at_least_one_correct_answer():
         
         try:
             with pytest.raises(AssertionError, match="Must find at least one correct answer"):
-                MAPModel.fit(temp_path)
+                BaselineStrategy.fit(temp_path)
         finally:
             temp_path.unlink()
 
 
 def test_model_predict_handles_questions_not_in_training_data(temp_training_csv):
     """Model handles test questions that weren't in training data."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     
     # Test with question ID not in training data
     test_row = TestRow(
@@ -405,24 +403,24 @@ def test_model_predict_handles_questions_not_in_training_data(temp_training_csv)
 
 def test_model_predict_handles_empty_test_data_gracefully(temp_training_csv):
     """Model returns empty predictions for empty test data."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     predictions = model.predict([])
     
     assert predictions == []
 
 
 # =============================================================================
-# MAPModel Serialization Tests  
+# BaselineStrategy Serialization Tests  
 # =============================================================================
 
 
 def test_model_serialization_round_trip_preserves_all_data(temp_training_csv):
     """Model serialization and deserialization preserves all model data."""
-    original_model = MAPModel.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(temp_training_csv)
     
     # Serialize to dict and back
     model_dict = original_model.to_dict()
-    reconstructed_model = MAPModel.from_dict(model_dict)
+    reconstructed_model = BaselineStrategy.from_dict(model_dict)
     
     assert reconstructed_model.correct_answers == original_model.correct_answers
     assert reconstructed_model.category_frequencies == original_model.category_frequencies
@@ -431,7 +429,7 @@ def test_model_serialization_round_trip_preserves_all_data(temp_training_csv):
 
 def test_model_to_dict_creates_json_serializable_format(temp_training_csv):
     """Model to_dict creates format that can be JSON serialized."""
-    model = MAPModel.fit(temp_training_csv)
+    model = BaselineStrategy.fit(temp_training_csv)
     model_dict = model.to_dict()
     
     # Should be JSON serializable without errors
@@ -442,7 +440,7 @@ def test_model_to_dict_creates_json_serializable_format(temp_training_csv):
 
 def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     """Model from_dict recreates functionally equivalent model."""
-    original_model = MAPModel.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(temp_training_csv)
     
     # Create test data
     test_row = TestRow(
@@ -458,7 +456,7 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     
     # Recreate model and get predictions
     model_dict = original_model.to_dict()
-    reconstructed_model = MAPModel.from_dict(model_dict)
+    reconstructed_model = BaselineStrategy.from_dict(model_dict)
     reconstructed_predictions = reconstructed_model.predict([test_row])
     
     # Predictions should be identical
@@ -477,15 +475,15 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
 
 def test_save_load_model_round_trip_with_temp_file(temp_training_csv):
     """Save and load model preserves all functionality."""
-    original_model = MAPModel.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(temp_training_csv)
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         temp_model_path = Path(f.name)
         
         try:
             # Save and load
-            save_model(original_model, temp_model_path)
-            loaded_model = load_model(temp_model_path)
+            original_model.save(temp_model_path)
+            loaded_model = BaselineStrategy.load(temp_model_path)
             
             # Verify equivalence
             assert loaded_model.correct_answers == original_model.correct_answers
@@ -501,7 +499,7 @@ def test_load_model_raises_clear_error_for_missing_file():
     missing_path = Path("nonexistent_model.json")
     
     with pytest.raises(AssertionError, match="Model file not found"):
-        load_model(missing_path)
+        BaselineStrategy.load(missing_path)
 
 
 # =============================================================================
