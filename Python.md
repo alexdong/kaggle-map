@@ -48,3 +48,11 @@
 ├── Makefile                # Task automation
 └── pyproject.toml          # Project configuration
 ```
+
+@.claude/agents/datastructure.md
+@.claude/agents/debuggability.md
+@.claude/agents/observability.md
+@.claude/agents/pythonic.md
+@.claude/agents/readability.md
+@.claude/agents/technicalwriter.md
+@.claude/agents/test.md

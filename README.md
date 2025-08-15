@@ -20,12 +20,40 @@ The `docs/` folder contains comprehensive documentation that can be hosted direc
 
 Your documentation will be available at: `https://[username].github.io/[repository-name]/`
 
+## Quick Start
+
+### Running the Baseline Model
+
+Test the baseline model for student misconception prediction:
+
+```bash
+# Run the model demonstration
+uv run kaggle_map/models.py
+
+# This will:
+# - Fit the model from dataset/train.csv
+# - Display model statistics
+# - Save the model to baseline_model.json
+# - Test serialization by loading the saved model
+```
+
+### Development Commands
+
+```bash
+# Run code quality checks
+make dev
+
+# Run tests
+make test
+```
+
 ## Project Structure
 
 ```
 ./
 ├── docs/                   # Documentation (GitHub Pages ready)
-├── src/                    # Application code
+├── kaggle_map/             # Application code
+├── dataset/                # Training and test data
 ├── tests/                  # Test files
 ├── logs/                   # Implementation logs
 ├── llms/                   # LLM-friendly documentation
