@@ -5,10 +5,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
-try:
-    from .models import TestRow, load_model
-except ImportError:
-    from models import TestRow, load_model
+from .models import TestRow, load_model
 
 
 def make_predictions(

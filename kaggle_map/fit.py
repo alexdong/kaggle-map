@@ -4,10 +4,7 @@ from pathlib import Path
 
 from loguru import logger
 
-try:
-    from .models import MAPModel, save_model
-except ImportError:
-    from models import MAPModel, save_model
+from .models import MAPModel, save_model
 
 
 def fit_model(

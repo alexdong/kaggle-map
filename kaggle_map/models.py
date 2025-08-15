@@ -168,14 +168,10 @@ class MAPModel:
         is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
 
         # Get ordered categories based on correctness
-        if row.question_id in self.category_frequencies:
-            categories = self.category_frequencies[row.question_id].get(is_correct, [])
-        else:
-            # Fallback for unseen questions
-            categories = list(Category)
-            logger.debug(
-                f"Using fallback categories for unseen question {row.question_id}"
-            )
+        assert row.question_id in self.category_frequencies, (
+            f"Question {row.question_id} not found in training data"
+        )
+        categories = self.category_frequencies[row.question_id].get(is_correct, [])
 
         # Apply misconception suffix transformation
         return self._apply_misconception_suffix(
@@ -383,104 +379,97 @@ if __name__ == "__main__":
     logger.info("Running models.py demonstration")
 
     # Fit the model using default training data
-    try:
-        model = MAPModel.fit()
-        logger.info("Model fitting completed successfully")
+    model = MAPModel.fit()
+    logger.info("Model fitting completed successfully")
 
-        # Display detailed model information
-        logger.info(
-            f"Model contains {len(model.correct_answers)} questions with correct answers"
-        )
-        logger.info(
-            f"Model contains {len(model.category_frequencies)} questions with category patterns"
-        )
-        logger.info(
-            f"Model contains {len(model.common_misconceptions)} questions with misconception data"
-        )
+    # Display detailed model information
+    logger.info(
+        f"Model contains {len(model.correct_answers)} questions with correct answers"
+    )
+    logger.info(
+        f"Model contains {len(model.category_frequencies)} questions with category patterns"
+    )
+    logger.info(
+        f"Model contains {len(model.common_misconceptions)} questions with misconception data"
+    )
 
-        # Print detailed model contents
-        print("\n=== MODEL DETAILS ===")
-        print(f"Questions with correct answers: {len(model.correct_answers)}")
-        for qid, answer in sorted(model.correct_answers.items()):
-            print(f"  Question {qid}: {answer}")
+    # Print detailed model contents
+    print("\n=== MODEL DETAILS ===")
+    print(f"Questions with correct answers: {len(model.correct_answers)}")
+    for qid, answer in sorted(model.correct_answers.items()):
+        print(f"  Question {qid}: {answer}")
 
-        print(f"\nCategory patterns for {len(model.category_frequencies)} questions:")
-        for qid, patterns in sorted(model.category_frequencies.items()):
-            print(f"  Question {qid}:")
-            if True in patterns:
-                correct_cats = [cat.value for cat in patterns[True]]
-                print(f"    When correct: {correct_cats}")
-            if False in patterns:
-                incorrect_cats = [cat.value for cat in patterns[False]]
-                print(f"    When incorrect: {incorrect_cats}")
+    print(f"\nCategory patterns for {len(model.category_frequencies)} questions:")
+    for qid, patterns in sorted(model.category_frequencies.items()):
+        print(f"  Question {qid}:")
+        if True in patterns:
+            correct_cats = [cat.value for cat in patterns[True]]
+            print(f"    When correct: {correct_cats}")
+        if False in patterns:
+            incorrect_cats = [cat.value for cat in patterns[False]]
+            print(f"    When incorrect: {incorrect_cats}")
 
-        print(
-            f"\nMost common misconceptions for {len(model.common_misconceptions)} questions:"
-        )
-        misconception_count = 0
-        for qid, misconception in sorted(model.common_misconceptions.items()):
-            if misconception is not None:
-                print(f"  Question {qid}: {misconception}")
-                misconception_count += 1
-        if misconception_count == 0:
-            print("  (No misconceptions found in the data)")
-        else:
-            print(f"  ({misconception_count} questions have misconceptions)")
-        print("========================\n")
+    print(
+        f"\nMost common misconceptions for {len(model.common_misconceptions)} questions:"
+    )
+    misconception_count = 0
+    for qid, misconception in sorted(model.common_misconceptions.items()):
+        if misconception is not None:
+            print(f"  Question {qid}: {misconception}")
+            misconception_count += 1
+    if misconception_count == 0:
+        print("  (No misconceptions found in the data)")
+    else:
+        print(f"  ({misconception_count} questions have misconceptions)")
+    print("========================\n")
 
-        # Save the model for testing
-        model_path = Path("baseline_model.json")
-        save_model(model, model_path)
-        logger.info(f"Model saved to {model_path}")
+    # Save the model for testing
+    model_path = Path("baseline_model.json")
+    save_model(model, model_path)
+    logger.info(f"Model saved to {model_path}")
 
-        # Load it back to verify serialization works
-        loaded_model = load_model(model_path)
-        logger.info("Model loading verification successful")
+    # Load it back to verify serialization works
+    loaded_model = load_model(model_path)
+    logger.info("Model loading verification successful")
 
-        # Basic validation that the loaded model matches
-        assert len(loaded_model.correct_answers) == len(model.correct_answers)
-        assert len(loaded_model.category_frequencies) == len(model.category_frequencies)
-        assert len(loaded_model.common_misconceptions) == len(
-            model.common_misconceptions
-        )
-        logger.info("Model serialization validation passed")
+    # Basic validation that the loaded model matches
+    assert len(loaded_model.correct_answers) == len(model.correct_answers)
+    assert len(loaded_model.category_frequencies) == len(model.category_frequencies)
+    assert len(loaded_model.common_misconceptions) == len(model.common_misconceptions)
+    logger.info("Model serialization validation passed")
 
-        # Test prediction format with a sample
-        sample_test_row = TestRow(
-            row_id=99999,
-            question_id=31772,
-            question_text="Sample question",
-            mc_answer="\\( \\frac{1}{3} \\)",
-            student_explanation="Sample explanation",
-        )
-        sample_predictions = model.predict([sample_test_row])
-        print("\nSample prediction for question 31772:")
-        print(f"  Row ID: {sample_predictions[0].row_id}")
-        print(
-            f"  Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
-        )
-        print(f"  Prediction objects: {sample_predictions[0].predicted_categories}")
-        print("  Format validation: All predictions are valid Pydantic objects")
+    # Test prediction format with a sample
+    sample_test_row = TestRow(
+        row_id=99999,
+        question_id=31772,
+        question_text="Sample question",
+        mc_answer="\\( \\frac{1}{3} \\)",
+        student_explanation="Sample explanation",
+    )
+    sample_predictions = model.predict([sample_test_row])
+    print("\nSample prediction for question 31772:")
+    print(f"  Row ID: {sample_predictions[0].row_id}")
+    print(
+        f"  Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
+    )
+    print(f"  Prediction objects: {sample_predictions[0].predicted_categories}")
+    print("  Format validation: All predictions are valid Pydantic objects")
 
-        # Test prediction creation with type safety
-        test_pred1 = Prediction(category=Category.TRUE_CORRECT)
-        test_pred2 = Prediction(
-            category=Category.FALSE_MISCONCEPTION, misconception="TestError"
-        )
-        print("  ✅ Type-safe creation works:")
-        print(f"    {test_pred1} -> {test_pred1.value}")
-        print(f"    {test_pred2} -> {test_pred2.value}")
+    # Test prediction creation with type safety
+    test_pred1 = Prediction(category=Category.TRUE_CORRECT)
+    test_pred2 = Prediction(
+        category=Category.FALSE_MISCONCEPTION, misconception="TestError"
+    )
+    print("  ✅ Type-safe creation works:")
+    print(f"    {test_pred1} -> {test_pred1.value}")
+    print(f"    {test_pred2} -> {test_pred2.value}")
 
-        # Test that misconception is ignored for non-misconception categories
-        test_pred3 = Prediction(
-            category=Category.TRUE_CORRECT, misconception="ShouldBeIgnored"
-        )
-        print(
-            f"    {test_pred3} -> {test_pred3.value} (misconception ignored for non-misconception category)"
-        )
+    # Test that misconception is ignored for non-misconception categories
+    test_pred3 = Prediction(
+        category=Category.TRUE_CORRECT, misconception="ShouldBeIgnored"
+    )
+    print(
+        f"    {test_pred3} -> {test_pred3.value} (misconception ignored for non-misconception category)"
+    )
 
-        print("========================")
-
-    except Exception as e:
-        logger.error(f"Error during model demonstration: {e}")
-        raise
+    print("========================")
