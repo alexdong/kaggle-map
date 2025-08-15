@@ -4,28 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
-from pydantic import BaseModel, field_validator
 
-from .models import Category
-
-
-class EvaluationResult(BaseModel):
-    """MAP@3 evaluation result with detailed breakdown."""
-
-    map_score: float
-    total_observations: int
-    perfect_predictions: int
-    valid_predictions: int
-    invalid_predictions: int
-
-    @field_validator("map_score")
-    @classmethod
-    def validate_map_score(cls, v: float) -> float:
-        assert 0.0 <= v <= 1.0, f"MAP score must be between 0 and 1, got {v}"
-        return v
+from .models import Category, EvaluationResult, Prediction
 
 
-def evaluate_map3(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
+def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
     """Calculate MAP@3 score for kaggle submission.
 
     Args:
@@ -45,25 +28,22 @@ def evaluate_map3(ground_truth_path: Path, submission_path: Path) -> EvaluationR
     total_score = 0.0
     perfect_predictions = 0
     valid_predictions = 0
-    invalid_predictions = 0
 
     common_row_ids = set(ground_truth.keys()) & set(submissions.keys())
 
     for row_id in common_row_ids:
-        gt_label = ground_truth[row_id]
-        predictions = submissions[row_id]
+        gt_prediction = ground_truth[row_id]
+        submission_predictions = submissions[row_id]
 
         # Calculate average precision for this observation
-        ap = _calculate_average_precision(gt_label, predictions)
+        ap = _calculate_average_precision(gt_prediction, submission_predictions)
         total_score += ap
 
         if ap == 1.0:
             perfect_predictions += 1
 
-        # Count prediction validity
-        valid_count, invalid_count = _count_prediction_validity(predictions)
-        valid_predictions += valid_count
-        invalid_predictions += invalid_count
+        # Count prediction validity (all parsed predictions are valid by definition)
+        valid_predictions += len(submission_predictions)
 
     total_observations = len(common_row_ids)
     map_score = total_score / total_observations if total_observations > 0 else 0.0
@@ -75,12 +55,12 @@ def evaluate_map3(ground_truth_path: Path, submission_path: Path) -> EvaluationR
         total_observations=total_observations,
         perfect_predictions=perfect_predictions,
         valid_predictions=valid_predictions,
-        invalid_predictions=invalid_predictions,
+        invalid_predictions=0,  # Invalid predictions are filtered during parsing
     )
 
 
-def _load_ground_truth(path: Path) -> dict[int, str]:
-    """Load ground truth CSV into dict mapping row_id -> category:misconception label."""
+def _load_ground_truth(path: Path) -> dict[int, Prediction]:
+    """Load ground truth CSV into dict mapping row_id -> Prediction object."""
     assert path.exists(), f"Ground truth file not found: {path}"
 
     ground_truth_data = pd.read_csv(path)
@@ -91,21 +71,20 @@ def _load_ground_truth(path: Path) -> dict[int, str]:
         row_id = int(row["row_id"])
         category = Category(row["Category"])
 
-        # Handle misconception - NA/None becomes empty, which means just category
+        # Handle misconception - NA/None becomes None for Prediction object
         misconception = row["Misconception"]
         if pd.isna(misconception) or misconception == "NA":
-            label = category.value
-        else:
-            label = f"{category.value}:{misconception}"
+            misconception = None
 
-        result[row_id] = label
+        prediction = Prediction(category=category, misconception=misconception)
+        result[row_id] = prediction
 
     logger.debug(f"Loaded {len(result)} ground truth rows")
     return result
 
 
-def _load_submissions(path: Path) -> dict[int, list[str]]:
-    """Load submission CSV into dict mapping row_id -> list of up to 3 predictions."""
+def _load_submissions(path: Path) -> dict[int, list[Prediction]]:
+    """Load submission CSV into dict mapping row_id -> list of up to 3 Prediction objects."""
     assert path.exists(), f"Submission file not found: {path}"
 
     submission_data = pd.read_csv(path)
@@ -115,11 +94,17 @@ def _load_submissions(path: Path) -> dict[int, list[str]]:
         row_id = int(row["row_id"])
         predictions_str = str(row["predictions"]).strip()
 
-        # Split by spaces and take only first 3 predictions
+        # Split by spaces and parse into Prediction objects
+        predictions = []
         if predictions_str and predictions_str != "nan":
-            predictions = predictions_str.split()[:3]
-        else:
-            predictions = []
+            prediction_strings = predictions_str.split()[:3]
+            for pred_str in prediction_strings:
+                try:
+                    prediction = _parse_prediction_string(pred_str)
+                    predictions.append(prediction)
+                except ValueError:
+                    # Invalid prediction format - skip it
+                    logger.debug(f"Skipping invalid prediction: {pred_str}")
 
         result[row_id] = predictions
 
@@ -127,8 +112,25 @@ def _load_submissions(path: Path) -> dict[int, list[str]]:
     return result
 
 
+def _parse_prediction_string(pred_str: str) -> Prediction:
+    """Parse a prediction string into a Prediction object."""
+    pred_str = pred_str.strip()
+
+    if ":" in pred_str:
+        category_part, misconception_part = pred_str.split(":", 1)
+        category = Category(category_part.strip())
+        misconception = (
+            misconception_part.strip() if misconception_part.strip() else None
+        )
+    else:
+        category = Category(pred_str)
+        misconception = None
+
+    return Prediction(category=category, misconception=misconception)
+
+
 def _calculate_average_precision(
-    ground_truth_label: str, predictions: list[str]
+    ground_truth: Prediction, predictions: list[Prediction]
 ) -> float:
     """Calculate average precision for a single observation using MAP@3 formula."""
     if not predictions:
@@ -136,9 +138,7 @@ def _calculate_average_precision(
 
     # Check each prediction position (1-indexed for precision calculation)
     for k, prediction in enumerate(predictions, 1):
-        if _normalize_prediction(prediction) == _normalize_prediction(
-            ground_truth_label
-        ):
+        if _predictions_match(ground_truth, prediction):
             # Found correct prediction at position k, precision = 1/k
             return 1.0 / k
 
@@ -146,41 +146,121 @@ def _calculate_average_precision(
     return 0.0
 
 
-def _normalize_prediction(prediction: str) -> str:
-    """Normalize prediction string for consistent comparison."""
-    return prediction.strip()
+def _predictions_match(ground_truth: Prediction, prediction: Prediction) -> bool:
+    """Check if two predictions match using their value representation."""
+    return ground_truth.value == prediction.value
 
 
-def _count_prediction_validity(predictions: list[str]) -> tuple[int, int]:
-    """Count valid and invalid predictions based on Category:Misconception format."""
-    valid_count = 0
-    invalid_count = 0
+if __name__ == "__main__":
+    """Demonstrate MAP@3 evaluation with sample data using Prediction objects."""
+    logger.info("Running eval.py demonstration")
 
-    for prediction in predictions:
-        if _is_valid_prediction(prediction):
-            valid_count += 1
+    import tempfile
+    from pathlib import Path
+
+    import pandas as pd
+
+    # Create sample data for demonstration using the rich type system
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        logger.info("Creating sample evaluation data")
+
+        # Sample ground truth data
+        ground_truth_data = {
+            "row_id": [1, 2, 3, 4, 5],
+            "Category": [
+                "True_Correct",
+                "False_Misconception",
+                "True_Misconception",
+                "False_Neither",
+                "True_Neither",
+            ],
+            "Misconception": [
+                "Adding_across",
+                "Denominator-only_change",
+                "Incorrect_equivalent_fraction_addition",
+                "NA",
+                "NA",
+            ],
+        }
+
+        # Sample submission data with various prediction accuracies
+        submission_data = {
+            "row_id": [1, 2, 3, 4, 5],
+            "predictions": [
+                # Perfect prediction (1st position)
+                "True_Correct:Adding_across False_Neither:Other_tag True_Misconception:Wrong_tag",
+                # Correct in 2nd position
+                "False_Neither:Wrong_tag False_Misconception:Denominator-only_change True_Correct:Other_tag",
+                # Correct in 3rd position
+                "False_Neither:Wrong_tag True_Correct:Other_tag True_Misconception:Incorrect_equivalent_fraction_addition",
+                # Incorrect prediction
+                "True_Correct:Wrong_tag False_Misconception:Other_tag True_Misconception:Bad_tag",
+                # Correct prediction (category only, no misconception)
+                "True_Neither False_Correct True_Misconception:Some_tag",
+            ],
+        }
+
+        # Save to temporary CSV files
+        gt_path = tmp_path / "ground_truth.csv"
+        sub_path = tmp_path / "submission.csv"
+
+        pd.DataFrame(ground_truth_data).to_csv(gt_path, index=False)
+        pd.DataFrame(submission_data).to_csv(sub_path, index=False)
+
+        logger.info(f"Ground truth saved to: {gt_path}")
+        logger.info(f"Submission saved to: {sub_path}")
+
+        # Evaluate MAP@3
+        logger.info("Calculating MAP@3 score")
+        result = evaluate(gt_path, sub_path)
+
+        # Display results
+        print("\n=== MAP@3 EVALUATION RESULTS ===")
+        print(f"MAP@3 Score: {result.map_score:.4f}")
+        print(f"Total Observations: {result.total_observations}")
+        print(f"Perfect Predictions (1st position): {result.perfect_predictions}")
+        print(f"Valid Predictions: {result.valid_predictions}")
+        print(f"Invalid Predictions: {result.invalid_predictions}")
+
+        # Calculate breakdown by position
+        print("\nExpected breakdown:")
+        print("  Row 1: Perfect (1st position) -> AP = 1.0")
+        print("  Row 2: 2nd position -> AP = 0.5")
+        print("  Row 3: 3rd position -> AP = 0.333...")
+        print("  Row 4: No match -> AP = 0.0")
+        print("  Row 5: Perfect (1st position) -> AP = 1.0")
+
+        expected_map = (1.0 + 0.5 + 1 / 3 + 0.0 + 1.0) / 5
+        print(f"  Expected MAP@3: {expected_map:.4f}")
+        print(f"  Actual MAP@3: {result.map_score:.4f}")
+
+        # Verify calculation
+        tolerance = 0.001
+        if abs(result.map_score - expected_map) < tolerance:
+            print("✅ MAP@3 calculation verified!")
         else:
-            invalid_count += 1
+            print("❌ MAP@3 calculation mismatch!")
 
-    return valid_count, invalid_count
+        print("=================================\n")
 
+        # Demonstrate the rich type system
+        print("=== PREDICTION OBJECT DEMONSTRATION ===")
 
-def _is_valid_prediction(prediction: str) -> bool:
-    """Check if prediction follows valid Category:Misconception format."""
-    prediction = prediction.strip()
-    if not prediction:
-        return False
+        # Show how ground truth is represented as Prediction objects
+        gt_data = _load_ground_truth(gt_path)
+        print("Ground truth as Prediction objects:")
+        for row_id, prediction in gt_data.items():
+            print(f"  Row {row_id}: {prediction} -> '{prediction.value}'")
 
-    try:
-        if ":" in prediction:
-            category_part, _ = prediction.split(":", 1)
-            Category(category_part.strip())
-        else:
-            Category(prediction)
-        return True
-    except ValueError:
-        return False
+        # Show how submissions are parsed into Prediction objects
+        sub_data = _load_submissions(sub_path)
+        print("\nSubmissions as Prediction objects:")
+        for row_id, predictions in sub_data.items():
+            pred_strs = [f"'{pred.value}'" for pred in predictions]
+            print(f"  Row {row_id}: {pred_strs}")
 
+        print("========================================\n")
 
-# Backward compatibility alias (avoids shadowing builtin eval in imports)
-eval_map3 = evaluate_map3
+        logger.info("MAP@3 evaluation demonstration completed successfully")

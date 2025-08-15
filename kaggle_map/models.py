@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 import pandas as pd
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # Domain-specific type aliases
 type QuestionId = int
@@ -89,6 +89,22 @@ class SubmissionRow(NamedTuple):
 
     row_id: int
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
+
+
+class EvaluationResult(BaseModel):
+    """MAP@3 evaluation result with detailed breakdown."""
+
+    map_score: float
+    total_observations: int
+    perfect_predictions: int
+    valid_predictions: int
+    invalid_predictions: int
+
+    @field_validator("map_score")
+    @classmethod
+    def validate_map_score(cls, v: float) -> float:
+        assert 0.0 <= v <= 1.0, f"MAP score must be between 0 and 1, got {v}"
+        return v
 
 
 @dataclass(frozen=True)
