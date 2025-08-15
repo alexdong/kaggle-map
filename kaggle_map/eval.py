@@ -9,7 +9,18 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.models import Category, EvaluationResult, Prediction
+from kaggle_map.models import (
+    Category,
+    EvaluationResult,
+    Prediction,
+    TestRow,
+    load_model,
+)
+
+# Performance assessment thresholds for MAP@3 scores
+EXCELLENT_THRESHOLD = 0.8
+GOOD_THRESHOLD = 0.6
+MODERATE_THRESHOLD = 0.4
 
 
 def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
@@ -156,19 +167,233 @@ def _predictions_match(ground_truth: Prediction, prediction: Prediction) -> bool
 
 
 @click.command()
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    help="Show detailed breakdown and prediction objects",
-)
-def main(*, verbose: bool) -> None:
-    """Demonstrate MAP@3 evaluation with sample data using Prediction objects."""
+def main() -> None:
+    """Cross-validate baseline model against train.csv ground truth."""
     console = Console()
 
-    console.print("[bold blue]📊 Running MAP@3 Evaluation Demo[/bold blue]")
+    console.print(
+        "[bold blue]🔄 Running Cross-Validation on Baseline Model[/bold blue]"
+    )
 
-    _demonstrate_map_evaluation(console, verbose=verbose)
+    _run_cross_validation(console)
+
+
+def _run_cross_validation(console: Console) -> None:
+    """Run cross-validation using baseline model against train.csv."""
+    model_path = Path("baseline_model.json")
+    train_csv_path = Path("dataset/train.csv")
+
+    # Validate required files exist
+    assert model_path.exists(), f"Baseline model not found: {model_path}"
+    assert train_csv_path.exists(), f"Training data not found: {train_csv_path}"
+
+    with console.status("[bold green]Loading baseline model..."):
+        logger.info(f"Loading model from {model_path}")
+        model = load_model(model_path)
+        logger.info("Model loaded successfully")
+
+    console.print("✅ [bold green]Baseline model loaded[/bold green]")
+
+    with console.status("[bold green]Preparing test data from train.csv..."):
+        logger.info(f"Loading training data from {train_csv_path}")
+        test_rows, ground_truth_data = _prepare_cross_validation_data(train_csv_path)
+        logger.info(f"Prepared {len(test_rows)} test rows for cross-validation")
+
+    console.print(f"✅ [bold green]Prepared {len(test_rows)} test rows[/bold green]")
+
+    with console.status("[bold green]Generating predictions..."):
+        logger.info("Generating predictions using baseline model")
+        predictions = model.predict(test_rows)
+        logger.info(f"Generated predictions for {len(predictions)} rows")
+
+    console.print(
+        f"✅ [bold green]Generated {len(predictions)} predictions[/bold green]"
+    )
+
+    # Create temporary files for evaluation pipeline
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        with console.status("[bold green]Preparing evaluation files..."):
+            # Save ground truth CSV
+            ground_truth_path = tmp_path / "ground_truth.csv"
+            ground_truth_data.to_csv(ground_truth_path, index=False)
+
+            # Save submission CSV
+            submission_path = tmp_path / "submission.csv"
+            _save_submission_csv(predictions, submission_path)
+
+            logger.info(f"Created evaluation files in {tmp_path}")
+
+        console.print("✅ [bold green]Evaluation files prepared[/bold green]")
+
+        with console.status("[bold green]Running MAP@3 evaluation..."):
+            result = evaluate(ground_truth_path, submission_path)
+            logger.info(f"Cross-validation completed: MAP@3 = {result.map_score:.4f}")
+
+        console.print("\n[bold green]✅ CROSS-VALIDATION COMPLETED[/bold green]")
+
+        _display_cross_validation_results(console, result)
+        _display_detailed_cross_validation_analysis(
+            console, test_rows, predictions, ground_truth_data
+        )
+
+
+def _prepare_cross_validation_data(
+    train_csv_path: Path,
+) -> tuple[list[TestRow], pd.DataFrame]:
+    """Prepare test rows and ground truth data from train.csv."""
+    train_df = pd.read_csv(train_csv_path)
+    assert not train_df.empty, "Training CSV cannot be empty"
+
+    # Convert to TestRow objects (strip away ground truth columns)
+    test_rows = []
+    for _, row in train_df.iterrows():
+        test_row = TestRow(
+            row_id=int(row["row_id"]),
+            question_id=int(row["QuestionId"]),
+            question_text=str(row["QuestionText"]),
+            mc_answer=str(row["MC_Answer"]),
+            student_explanation=str(row["StudentExplanation"]),
+        )
+        test_rows.append(test_row)
+
+    # Prepare ground truth data for evaluation
+    ground_truth_data = train_df[["row_id", "Category", "Misconception"]].copy()
+
+    logger.debug(
+        f"Prepared {len(test_rows)} test rows and ground truth for {len(ground_truth_data)} observations"
+    )
+    return test_rows, ground_truth_data
+
+
+def _save_submission_csv(predictions: list, submission_path: Path) -> None:
+    """Save predictions in submission CSV format."""
+    submission_data = []
+
+    for submission_row in predictions:
+        # Convert Prediction objects to space-separated string format
+        prediction_strings = [
+            pred.value for pred in submission_row.predicted_categories
+        ]
+
+        submission_data.append(
+            {
+                "row_id": submission_row.row_id,
+                "predictions": " ".join(prediction_strings),
+            }
+        )
+
+    submission_df = pd.DataFrame(submission_data)
+    submission_df.to_csv(submission_path, index=False)
+    logger.debug(
+        f"Saved submission CSV with {len(submission_data)} predictions to {submission_path}"
+    )
+
+
+def _display_cross_validation_results(
+    console: Console, result: EvaluationResult
+) -> None:
+    """Display cross-validation results in formatted table."""
+    results_table = Table(title="Cross-Validation Results")
+    results_table.add_column("Metric", style="cyan", no_wrap=True)
+    results_table.add_column("Value", style="magenta")
+    results_table.add_column("Description", style="dim")
+
+    results_table.add_row(
+        "MAP@3 Score", f"{result.map_score:.4f}", "Mean Average Precision at 3"
+    )
+    results_table.add_row(
+        "Total Observations", str(result.total_observations), "Rows evaluated"
+    )
+    results_table.add_row(
+        "Perfect Predictions",
+        f"{result.perfect_predictions} ({result.perfect_predictions / result.total_observations:.1%})",
+        "Correct in 1st position",
+    )
+    results_table.add_row(
+        "Valid Predictions",
+        str(result.valid_predictions),
+        "Total valid prediction attempts",
+    )
+    results_table.add_row(
+        "Invalid Predictions", str(result.invalid_predictions), "Parsing/format errors"
+    )
+
+    console.print(results_table)
+
+    # Performance assessment
+    if result.map_score >= EXCELLENT_THRESHOLD:
+        console.print(
+            "\n🎉 [bold green]Excellent performance![/bold green] Model shows strong cross-validation results."
+        )
+    elif result.map_score >= GOOD_THRESHOLD:
+        console.print(
+            "\n✅ [bold blue]Good performance.[/bold blue] Model shows reasonable cross-validation results."
+        )
+    elif result.map_score >= MODERATE_THRESHOLD:
+        console.print(
+            "\n⚠️  [bold yellow]Moderate performance.[/bold yellow] Model has room for improvement."
+        )
+    else:
+        console.print(
+            "\n⚠️  [bold red]Poor performance.[/bold red] Model needs significant improvement."
+        )
+
+
+def _display_detailed_cross_validation_analysis(
+    console: Console,
+    test_rows: list[TestRow],
+    predictions: list,
+    ground_truth_data: pd.DataFrame,
+) -> None:
+    """Display detailed analysis when verbose mode is enabled."""
+    console.print("\n[bold]Detailed Cross-Validation Analysis[/bold]")
+
+    # Sample predictions analysis
+    console.print("\n[cyan]Sample Predictions (first 5 rows):[/cyan]")
+    sample_table = Table()
+    sample_table.add_column("Row ID", style="yellow")
+    sample_table.add_column("Question ID", style="cyan")
+    sample_table.add_column("Predictions", style="magenta")
+    sample_table.add_column("Ground Truth", style="green")
+
+    for i in range(min(5, len(predictions))):
+        pred_row = predictions[i]
+        row_id = pred_row.row_id
+
+        # Get ground truth for this row
+        gt_row = ground_truth_data[ground_truth_data["row_id"] == row_id].iloc[0]
+        misconception = (
+            gt_row["Misconception"] if pd.notna(gt_row["Misconception"]) else "NA"
+        )
+        ground_truth = f"{gt_row['Category']}:{misconception}"
+
+        # Format predictions
+        pred_strings = [pred.value for pred in pred_row.predicted_categories]
+
+        sample_table.add_row(
+            str(row_id),
+            str(test_rows[i].question_id),
+            " | ".join(pred_strings[:3]),  # Show up to 3 predictions
+            ground_truth,
+        )
+
+    console.print(sample_table)
+
+    # Question distribution analysis
+    question_counts = {}
+    for test_row in test_rows:
+        question_counts[test_row.question_id] = (
+            question_counts.get(test_row.question_id, 0) + 1
+        )
+
+    console.print(
+        f"\n[cyan]Dataset contains {len(question_counts)} unique questions[/cyan]"
+    )
+    console.print(
+        f"[cyan]Average {sum(question_counts.values()) / len(question_counts):.1f} responses per question[/cyan]"
+    )
 
 
 def _demonstrate_map_evaluation(console: Console, *, verbose: bool) -> None:  # noqa: PLR0915
