@@ -106,7 +106,7 @@ def _get_git_commit_hash() -> str:
 
 def _log_model_performance(
     result: EvaluationResult,
-    model_name: str = "baseline",
+    strategy: str = "baseline",
     total_execution_time: float = 0.0,
 ) -> bool:
     """Log model performance to performance history file only if it beats the current best.
@@ -136,7 +136,7 @@ def _log_model_performance(
     new_entry = {
         "timestamp": timestamp,
         "commit_hash": commit_hash,
-        "model_name": model_name,
+        "strategy": strategy,
         "map_score": result.map_score,
         "total_observations": result.total_observations,
         "perfect_predictions": result.perfect_predictions,
@@ -174,7 +174,7 @@ def _display_performance_history(console: Console) -> None:
     history_table.add_column("Score", style="magenta", no_wrap=True)
     history_table.add_column("Date", style="cyan", no_wrap=True)
     history_table.add_column("Commit", style="dim", no_wrap=True)
-    history_table.add_column("Model", style="green", no_wrap=True)
+    history_table.add_column("Strategy", style="green", no_wrap=True)
 
     # Show top results
     for i, entry in enumerate(history[:MAX_HISTORY_DISPLAY], 1):
@@ -191,7 +191,7 @@ def _display_performance_history(console: Console) -> None:
             f"{entry['map_score']:.4f}",
             date_str,
             commit_short,
-            entry.get("model_name", "baseline"),
+            entry.get("strategy", "baseline"),
             style=style,
         )
 

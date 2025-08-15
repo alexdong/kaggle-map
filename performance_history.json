@@ -2,7 +2,7 @@
   {
     "timestamp": "2025-08-15T20:24:01.758081+00:00",
     "commit_hash": "2362e78ad5c4b6cd54bbc3bd87f17de6f40b4a86",
-    "model_name": "baseline",
+    "strategy": "baseline",
     "map_score": 0.7709060024707485,
     "total_observations": 36696,
     "perfect_predictions": 22699,
