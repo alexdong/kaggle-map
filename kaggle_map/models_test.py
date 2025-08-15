@@ -129,8 +129,6 @@ def test_evaluation_result_accepts_map_scores_between_zero_and_one():
             map_score=score,
             total_observations=10,
             perfect_predictions=5,
-            valid_predictions=30,
-            invalid_predictions=0
         )
         assert result.map_score == score
 
@@ -142,8 +140,6 @@ def test_evaluation_result_rejects_negative_map_scores():
             map_score=-0.1,
             total_observations=10,
             perfect_predictions=0,
-            valid_predictions=30,
-            invalid_predictions=0
         )
 
 
@@ -154,8 +150,6 @@ def test_evaluation_result_rejects_map_scores_above_one():
             map_score=1.1,
             total_observations=10,
             perfect_predictions=0,
-            valid_predictions=30,
-            invalid_predictions=0
         )
 
 
