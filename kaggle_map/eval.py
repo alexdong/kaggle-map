@@ -3,6 +3,7 @@
 import json
 import subprocess
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -90,7 +91,9 @@ def _get_git_commit_hash() -> str:
 
 
 def _log_model_performance(
-    result: EvaluationResult, model_name: str = "baseline"
+    result: EvaluationResult,
+    model_name: str = "baseline",
+    total_execution_time: float = 0.0,
 ) -> bool:
     """Log model performance to performance history file only if it beats the current best.
 
@@ -125,6 +128,7 @@ def _log_model_performance(
         "perfect_predictions": result.perfect_predictions,
         "valid_predictions": result.valid_predictions,
         "invalid_predictions": result.invalid_predictions,
+        "total_execution_time": total_execution_time,
     }
 
     # Add new entry and sort by score (best first)
@@ -293,6 +297,8 @@ def main() -> None:
 
 def _run_cross_validation(console: Console) -> None:
     """Run cross-validation using baseline model against train.csv."""
+    start_time = time.time()
+
     model_path = Path("baseline_model.json")
     train_csv_path = Path("dataset/train.csv")
 
@@ -346,8 +352,12 @@ def _run_cross_validation(console: Console) -> None:
 
         console.print("\n[bold green]✅ CROSS-VALIDATION COMPLETED[/bold green]")
 
+        # Calculate total execution time
+        total_execution_time = time.time() - start_time
+        logger.info(f"Total execution time: {total_execution_time:.2f} seconds")
+
         # Log performance to history if it's a new best
-        is_new_best = _log_model_performance(result, "baseline")
+        is_new_best = _log_model_performance(result, "baseline", total_execution_time)
 
         _display_cross_validation_results(console, result)
 
