@@ -69,28 +69,22 @@ if __name__ == "__main__":
     logger.info(f"Training data: {train_path}")
     logger.info(f"Output model: {output_path}")
 
-    try:
-        # Fit and save the model
-        fitted_model = fit_model(train_path, output_path)
+    # Fit and save the model
+    fitted_model = fit_model(train_path, output_path)
 
-        # Display final model summary
-        print("\n=== MODEL FITTING COMPLETED ===")
-        print(f"Training data: {train_path}")
-        print(f"Model saved to: {output_path}")
-        print(f"Questions processed: {len(fitted_model.correct_answers)}")
-        print(f"Model size: {output_path.stat().st_size / 1024:.1f} KB")
+    # Display final model summary
+    print("\n=== MODEL FITTING COMPLETED ===")
+    print(f"Training data: {train_path}")
+    print(f"Model saved to: {output_path}")
+    print(f"Questions processed: {len(fitted_model.correct_answers)}")
+    print(f"Model size: {output_path.stat().st_size / 1024:.1f} KB")
 
-        # Quick validation
-        if output_path.exists():
-            print("✅ Model file created successfully")
-        else:
-            print("❌ Model file not found after saving")
-            sys.exit(1)
-
-        print("====================================")
-        logger.info("Model fitting script completed successfully")
-
-    except Exception as e:
-        logger.error(f"Error during model fitting: {e}")
-        print(f"❌ Model fitting failed: {e}")
+    # Quick validation
+    if output_path.exists():
+        print("✅ Model file created successfully")
+    else:
+        print("❌ Model file not found after saving")
         sys.exit(1)
+
+    print("====================================")
+    logger.info("Model fitting script completed successfully")

@@ -125,51 +125,45 @@ if __name__ == "__main__":
     logger.info(f"Test data: {test_path}")
     logger.info(f"Output: {output_path}")
 
-    try:
-        # Check if files exist
-        if not model_path.exists():
-            print(f"❌ Model file not found: {model_path}")
-            print("Run fit.py first to train a model")
-            sys.exit(1)
-
-        if not test_path.exists():
-            print(f"❌ Test file not found: {test_path}")
-            sys.exit(1)
-
-        # Preview test data
-        test_df = load_and_preview_test_data(test_path)
-
-        # Make predictions
-        num_predictions = make_predictions(model_path, test_path, output_path)
-
-        # Display results
-        print("\n=== PREDICTION COMPLETED ===")
-        print(f"Model: {model_path}")
-        print(f"Test data: {test_path} ({len(test_df)} rows)")
-        print(f"Predictions: {num_predictions}")
-        print(f"Output: {output_path}")
-
-        # Validate output file
-        if output_path.exists():
-            submission_df = pd.read_csv(output_path)
-            print(
-                f"Submission file: {len(submission_df)} rows, {output_path.stat().st_size / 1024:.1f} KB"
-            )
-
-            # Show sample predictions
-            print("\nSample predictions:")
-            for _i, row in submission_df.head(3).iterrows():
-                print(f"  Row {row['row_id']}: {row['predictions']}")
-
-            print("✅ Prediction completed successfully")
-        else:
-            print("❌ Submission file not created")
-            sys.exit(1)
-
-        print("==============================")
-        logger.info("Prediction script completed successfully")
-
-    except Exception as e:
-        logger.error(f"Error during prediction: {e}")
-        print(f"❌ Prediction failed: {e}")
+    # Check if files exist
+    if not model_path.exists():
+        print(f"❌ Model file not found: {model_path}")
+        print("Run fit.py first to train a model")
         sys.exit(1)
+
+    if not test_path.exists():
+        print(f"❌ Test file not found: {test_path}")
+        sys.exit(1)
+
+    # Preview test data
+    test_df = load_and_preview_test_data(test_path)
+
+    # Make predictions
+    num_predictions = make_predictions(model_path, test_path, output_path)
+
+    # Display results
+    print("\n=== PREDICTION COMPLETED ===")
+    print(f"Model: {model_path}")
+    print(f"Test data: {test_path} ({len(test_df)} rows)")
+    print(f"Predictions: {num_predictions}")
+    print(f"Output: {output_path}")
+
+    # Validate output file
+    if output_path.exists():
+        submission_df = pd.read_csv(output_path)
+        print(
+            f"Submission file: {len(submission_df)} rows, {output_path.stat().st_size / 1024:.1f} KB"
+        )
+
+        # Show sample predictions
+        print("\nSample predictions:")
+        for _i, row in submission_df.head(3).iterrows():
+            print(f"  Row {row['row_id']}: {row['predictions']}")
+
+        print("✅ Prediction completed successfully")
+    else:
+        print("❌ Submission file not created")
+        sys.exit(1)
+
+    print("==============================")
+    logger.info("Prediction script completed successfully")
