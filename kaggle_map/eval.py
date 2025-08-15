@@ -54,7 +54,6 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
     # Calculate MAP@3 over common row_ids
     total_score = 0.0
     perfect_predictions = 0
-    valid_predictions = 0
 
     common_row_ids = set(ground_truth.keys()) & set(submissions.keys())
 
@@ -85,9 +84,6 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
         if ap == 1.0:
             perfect_predictions += 1
 
-        # Count prediction validity (all parsed predictions are valid by definition)
-        valid_predictions += len(submission_predictions)
-
     total_observations = len(common_row_ids)
     map_score = total_score / total_observations if total_observations > 0 else 0.0
 
@@ -97,8 +93,6 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
         map_score=map_score,
         total_observations=total_observations,
         perfect_predictions=perfect_predictions,
-        valid_predictions=valid_predictions,
-        invalid_predictions=0,  # Invalid predictions are filtered during parsing
     )
 
 
@@ -146,8 +140,6 @@ def _log_model_performance(
         "map_score": result.map_score,
         "total_observations": result.total_observations,
         "perfect_predictions": result.perfect_predictions,
-        "valid_predictions": result.valid_predictions,
-        "invalid_predictions": result.invalid_predictions,
         "total_execution_time": total_execution_time,
     }
 
@@ -530,14 +522,6 @@ def _display_cross_validation_results(
         f"{result.perfect_predictions} ({result.perfect_predictions / result.total_observations:.1%})",
         "Correct in 1st position",
     )
-    results_table.add_row(
-        "Valid Predictions",
-        str(result.valid_predictions),
-        "Total valid prediction attempts",
-    )
-    results_table.add_row(
-        "Invalid Predictions", str(result.invalid_predictions), "Parsing/format errors"
-    )
 
     console.print(results_table)
 
@@ -615,7 +599,7 @@ def _display_detailed_cross_validation_analysis(
     )
 
 
-def _demonstrate_map_evaluation(console: Console, *, verbose: bool) -> None:  # noqa: PLR0915
+def _demonstrate_map_evaluation(console: Console, *, verbose: bool) -> None:
     """Create and evaluate sample data to demonstrate MAP@3 calculation."""
     # Create sample data for demonstration using the rich type system
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -683,8 +667,6 @@ def _demonstrate_map_evaluation(console: Console, *, verbose: bool) -> None:  # 
         results_table.add_row(
             "Perfect Predictions (1st position)", str(result.perfect_predictions)
         )
-        results_table.add_row("Valid Predictions", str(result.valid_predictions))
-        results_table.add_row("Invalid Predictions", str(result.invalid_predictions))
 
         console.print(results_table)
 

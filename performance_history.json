@@ -6,8 +6,6 @@
     "map_score": 0.7709060024707485,
     "total_observations": 36696,
     "perfect_predictions": 22699,
-    "valid_predictions": 107737,
-    "invalid_predictions": 0,
     "total_execution_time": 2.431061029434204
   }
 ]
