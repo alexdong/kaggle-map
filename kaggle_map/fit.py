@@ -2,9 +2,12 @@
 
 from pathlib import Path
 
+import click
 from loguru import logger
+from rich.console import Console
+from rich.table import Table
 
-from .models import MAPModel, save_model
+from kaggle_map.models import MAPModel, save_model
 
 
 def fit_model(
@@ -45,46 +48,60 @@ def fit_model(
     return model
 
 
-if __name__ == "__main__":
+@click.command()
+@click.option(
+    "--train-path",
+    "-t",
+    type=click.Path(exists=True, path_type=Path),
+    default=Path("dataset/train.csv"),
+    help="Path to training CSV file",
+)
+@click.option(
+    "--output-path",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=Path("baseline_model.json"),
+    help="Path to save the fitted model",
+)
+def main(train_path: Path, output_path: Path) -> None:
     """Fit baseline model and save it for prediction use."""
-    import sys
-    from pathlib import Path
+    console = Console()
 
-    # Parse command line arguments
-    min_args_for_train = 1
-    min_args_for_output = 2
+    console.print("[bold blue]🚀 Starting Model Fitting[/bold blue]")
 
-    train_path = (
-        Path(sys.argv[1])
-        if len(sys.argv) > min_args_for_train
-        else Path("dataset/train.csv")
-    )
-
-    if len(sys.argv) > min_args_for_output:
-        output_path = Path(sys.argv[2])
-    else:
-        output_path = Path("baseline_model.json")
-
-    logger.info("Running model fitting script")
-    logger.info(f"Training data: {train_path}")
-    logger.info(f"Output model: {output_path}")
+    # Display input parameters
+    params_table = Table(title="Configuration")
+    params_table.add_column("Parameter", style="cyan")
+    params_table.add_column("Value", style="magenta")
+    params_table.add_row("Training data", str(train_path))
+    params_table.add_row("Output model", str(output_path))
+    console.print(params_table)
 
     # Fit and save the model
-    fitted_model = fit_model(train_path, output_path)
+    with console.status("[bold green]Fitting model..."):
+        fitted_model = fit_model(train_path, output_path)
 
-    # Display final model summary
-    print("\n=== MODEL FITTING COMPLETED ===")
-    print(f"Training data: {train_path}")
-    print(f"Model saved to: {output_path}")
-    print(f"Questions processed: {len(fitted_model.correct_answers)}")
-    print(f"Model size: {output_path.stat().st_size / 1024:.1f} KB")
+    # Display results
+    console.print("\n[bold green]✅ MODEL FITTING COMPLETED[/bold green]")
 
-    # Quick validation
+    results_table = Table(title="Results")
+    results_table.add_column("Metric", style="cyan")
+    results_table.add_column("Value", style="magenta")
+
+    results_table.add_row("Questions processed", str(len(fitted_model.correct_answers)))
+
     if output_path.exists():
-        print("✅ Model file created successfully")
+        model_size_kb = output_path.stat().st_size / 1024
+        results_table.add_row("Model size", f"{model_size_kb:.1f} KB")
+        results_table.add_row("Status", "[green]✅ Successfully saved[/green]")
     else:
-        print("❌ Model file not found after saving")
-        sys.exit(1)
+        results_table.add_row("Status", "[red]❌ File not found after saving[/red]")
+        console.print("[bold red]Error: Model file not found after saving[/bold red]")
+        raise click.Abort()
 
-    print("====================================")
+    console.print(results_table)
     logger.info("Model fitting script completed successfully")
+
+
+if __name__ == "__main__":
+    main()

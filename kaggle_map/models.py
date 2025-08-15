@@ -7,9 +7,12 @@ from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
 
+import click
 import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, field_validator
+from rich.console import Console
+from rich.table import Table
 
 # Domain-specific type aliases
 type QuestionId = int
@@ -374,70 +377,116 @@ def load_model(filepath: Path) -> MAPModel:
     return MAPModel.from_dict(data)
 
 
-if __name__ == "__main__":
+@click.command()
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed model contents")
+def main(*, verbose: bool) -> None:
     """Demonstrate model fitting and basic validation."""
-    logger.info("Running models.py demonstration")
+    console = Console()
 
-    # Fit the model using default training data
-    model = MAPModel.fit()
-    logger.info("Model fitting completed successfully")
+    with console.status("[bold green]Fitting model..."):
+        logger.info("Running models.py demonstration")
+        model = MAPModel.fit()
+        logger.info("Model fitting completed successfully")
 
-    # Display detailed model information
-    logger.info(
-        f"Model contains {len(model.correct_answers)} questions with correct answers"
+    console.print("✅ [bold green]Model fitting completed successfully[/bold green]")
+
+    # Display model statistics
+    _display_model_stats(console, model)
+
+    if verbose:
+        _display_detailed_model_contents(console, model)
+
+    _save_and_validate_model(console, model)
+    _demonstrate_prediction_types(console, model)
+
+
+def _display_model_stats(console: Console, model: "MAPModel") -> None:
+    """Display model statistics in a table."""
+    stats_table = Table(title="Model Statistics")
+    stats_table.add_column("Metric", style="cyan")
+    stats_table.add_column("Count", style="magenta")
+
+    stats_table.add_row(
+        "Questions with correct answers", str(len(model.correct_answers))
     )
-    logger.info(
-        f"Model contains {len(model.category_frequencies)} questions with category patterns"
+    stats_table.add_row(
+        "Questions with category patterns", str(len(model.category_frequencies))
     )
-    logger.info(
-        f"Model contains {len(model.common_misconceptions)} questions with misconception data"
+    stats_table.add_row(
+        "Questions with misconception data", str(len(model.common_misconceptions))
     )
 
+    console.print(stats_table)
+
+
+def _display_detailed_model_contents(console: Console, model: "MAPModel") -> None:  # noqa: C901
+    """Display detailed model contents when verbose is enabled."""
     # Print detailed model contents
-    print("\n=== MODEL DETAILS ===")
-    print(f"Questions with correct answers: {len(model.correct_answers)}")
-    for qid, answer in sorted(model.correct_answers.items()):
-        print(f"  Question {qid}: {answer}")
+    console.print("\n[bold]Detailed Model Contents[/bold]")
 
-    print(f"\nCategory patterns for {len(model.category_frequencies)} questions:")
+    # Correct answers
+    console.print("\n[cyan]Questions with correct answers:[/cyan]")
+    for qid, answer in sorted(model.correct_answers.items()):
+        console.print(f"  Question {qid}: {answer}")
+
+    # Category patterns
+    console.print(
+        f"\n[cyan]Category patterns for {len(model.category_frequencies)} questions:[/cyan]"
+    )
     for qid, patterns in sorted(model.category_frequencies.items()):
-        print(f"  Question {qid}:")
+        console.print(f"  Question {qid}:")
         if True in patterns:
             correct_cats = [cat.value for cat in patterns[True]]
-            print(f"    When correct: {correct_cats}")
+            console.print(f"    When correct: {correct_cats}", style="green")
         if False in patterns:
             incorrect_cats = [cat.value for cat in patterns[False]]
-            print(f"    When incorrect: {incorrect_cats}")
+            console.print(f"    When incorrect: {incorrect_cats}", style="red")
 
-    print(
-        f"\nMost common misconceptions for {len(model.common_misconceptions)} questions:"
+    # Misconceptions
+    console.print(
+        f"\n[cyan]Most common misconceptions for {len(model.common_misconceptions)} questions:[/cyan]"
     )
     misconception_count = 0
     for qid, misconception in sorted(model.common_misconceptions.items()):
         if misconception is not None:
-            print(f"  Question {qid}: {misconception}")
+            console.print(f"  Question {qid}: {misconception}")
             misconception_count += 1
+
     if misconception_count == 0:
-        print("  (No misconceptions found in the data)")
+        console.print("  (No misconceptions found in the data)", style="dim")
     else:
-        print(f"  ({misconception_count} questions have misconceptions)")
-    print("========================\n")
+        console.print(
+            f"  ({misconception_count} questions have misconceptions)", style="green"
+        )
 
-    # Save the model for testing
+
+def _save_and_validate_model(console: Console, model: "MAPModel") -> Path:
+    """Save model and validate serialization."""
     model_path = Path("baseline_model.json")
-    save_model(model, model_path)
-    logger.info(f"Model saved to {model_path}")
 
-    # Load it back to verify serialization works
-    loaded_model = load_model(model_path)
-    logger.info("Model loading verification successful")
+    with console.status("[bold blue]Saving and validating model..."):
+        save_model(model, model_path)
+        logger.info(f"Model saved to {model_path}")
 
-    # Basic validation that the loaded model matches
-    assert len(loaded_model.correct_answers) == len(model.correct_answers)
-    assert len(loaded_model.category_frequencies) == len(model.category_frequencies)
-    assert len(loaded_model.common_misconceptions) == len(model.common_misconceptions)
-    logger.info("Model serialization validation passed")
+        # Load it back to verify serialization works
+        loaded_model = load_model(model_path)
+        logger.info("Model loading verification successful")
 
+        # Basic validation that the loaded model matches
+        assert len(loaded_model.correct_answers) == len(model.correct_answers)
+        assert len(loaded_model.category_frequencies) == len(model.category_frequencies)
+        assert len(loaded_model.common_misconceptions) == len(
+            model.common_misconceptions
+        )
+        logger.info("Model serialization validation passed")
+
+    console.print(f"✅ [bold green]Model saved to {model_path}[/bold green]")
+    console.print("✅ [bold green]Serialization validation passed[/bold green]")
+    return model_path
+
+
+def _demonstrate_prediction_types(console: Console, model: "MAPModel") -> None:
+    """Demonstrate type-safe prediction creation and model usage."""
     # Test prediction format with a sample
     sample_test_row = TestRow(
         row_id=99999,
@@ -447,29 +496,30 @@ if __name__ == "__main__":
         student_explanation="Sample explanation",
     )
     sample_predictions = model.predict([sample_test_row])
-    print("\nSample prediction for question 31772:")
-    print(f"  Row ID: {sample_predictions[0].row_id}")
-    print(
-        f"  Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
+
+    console.print("\n[bold]Sample Prediction Test[/bold]")
+    console.print(f"Row ID: {sample_predictions[0].row_id}")
+    console.print(
+        f"Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
     )
-    print(f"  Prediction objects: {sample_predictions[0].predicted_categories}")
-    print("  Format validation: All predictions are valid Pydantic objects")
 
     # Test prediction creation with type safety
     test_pred1 = Prediction(category=Category.TRUE_CORRECT)
     test_pred2 = Prediction(
         category=Category.FALSE_MISCONCEPTION, misconception="TestError"
     )
-    print("  ✅ Type-safe creation works:")
-    print(f"    {test_pred1} -> {test_pred1.value}")
-    print(f"    {test_pred2} -> {test_pred2.value}")
+    console.print("\n[bold green]✅ Type-safe creation works:[/bold green]")
+    console.print(f"  {test_pred1} -> {test_pred1.value}")
+    console.print(f"  {test_pred2} -> {test_pred2.value}")
 
     # Test that misconception is ignored for non-misconception categories
     test_pred3 = Prediction(
         category=Category.TRUE_CORRECT, misconception="ShouldBeIgnored"
     )
-    print(
-        f"    {test_pred3} -> {test_pred3.value} (misconception ignored for non-misconception category)"
+    console.print(
+        f"  {test_pred3} -> {test_pred3.value} (misconception ignored for non-misconception category)"
     )
 
-    print("========================")
+
+if __name__ == "__main__":
+    main()
