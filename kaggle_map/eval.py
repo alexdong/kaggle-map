@@ -1,6 +1,9 @@
 """MAP@3 evaluation metric implementation for kaggle competition."""
 
+import json
+import subprocess
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -21,6 +24,10 @@ from kaggle_map.models import (
 EXCELLENT_THRESHOLD = 0.8
 GOOD_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.4
+
+# Model performance log path
+MODEL_PERFORMANCE_LOG = Path("performance_history.json")
+MAX_HISTORY_DISPLAY = 5
 
 
 def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
@@ -72,6 +79,107 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
         valid_predictions=valid_predictions,
         invalid_predictions=0,  # Invalid predictions are filtered during parsing
     )
+
+
+def _get_git_commit_hash() -> str:
+    """Get current git commit hash."""
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    return result.stdout.strip()
+
+
+def _log_model_performance(result: EvaluationResult, model_name: str = "baseline") -> bool:
+    """Log model performance to performance history file only if it beats the current best.
+    
+    Returns:
+        True if the model was logged (new best), False otherwise
+    """
+    # Load existing performance history
+    performance_history = []
+    if MODEL_PERFORMANCE_LOG.exists():
+        with MODEL_PERFORMANCE_LOG.open() as f:
+            performance_history = json.load(f)
+    
+    # Check if this beats the current best score
+    current_best = performance_history[0]["map_score"] if performance_history else 0.0
+    
+    if result.map_score <= current_best:
+        logger.info(f"Score {result.map_score:.4f} did not beat current best {current_best:.4f} - not logging")
+        return False
+    
+    # This is a new best! Log it
+    commit_hash = _get_git_commit_hash()
+    timestamp = datetime.now(UTC).isoformat()
+    
+    new_entry = {
+        "timestamp": timestamp,
+        "commit_hash": commit_hash,
+        "model_name": model_name,
+        "map_score": result.map_score,
+        "total_observations": result.total_observations,
+        "perfect_predictions": result.perfect_predictions,
+        "valid_predictions": result.valid_predictions,
+        "invalid_predictions": result.invalid_predictions
+    }
+    
+    # Add new entry and sort by score (best first)
+    performance_history.append(new_entry)
+    performance_history.sort(key=lambda x: x["map_score"], reverse=True)
+    
+    # Save updated history
+    with MODEL_PERFORMANCE_LOG.open("w") as f:
+        json.dump(performance_history, f, indent=2)
+    logger.info(f"🎉 NEW BEST! Logged performance: MAP@3={result.map_score:.4f} to {MODEL_PERFORMANCE_LOG}")
+    return True
+
+
+def _display_performance_history(console: Console) -> None:
+    """Display recent performance history if available."""
+    if not MODEL_PERFORMANCE_LOG.exists():
+        return
+    
+    with MODEL_PERFORMANCE_LOG.open() as f:
+        history = json.load(f)
+    
+    if not history:
+        return
+    
+    console.print("\n[bold cyan]Recent Performance History (Top 5)[/bold cyan]")
+    
+    history_table = Table()
+    history_table.add_column("Rank", style="yellow", no_wrap=True)
+    history_table.add_column("Score", style="magenta", no_wrap=True)
+    history_table.add_column("Date", style="cyan", no_wrap=True)
+    history_table.add_column("Commit", style="dim", no_wrap=True)
+    history_table.add_column("Model", style="green", no_wrap=True)
+    
+    # Show top results
+    for i, entry in enumerate(history[:MAX_HISTORY_DISPLAY], 1):
+        timestamp = datetime.fromisoformat(entry["timestamp"])
+        date_str = timestamp.strftime("%Y-%m-%d %H:%M")
+        commit_short = entry["commit_hash"][:8]
+        
+        # Highlight current best score
+        style = "bold green" if i == 1 else ""
+        rank_str = f"🏆 {i}" if i == 1 else str(i)
+        
+        history_table.add_row(
+            rank_str,
+            f"{entry['map_score']:.4f}",
+            date_str,
+            commit_short,
+            entry.get("model_name", "baseline"),
+            style=style
+        )
+    
+    console.print(history_table)
+    
+    if len(history) > MAX_HISTORY_DISPLAY:
+        console.print(f"[dim]... and {len(history) - MAX_HISTORY_DISPLAY} more entries in {MODEL_PERFORMANCE_LOG}[/dim]")
 
 
 def _load_ground_truth(path: Path) -> dict[int, Prediction]:
@@ -233,7 +341,17 @@ def _run_cross_validation(console: Console) -> None:
 
         console.print("\n[bold green]✅ CROSS-VALIDATION COMPLETED[/bold green]")
 
+        # Log performance to history if it's a new best
+        is_new_best = _log_model_performance(result, "baseline")
+        
         _display_cross_validation_results(console, result)
+        
+        if is_new_best:
+            console.print("\n🎉 [bold yellow]NEW BEST SCORE![/bold yellow] This result has been added to the performance history.")
+        else:
+            console.print("\n[dim]Score did not beat current best - not added to history.[/dim]")
+        
+        _display_performance_history(console)
         _display_detailed_cross_validation_analysis(
             console, test_rows, predictions, ground_truth_data
         )
