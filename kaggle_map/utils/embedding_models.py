@@ -1,4 +1,5 @@
-from __future__ import annotations
+from dataclasses import dataclass
+from enum import Enum
 
 """Embedding model registry and metadata.
 
@@ -6,9 +7,7 @@ Defines the `EmbeddingModel` enum with a few strong baseline choices and
 metadata helpful for configuration (dimensions and recommended max sequence).
 """
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Dict, Iterable, List
+from sentence_transformers import SentenceTransformer
 
 
 @dataclass(frozen=True)
@@ -37,7 +36,7 @@ class EmbeddingModel(Enum):
 
     @property
     def spec(self) -> EmbeddingSpec:
-        specs: Dict[EmbeddingModel, EmbeddingSpec] = {
+        specs: dict[EmbeddingModel, EmbeddingSpec] = {
             EmbeddingModel.MINI_LM: EmbeddingSpec(
                 model_id="sentence-transformers/all-MiniLM-L6-v2",
                 dim=384,
@@ -53,7 +52,7 @@ class EmbeddingModel(Enum):
                 recommended_max_seq=512,
                 notes=(
                     "Runner-up; often a bit stronger on general retrieval. "
-                    "~2–3x slower, 2x vector size vs MiniLM."
+                    "~2-3x slower, 2x vector size vs MiniLM."
                 ),
             ),
             EmbeddingModel.GTE_SMALL: EmbeddingSpec(
@@ -90,6 +89,20 @@ class EmbeddingModel(Enum):
         return self.spec.recommended_max_seq
 
     @staticmethod
-    def all() -> List["EmbeddingModel"]:
+    def all() -> list["EmbeddingModel"]:
         return list(EmbeddingModel)
 
+
+def get_tokenizer(model: EmbeddingModel = EmbeddingModel.MINI_LM) -> SentenceTransformer:
+    """Initialize and return a SentenceTransformer model.
+    
+    Args:
+        model: The embedding model to use (defaults to MiniLM for speed)
+        
+    Returns:
+        An initialized SentenceTransformer instance
+        
+    Raises:
+        ImportError: If sentence-transformers is not installed
+    """
+    return SentenceTransformer(model.model_id)

@@ -1,61 +1,88 @@
-"""
-Quick example for building BERT inputs from Question/Answer/Explanation
-using the truncation policy that preserves Q+A and truncates Explanation first.
+import pytest
+import numpy as np
 
-Run:
-    python kaggle_map/tokenizer_test.py
-"""
-
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-import pandas as pd
-from transformers import AutoTokenizer
-
-# Allow running the script directly
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from kaggle_map.utils.tokenizer import (
-    build_qae_text,
-    batch_encode_qae_expl_truncated_first,
-)
+from kaggle_map.utils.tokenizer import build_qae_text, encode, batch_encode
+from kaggle_map.utils.embeddings import get_tokenizer, EmbeddingModel
+from kaggle_map.models import TrainingRow, Category
 
 
-def main() -> None:
-    df = pd.read_csv(
-        "datasets/train_original.csv",
-        usecols=["QuestionText", "MC_Answer", "StudentExplanation"],
-    ).fillna("")
-
-    tok = AutoTokenizer.from_pretrained("bert-base-uncased")
-
-    # Demo with a conservative max_length to show truncation behavior
-    max_len = 128
-    batch = batch_encode_qae_expl_truncated_first(
-        tok,
-        df["QuestionText"].tolist(),
-        df["MC_Answer"].tolist(),
-        df["StudentExplanation"].tolist(),
-        max_length=max_len,
-        pad_to_max_length=True,
+def test_build_qae_text():
+    """Test that build_qae_text properly normalizes and formats text."""
+    row = TrainingRow(
+        row_id=1,
+        question_id=1001,
+        question_text="What is  2 + 2  ?",
+        mc_answer=r"\( \frac{4}{1} \)",
+        student_explanation="The answer   is   four.",
+        category=Category.TRUE_CORRECT,
+        misconception=None
     )
-
-    # Simple inspection
-    lengths = [sum(m) for m in batch["attention_mask"]]
-    over_just_by_padding = sum(1 for L in lengths if L == max_len)
-    print(f"Encoded {len(lengths)} rows; max_length={max_len}")
-    print(f"Rows at cap (likely truncated or exactly full): {over_just_by_padding}")
-
-    # Show a sample
-    i = 0
-    s = build_qae_text(
-        df.iloc[i]["QuestionText"], df.iloc[i]["MC_Answer"], df.iloc[i]["StudentExplanation"]
-    )
-    print("\nSample concatenated text:\n", s)
-    print("\nTokenized length:", lengths[i])
+    
+    result = build_qae_text(row)
+    expected = "Question: What is 2 + 2 ?, Answer: 4/1, Explanation: The answer is four."
+    assert result == expected
 
 
-if __name__ == "__main__":
-    main()
+def test_encode_single_text():
+    """Test encoding a single text into embeddings."""
+    try:
+        model = get_tokenizer(EmbeddingModel.MINI_LM)
+        text = "Question: What is 2+2?, Answer: 4, Explanation: Basic addition."
+        
+        embedding = encode(model, text)
+        
+        assert isinstance(embedding, np.ndarray)
+        assert embedding.shape == (EmbeddingModel.MINI_LM.dim,)
+        assert embedding.dtype == np.float32
+        
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+def test_batch_encode():
+    """Test batch encoding multiple texts."""
+    try:
+        model = get_tokenizer(EmbeddingModel.MINI_LM)
+        texts = [
+            "Question: What is 2+2?, Answer: 4, Explanation: Basic addition.",
+            "Question: What is 3+3?, Answer: 6, Explanation: Another addition.",
+        ]
+        
+        embeddings = batch_encode(model, texts)
+        
+        assert isinstance(embeddings, np.ndarray)
+        assert embeddings.shape == (2, EmbeddingModel.MINI_LM.dim)
+        assert embeddings.dtype == np.float32
+        
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+def test_integration_build_and_encode():
+    """Test the full pipeline from TrainingRow to embeddings."""
+    try:
+        model = get_tokenizer(EmbeddingModel.MINI_LM)
+        
+        row = TrainingRow(
+            row_id=2,
+            question_id=1002,
+            question_text="What is the square root of 16?",
+            mc_answer="4",
+            student_explanation="Since 4 * 4 = 16, the square root is 4.",
+            category=Category.TRUE_CORRECT,
+            misconception=None
+        )
+        
+        # Build text
+        text = build_qae_text(row)
+        assert "Question:" in text
+        assert "Answer:" in text
+        assert "Explanation:" in text
+        
+        # Encode text
+        embedding = encode(model, text)
+        assert isinstance(embedding, np.ndarray)
+        assert len(embedding) == EmbeddingModel.MINI_LM.dim
+        
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")

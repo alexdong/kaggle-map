@@ -19,6 +19,11 @@ dependencies = [
     "pytest-asyncio>=1.0.0",
     "kaggle>=1.7.4.5",
     "pandas>=2.0.0",
+    "transformers>=4.55.2",
+    "numpy>=2.3.2",
+    "scikit-learn>=1.7.1",
+    "sentence-transformers>=5.1.0",
+    "torch>=2.8.0",
 ]
 
 [project.scripts]

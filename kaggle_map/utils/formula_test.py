@@ -13,11 +13,11 @@ from kaggle_map.utils.formula import (
 @pytest.mark.parametrize(
     "inp, expected",
     [
-        (r"\( \\frac{3}{6} \)", "3/6 (aka 1/2)"),
-        (r"\( \\frac{1}{3} \)", "1/3 (aka 1/3)"),
+        (r"\( \\frac{3}{6} \)", "3/6"),
+        (r"\( \\frac{1}{3} \)", "1/3"),
         (r"\( 10 \)", "10"),
         (r"Not enough information", "Not enough information"),
-        (r"\\frac{2}{15}", "2/15 (aka 2/15)"),
+        (r"\\frac{2}{15}", "2/15"),
         (r"Some \\textbf{bold} thing", "Some bold thing"),
     ],
 )
@@ -45,7 +45,7 @@ def test_normalize_text(inp: str, expected: str) -> None:
             "What fraction?",
             r"\( \\frac{3}{6} \)",
             "because reasons",
-            ["Question: What fraction?", "Provided answer: 3/6 (aka 1/2)", "Student explanation: because reasons"],
+            ["Question: What fraction?", "Provided answer: 3/6", "Student explanation: because reasons"],
         ),
         (
             "Compute value",

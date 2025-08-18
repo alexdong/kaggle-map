@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 
 _FRAC_RE = re.compile(r"\\frac\s*\{\s*([^\}]+)\s*\}\s*\{\s*([^\}]+)\s*\}")
@@ -8,7 +7,7 @@ _NUM_RE = re.compile(r"\d{2,}")
 
 
 def normalize_latex_answer(s: str) -> str:
-    """Turn LaTeX like \( \frac{3}{6} \) into '3/6 (aka 1/2)'.
+    """Turn LaTeX like \\( \frac{3}{6} \\) into '3/6'.
 
     Fallback: remove simple LaTeX commands and whitespace normalize.
     """
@@ -20,16 +19,13 @@ def normalize_latex_answer(s: str) -> str:
         num, den = m.group(1), m.group(2)
         try:
             n, d = int(num), int(den)
-            g = math.gcd(n, d)
-            simp = f"{n//g}/{d//g}"
-            return f"{n}/{d} (aka {simp})"
+            return f"{n}/{d}"
         except Exception:
             pass
     s = re.sub(r"\\[a-zA-Z]+", " ", s)  # remove LaTeX commands like \textbf
     s = s.replace("{", "").replace("}", "")  # drop leftover braces
     s = s.replace("\\", "")  # drop stray backslashes
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def normalize_text(s: str) -> str:
