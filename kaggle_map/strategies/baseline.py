@@ -10,7 +10,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from ..models import (
+from kaggle_map.models import (
     Answer,
     Category,
     Misconception,
@@ -20,13 +20,14 @@ from ..models import (
     TestRow,
     TrainingRow,
 )
+
 from .base import Strategy
 
 
 @dataclass(frozen=True)
 class BaselineStrategy(Strategy):
     """Baseline model for predicting student misconceptions.
-    
+
     Uses frequency-based approach with category patterns by answer correctness
     and most common misconceptions per question.
     """
@@ -46,7 +47,9 @@ class BaselineStrategy(Strategy):
         return "Frequency-based model using category patterns and common misconceptions"
 
     @classmethod
-    def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "BaselineStrategy":
+    def fit(
+        cls, train_csv_path: Path = Path("dataset/train.csv")
+    ) -> "BaselineStrategy":
         """Build model from training data.
 
         Args:
@@ -130,13 +133,16 @@ class BaselineStrategy(Strategy):
     def display_detailed_info(self, console: Console) -> None:
         """Display detailed model info for verbose mode."""
         console.print("\\n[bold]Detailed Baseline Model Contents[/bold]")
+        self._display_correct_answers(console)
+        self._display_category_patterns(console)
+        self._display_misconceptions_summary(console)
 
-        # Correct answers
+    def _display_correct_answers(self, console: Console) -> None:
         console.print("\\n[cyan]Questions with correct answers:[/cyan]")
         for qid, answer in sorted(self.correct_answers.items()):
             console.print(f"  Question {qid}: {answer}")
 
-        # Category patterns
+    def _display_category_patterns(self, console: Console) -> None:
         console.print(
             f"\\n[cyan]Category patterns for {len(self.category_frequencies)} questions:[/cyan]"
         )
@@ -149,7 +155,7 @@ class BaselineStrategy(Strategy):
                 incorrect_cats = [cat.value for cat in patterns[False]]
                 console.print(f"    When incorrect: {incorrect_cats}", style="red")
 
-        # Misconceptions
+    def _display_misconceptions_summary(self, console: Console) -> None:
         console.print(
             f"\\n[cyan]Most common misconceptions for {len(self.common_misconceptions)} questions:[/cyan]"
         )
@@ -163,7 +169,8 @@ class BaselineStrategy(Strategy):
             console.print("  (No misconceptions found in the data)", style="dim")
         else:
             console.print(
-                f"  ({misconception_count} questions have misconceptions)", style="green"
+                f"  ({misconception_count} questions have misconceptions)",
+                style="green",
             )
 
     def demonstrate_predictions(self, console: Console) -> None:
@@ -274,7 +281,9 @@ class BaselineStrategy(Strategy):
         return training_rows
 
     @staticmethod
-    def _extract_correct_answers(training_data: list[TrainingRow]) -> dict[QuestionId, Answer]:
+    def _extract_correct_answers(
+        training_data: list[TrainingRow],
+    ) -> dict[QuestionId, Answer]:
         """Extract the correct answer for each question."""
         assert training_data, "Training data cannot be empty"
 

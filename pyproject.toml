@@ -32,6 +32,13 @@ exclude = ["llms*"]
 dev-dependencies = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.3.1",
+    # Minimal runtime deps needed by tests when using --no-project
+    "pandas>=2.0.0",
+    "pydantic",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "loguru>=0.7.0",
     "ruff>=0.11.6",
     "ty>=0.0.1a14",
 ]
@@ -94,7 +101,7 @@ max-complexity = 5
 [tool.pytest.ini_options]
 testpaths = ["kaggle_map", "tests"]
 python_files = ["*_test.py"]
-addopts = "-vv --tb=short"
+addopts = "-vv --tb=short -n auto --dist loadfile"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
@@ -110,4 +117,3 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
-

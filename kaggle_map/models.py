@@ -132,5 +132,3 @@ class EvaluationResult(BaseModel):
     def validate_map_score(cls, v: float) -> float:
         assert 0.0 <= v <= 1.0, f"MAP score must be between 0 and 1, got {v}"
         return v
-
-
