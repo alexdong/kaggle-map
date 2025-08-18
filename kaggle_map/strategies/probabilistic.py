@@ -10,7 +10,8 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from ..models import (
+from kaggle_map.models import (
+    _MAX_DISPLAY_CONTEXTS,
     Answer,
     Category,
     Misconception,
@@ -20,8 +21,8 @@ from ..models import (
     SubmissionRow,
     TestRow,
     TrainingRow,
-    _MAX_DISPLAY_CONTEXTS,
 )
+
 from .base import Strategy
 
 # Type aliases for probabilistic model
@@ -257,7 +258,7 @@ class ProbabilisticStrategy(Strategy):
                 console.print(f"    {category.value}: {prob:.3f}")
 
         # Show global priors
-        console.print(f"\\n[cyan]Global category priors:[/cyan]")
+        console.print("\\n[cyan]Global category priors:[/cyan]")
         sorted_global = sorted(
             self.global_category_prior.items(), key=lambda x: x[1], reverse=True
         )

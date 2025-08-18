@@ -11,6 +11,9 @@ type QuestionId = int
 type Answer = str
 type Misconception = str
 
+# Display constants
+_MAX_DISPLAY_CONTEXTS = 10
+
 
 class ResponseContext(NamedTuple):
     """The fundamental unit for probability modeling.
