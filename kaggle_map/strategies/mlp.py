@@ -159,9 +159,10 @@ class MLPStrategy(Strategy):
     @classmethod
     def fit(
         cls,
-        train_csv_path: Path = Path("dataset/train.csv"),
+        train_csv_path: Path = Path("datasets/train.csv"),
         train_split: float = 1.0,
         random_seed: int = 42,
+        embeddings_path: Path | None = None,
     ) -> "MLPStrategy":
         """Train the MLP strategy on training data.
 
@@ -169,6 +170,7 @@ class MLPStrategy(Strategy):
             train_csv_path: Path to training CSV file
             train_split: Fraction of data to use for training (default: 1.0 = all data)
             random_seed: Random seed for reproducible results
+            embeddings_path: Path to pre-computed embeddings .npz file (optional)
 
         Returns:
             Trained MLPStrategy instance
@@ -211,13 +213,28 @@ class MLPStrategy(Strategy):
             f"Found misconceptions for {len(question_misconceptions)} questions"
         )
 
-        # Generate embeddings and labels
+        # Generate or load embeddings and labels
         embedding_model = EmbeddingModel.MINI_LM
-        embeddings, correctness, misconception_labels, question_ids = (
-            cls._prepare_training_data(
-                training_data, correct_answers, question_misconceptions, embedding_model
+        if embeddings_path is not None and embeddings_path.exists():
+            logger.info(f"Loading pre-computed embeddings from {embeddings_path}")
+            embeddings, correctness, misconception_labels, question_ids = (
+                cls._load_precomputed_embeddings(
+                    training_data,
+                    correct_answers,
+                    question_misconceptions,
+                    embeddings_path,
+                )
             )
-        )
+        else:
+            logger.info("Generating embeddings from training data...")
+            embeddings, correctness, misconception_labels, question_ids = (
+                cls._prepare_training_data(
+                    training_data,
+                    correct_answers,
+                    question_misconceptions,
+                    embedding_model,
+                )
+            )
 
         # Train model
         model = cls._train_model(
@@ -630,6 +647,69 @@ class MLPStrategy(Strategy):
             f"Extracted misconceptions for {len(question_misconceptions)} questions"
         )
         return question_misconceptions
+
+    @staticmethod
+    def _load_precomputed_embeddings(
+        training_data: list[TrainingRow],
+        correct_answers: dict[QuestionId, Answer],
+        question_misconceptions: dict[QuestionId, list[str]],
+        embeddings_path: Path,
+    ) -> tuple[np.ndarray, np.ndarray, dict[QuestionId, np.ndarray], np.ndarray]:
+        """Load pre-computed embeddings from npz file and align with training data."""
+        # Load the embeddings file
+        embeddings_data = np.load(embeddings_path)
+        stored_row_ids = embeddings_data["row_ids"]
+        stored_embeddings = embeddings_data["embeddings"]
+
+        logger.debug(f"Loaded {len(stored_row_ids)} embeddings from {embeddings_path}")
+
+        # Create mapping from row_id to embedding
+        row_id_to_embedding = {}
+        for i, row_id in enumerate(stored_row_ids):
+            row_id_to_embedding[row_id] = stored_embeddings[i]
+
+        # Process training data and align with embeddings
+        embeddings = []
+        correctness = []
+        question_ids = []
+        misconception_labels = {qid: [] for qid in question_misconceptions}
+
+        matched_count = 0
+        for row in training_data:
+            if row.question_id not in question_misconceptions:
+                continue
+
+            # Check if we have embedding for this row
+            if row.row_id not in row_id_to_embedding:
+                logger.warning(f"No embedding found for row_id {row.row_id}, skipping")
+                continue
+
+            matched_count += 1
+            embeddings.append(row_id_to_embedding[row.row_id])
+
+            # Determine correctness
+            is_correct = (
+                row.question_id in correct_answers
+                and row.mc_answer == correct_answers[row.question_id]
+            )
+            correctness.append(float(is_correct))
+            question_ids.append(row.question_id)
+
+            # Create misconception label
+            label = MLPStrategy._create_misconception_label(
+                row, question_misconceptions
+            )
+            misconception_labels[row.question_id].append(label)
+
+        logger.info(f"Matched {matched_count} rows with pre-computed embeddings")
+
+        return MLPStrategy._convert_to_arrays(
+            embeddings,
+            correctness,
+            question_ids,
+            misconception_labels,
+            question_misconceptions,
+        )
 
     @staticmethod
     def _prepare_training_data(

@@ -39,6 +39,11 @@ def cli() -> None:
     default=42,
     help="Random seed for reproducible results (default: 42)",
 )
+@click.option(
+    "--embeddings-path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to pre-computed embeddings .npz file (optional)",
+)
 def run(
     strategy: str,
     action: str,
@@ -48,6 +53,7 @@ def run(
     output_path: str | None,
     train_split: float,
     random_seed: int,
+    embeddings_path: Path | None,
 ) -> None:
     """Run a strategy with the specified action.
 
@@ -69,6 +75,7 @@ def run(
                 output_path=output_path,
                 train_split=train_split,
                 random_seed=random_seed,
+                embeddings_path=embeddings_path,
             ),
             "eval": lambda: _handle_eval(
                 strategy,
@@ -142,6 +149,7 @@ def _handle_fit(
     output_path: str | None,
     train_split: float,
     random_seed: int,
+    embeddings_path: Path | None,
 ) -> None:
     """Handle the fit action."""
     console.print(
@@ -149,12 +157,23 @@ def _handle_fit(
     )
 
     with console.status(f"[bold green]Fitting {strategy} strategy..."):
-        # Check if strategy supports train_split parameter
+        # Check if strategy supports enhanced parameters
+        fit_method = strategy_class.fit
         if (
-            hasattr(strategy_class.fit, "__code__")
-            and "train_split" in strategy_class.fit.__code__.co_varnames
+            hasattr(fit_method, "__code__")
+            and "train_split" in fit_method.__code__.co_varnames
         ):
-            model = strategy_class.fit(train_split=train_split, random_seed=random_seed)  # type: ignore[call-arg]
+            # Build kwargs based on what the strategy supports
+            fit_kwargs = {"train_split": train_split, "random_seed": random_seed}
+            if (
+                "embeddings_path" in fit_method.__code__.co_varnames
+                and embeddings_path is not None
+            ):
+                fit_kwargs["embeddings_path"] = embeddings_path
+                console.print(
+                    f"[dim]Using pre-computed embeddings from {embeddings_path}[/dim]"
+                )
+            model = strategy_class.fit(**fit_kwargs)  # type: ignore[call-arg]
         else:
             # Fallback for strategies that don't support split
             model = strategy_class.fit()
