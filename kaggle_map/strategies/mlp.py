@@ -273,19 +273,31 @@ class MLPNet(nn.Module):
         for question_id, category_map in question_categories.items():
             qid_str = str(question_id)
 
-            # Head for correct answer categories - use unique categories only
+            # Head for correct answer categories - use unique categories with consistent ordering
             if True in category_map:
-                unique_correct_cats = list(set(category_map[True]))
+                unique_correct_cats = sorted(set(category_map[True]), key=str)
                 self.correct_category_heads[qid_str] = nn.Linear(
                     128, len(unique_correct_cats)
                 )
+                # Store category ordering for consistent label creation
+                if not hasattr(self, "question_category_orders"):
+                    self.question_category_orders = {}
+                if question_id not in self.question_category_orders:
+                    self.question_category_orders[question_id] = {}
+                self.question_category_orders[question_id][True] = unique_correct_cats
 
-            # Head for incorrect answer categories - use unique categories only
+            # Head for incorrect answer categories - use unique categories with consistent ordering
             if False in category_map:
-                unique_incorrect_cats = list(set(category_map[False]))
+                unique_incorrect_cats = sorted(set(category_map[False]), key=str)
                 self.incorrect_category_heads[qid_str] = nn.Linear(
                     128, len(unique_incorrect_cats)
                 )
+                # Store category ordering for consistent label creation
+                if not hasattr(self, "question_category_orders"):
+                    self.question_category_orders = {}
+                if question_id not in self.question_category_orders:
+                    self.question_category_orders[question_id] = {}
+                self.question_category_orders[question_id][False] = unique_incorrect_cats
 
         # Misconception prediction heads (for when category is *_Misconception)
         self.misconception_heads = nn.ModuleDict()
@@ -560,79 +572,239 @@ class MLPStrategy(Strategy):
         Returns:
             List of submission rows with predictions
         """
+        prediction_start_time = time.time()
+        
+        # Input validation with logging
         assert test_data is not None, "Test data cannot be None"
-        logger.info(f"Making MLP predictions for {len(test_data)} test rows")
+        logger.bind(operation="mlp_predict").info(
+            "Starting MLP prediction process",
+            test_samples=len(test_data),
+            max_predictions_per_sample=MAX_PREDICTIONS,
+            correctness_threshold=CORRECTNESS_THRESHOLD,
+            category_confidence_threshold=CATEGORY_CONFIDENCE_THRESHOLD,
+            misconception_confidence_threshold=MISCONCEPTION_CONFIDENCE_THRESHOLD
+        )
 
         if not test_data:
+            logger.debug("Empty test data provided, returning empty predictions")
             return []
 
-        # Get device for predictions
+        # Device setup and model preparation
+        device_start = time.time()
         device = get_device()
-        logger.debug(f"Running predictions on device: {device}")
+        logger.debug("Device selection completed",
+                    selected_device=str(device),
+                    device_type=device.type,
+                    device_selection_time_ms=f"{(time.time() - device_start) * 1000:.2f}")
+        
+        model_setup_start = time.time()
         self.model.to(device)
-
-        # Verify model is on correct device
+        self.model.eval()  # Set evaluation mode early
+        
+        # Verify model device consistency
         model_device = next(self.model.parameters()).device
         assert model_device == device, (
             f"Model device mismatch: expected {device}, got {model_device}"
         )
+        model_setup_time = time.time() - model_setup_start
+        
+        logger.debug("Model setup completed",
+                    model_device=str(model_device),
+                    device_matches=True,
+                    model_parameters=sum(p.numel() for p in self.model.parameters()),
+                    model_setup_time_ms=f"{model_setup_time * 1000:.2f}")
 
-        # Generate embeddings for test data (no ground truth correctness needed)
+        # Embedding generation phase
+        embedding_start_time = time.time()
+        logger.debug("Starting embedding generation",
+                    embedding_model=self.embedding_model.model_id,
+                    test_samples=len(test_data))
+        
+        tokenizer_start = time.time()
         tokenizer = get_tokenizer(self.embedding_model)
+        tokenizer_load_time = time.time() - tokenizer_start
+        
+        logger.debug("Tokenizer loaded",
+                    tokenizer_type=type(tokenizer).__name__,
+                    load_time_ms=f"{tokenizer_load_time * 1000:.2f}")
+        
         test_embeddings = []
+        text_lengths = []
+        embedding_times = []
 
-        for row in test_data:
-            # Generate embedding (question/answer/explanation)
+        for i, row in enumerate(test_data):
+            # Generate embedding with timing
+            single_embedding_start = time.time()
             text = repr(row)  # Uses EvaluationRow.__repr__ format
+            text_lengths.append(len(text))
+            
             embedding = tokenizer.encode(text)
             test_embeddings.append(embedding)
-
+            
+            single_embedding_time = time.time() - single_embedding_start
+            embedding_times.append(single_embedding_time)
+            
+            # Log progress for large datasets
+            if i > 0 and i % 100 == 0:
+                avg_embedding_time = sum(embedding_times[-100:]) / min(100, len(embedding_times))
+                logger.debug("Embedding generation progress",
+                           processed_samples=i + 1,
+                           avg_embedding_time_ms=f"{avg_embedding_time * 1000:.2f}",
+                           avg_text_length=sum(text_lengths[-100:]) // min(100, len(text_lengths)))
+        
+        # Tensor creation and device movement
+        tensor_start = time.time()
         embeddings = torch.FloatTensor(np.stack(test_embeddings)).to(device)
-
-        # Ensure tensors are on correct device (check device type for MPS)
+        tensor_creation_time = time.time() - tensor_start
+        
+        # Verify tensor device consistency
         assert embeddings.device.type == device.type, (
             f"Embeddings device type mismatch: expected {device.type}, got {embeddings.device.type}"
         )
+        
+        total_embedding_time = time.time() - embedding_start_time
+        logger.debug("Embedding generation completed",
+                    total_embeddings=len(test_embeddings),
+                    embeddings_shape=list(embeddings.shape),
+                    embedding_dimension=embeddings.shape[1],
+                    total_embedding_time_seconds=f"{total_embedding_time:.3f}",
+                    tensor_creation_time_ms=f"{tensor_creation_time * 1000:.2f}",
+                    avg_embedding_time_ms=f"{sum(embedding_times) / len(embedding_times) * 1000:.2f}",
+                    avg_text_length=sum(text_lengths) // len(text_lengths))
 
-        # Make multi-head predictions
+        # Prediction generation phase
+        prediction_loop_start = time.time()
         predictions = []
-        self.model.eval()
+        unknown_questions = 0
+        known_questions = 0
+        correctness_predictions = []
+        category_prediction_counts = {"correct": 0, "incorrect": 0}
+        inference_times = []
+
+        logger.debug("Starting prediction loop",
+                    total_samples=len(test_data),
+                    model_in_eval_mode=not self.model.training,
+                    available_questions=len(getattr(self.model, "question_categories", {})))
 
         with torch.no_grad():
             for i, row in enumerate(test_data):
+                sample_start_time = time.time()
+                
+                # Context binding for this sample
+                sample_logger = logger.bind(
+                    row_id=row.row_id,
+                    question_id=row.question_id,
+                    sample_index=i
+                )
+                
                 embedding_features = embeddings[i].unsqueeze(0)  # Shape: [1, 384]
+                sample_logger.debug("Processing sample",
+                                   embedding_shape=list(embedding_features.shape),
+                                   question_text_length=len(row.question_text),
+                                   answer_length=len(row.mc_answer),
+                                   explanation_length=len(row.student_explanation))
 
                 # Check if question was in training data
                 if (
                     not hasattr(self.model, "question_categories")
                     or row.question_id not in self.model.question_categories
                 ):
-                    logger.warning(f"Question {row.question_id} not in training data")
+                    unknown_questions += 1
+                    sample_logger.warning("Unknown question - using default prediction",
+                                         available_questions=len(getattr(self.model, "question_categories", {})),
+                                         prediction_strategy="default")
                     predicted_categories = self._create_default_prediction(row)
                 else:
-                    # Get multi-head model outputs
+                    known_questions += 1
+                    
+                    # Model inference with detailed logging
+                    inference_start = time.time()
                     outputs = self.model(embedding_features, row.question_id)
+                    inference_time = time.time() - inference_start
+                    inference_times.append(inference_time)
+                    
+                    sample_logger.debug("Model inference completed",
+                                       inference_time_ms=f"{inference_time * 1000:.2f}",
+                                       output_heads=list(outputs.keys()),
+                                       output_shapes={k: list(v.shape) for k, v in outputs.items()})
 
-                    # Predict correctness (neural network prediction)
+                    # Correctness prediction with detailed state
                     correctness_logit = outputs["correctness"].squeeze().cpu().numpy()
-                    predicted_correctness = float(
-                        correctness_logit > 0
-                    )  # Sigmoid > 0.5 equivalent
+                    predicted_correctness = float(correctness_logit > 0)
+                    correctness_sigmoid = 1 / (1 + np.exp(-correctness_logit))  # Convert to probability
+                    correctness_predictions.append(predicted_correctness)
+                    
+                    sample_logger.debug("Correctness prediction",
+                                       correctness_logit=float(correctness_logit),
+                                       correctness_probability=float(correctness_sigmoid),
+                                       predicted_correct=bool(predicted_correctness),
+                                       threshold=CORRECTNESS_THRESHOLD)
+                    
+                    # Track correctness distribution
+                    if predicted_correctness > CORRECTNESS_THRESHOLD:
+                        category_prediction_counts["correct"] += 1
+                    else:
+                        category_prediction_counts["incorrect"] += 1
 
-                    # Get category predictions based on predicted correctness
+                    # Category reconstruction with detailed logging
                     predicted_categories = self._reconstruct_multihead_predictions(
                         outputs,
-                        predicted_correctness=predicted_correctness
-                        > CORRECTNESS_THRESHOLD,
+                        predicted_correctness=predicted_correctness > CORRECTNESS_THRESHOLD,
                         question_id=row.question_id,
                     )
-
+                    
+                    sample_logger.debug("Category prediction completed",
+                                       predicted_categories_count=len(predicted_categories),
+                                       categories=[str(cat.category) for cat in predicted_categories[:3]],
+                                       misconceptions=[cat.misconception for cat in predicted_categories if cat.misconception][:3])
+                
+                # Final prediction assembly
+                final_predictions = predicted_categories[:MAX_PREDICTIONS]
+                sample_time = time.time() - sample_start_time
+                
+                sample_logger.debug("Sample processing completed",
+                                   final_prediction_count=len(final_predictions),
+                                   truncated=len(predicted_categories) > MAX_PREDICTIONS,
+                                   sample_processing_time_ms=f"{sample_time * 1000:.2f}")
+                
                 predictions.append(
                     SubmissionRow(
                         row_id=row.row_id,
-                        predicted_categories=predicted_categories[:MAX_PREDICTIONS],
+                        predicted_categories=final_predictions,
                     )
                 )
+                
+                # Log progress for large datasets
+                if i > 0 and i % 50 == 0:
+                    avg_inference_time = sum(inference_times[-50:]) / min(50, len(inference_times)) if inference_times else 0
+                    logger.debug("Prediction progress",
+                               processed_samples=i + 1,
+                               known_questions_so_far=known_questions,
+                               unknown_questions_so_far=unknown_questions,
+                               avg_inference_time_ms=f"{avg_inference_time * 1000:.2f}")
+        
+        # Final performance summary
+        prediction_loop_time = time.time() - prediction_loop_start
+        total_prediction_time = time.time() - prediction_start_time
+        
+        # Calculate statistics
+        avg_correctness = sum(correctness_predictions) / len(correctness_predictions) if correctness_predictions else 0
+        avg_inference_time = sum(inference_times) / len(inference_times) if inference_times else 0
+        
+        logger.bind(operation="mlp_predict").info(
+            "MLP prediction process completed",
+            total_predictions=len(predictions),
+            known_questions=known_questions,
+            unknown_questions=unknown_questions,
+            question_coverage_pct=f"{(known_questions / len(test_data)) * 100:.1f}" if test_data else "0.0",
+            predicted_correct_pct=f"{(category_prediction_counts['correct'] / known_questions) * 100:.1f}" if known_questions > 0 else "0.0",
+            predicted_incorrect_pct=f"{(category_prediction_counts['incorrect'] / known_questions) * 100:.1f}" if known_questions > 0 else "0.0",
+            avg_correctness_confidence=f"{avg_correctness:.3f}",
+            avg_inference_time_ms=f"{avg_inference_time * 1000:.2f}",
+            prediction_loop_time_seconds=f"{prediction_loop_time:.3f}",
+            total_time_seconds=f"{total_prediction_time:.3f}",
+            throughput_samples_per_second=f"{len(test_data) / total_prediction_time:.1f}" if total_prediction_time > 0 else "inf"
+        )
 
         return predictions
 
@@ -876,90 +1048,254 @@ class MLPStrategy(Strategy):
         2. Select best categories within that correctness state
         3. Add misconceptions when appropriate
         """
+        reconstruction_start = time.time()
         prefix = "True_" if predicted_correctness else "False_"
         predictions = []
+        
+        # Context binding for reconstruction logging
+        recon_logger = logger.bind(
+            question_id=question_id,
+            predicted_correctness=predicted_correctness,
+            prefix=prefix
+        )
+        
+        recon_logger.debug("Starting prediction reconstruction",
+                          output_heads=list(outputs.keys()),
+                          output_tensor_shapes={k: list(v.shape) for k, v in outputs.items()})
 
         # Get category probabilities for the predicted correctness state
         category_key = (
             "correct_categories" if predicted_correctness else "incorrect_categories"
         )
+        
+        recon_logger.debug("Category head selection",
+                          category_key=category_key,
+                          category_head_available=category_key in outputs)
 
         if category_key in outputs:
+            # Process category predictions with detailed logging
+            category_processing_start = time.time()
             category_logits = outputs[category_key].squeeze().cpu().numpy()
             category_probs = self._softmax(category_logits)
+            
+            recon_logger.debug("Category logits processed",
+                              category_logits_shape=category_logits.shape,
+                              category_logits_range=[float(category_logits.min()), float(category_logits.max())],
+                              category_probs_sum=float(category_probs.sum()))
 
-            # Get available categories for this correctness state
-            available_categories = list(
+            # Get available categories for this correctness state with consistent ordering
+            # Must match the ordering used in model head creation and label generation
+            available_categories = sorted(
                 set(
                     self.model.question_categories[question_id].get(
                         predicted_correctness, []
                     )
-                )
+                ),
+                key=str
             )
+            
+            recon_logger.debug("Available categories loaded",
+                              available_categories_count=len(available_categories),
+                              categories=[str(cat) for cat in available_categories[:5]],
+                              prob_category_alignment_check=len(category_probs) == len(available_categories))
+            
+            # Validate dimension alignment
+            if len(category_probs) != len(available_categories):
+                recon_logger.error("Category dimension mismatch",
+                                 category_probs_length=len(category_probs),
+                                 available_categories_length=len(available_categories),
+                                 error_type="dimension_mismatch")
 
             # Add category predictions in order of confidence
+            category_candidates = []
+            misconception_processing_count = 0
+            
             for i, prob in enumerate(category_probs):
                 if (
                     i < len(available_categories)
                     and prob > CATEGORY_CONFIDENCE_THRESHOLD
                 ):
                     category = available_categories[i]
+                    
+                    recon_logger.debug("Category candidate found",
+                                      category_index=i,
+                                      category=str(category),
+                                      probability=float(prob),
+                                      confidence_threshold=CATEGORY_CONFIDENCE_THRESHOLD,
+                                      is_misconception_category=category.is_misconception)
 
                     # Check if this is a misconception category
                     if category.is_misconception and "misconceptions" in outputs:
-                        # Get misconception predictions
+                        misconception_processing_count += 1
+                        
+                        # Get misconception predictions with detailed logging
+                        misconception_start = time.time()
                         misconception_logits = (
                             outputs["misconceptions"].squeeze().cpu().numpy()
                         )
                         misconception_probs = self._sigmoid(misconception_logits)
+                        misconception_processing_time = time.time() - misconception_start
+                        
+                        recon_logger.debug("Misconception processing",
+                                          misconception_logits_shape=misconception_logits.shape,
+                                          misconception_probs_range=[float(misconception_probs.min()), float(misconception_probs.max())],
+                                          processing_time_ms=f"{misconception_processing_time * 1000:.2f}")
 
-                        # Find best misconception
+                        # Find best misconception with logging
                         best_misconception = self._get_best_misconception(
                             misconception_probs, question_id
                         )
+                        
+                        recon_logger.debug("Best misconception selected",
+                                          best_misconception=best_misconception,
+                                          misconception_found=best_misconception is not None)
 
-                        predictions.append(
-                            (
-                                Prediction(
-                                    category=category, misconception=best_misconception
-                                ),
-                                prob,
-                            )
+                        prediction_tuple = (
+                            Prediction(
+                                category=category, misconception=best_misconception
+                            ),
+                            prob,
                         )
+                        predictions.append(prediction_tuple)
+                        category_candidates.append((str(category), best_misconception, float(prob)))
                     else:
-                        predictions.append((Prediction(category=category), prob))
+                        prediction_tuple = (Prediction(category=category), prob)
+                        predictions.append(prediction_tuple)
+                        category_candidates.append((str(category), None, float(prob)))
+            
+            category_processing_time = time.time() - category_processing_start
+            recon_logger.debug("Category processing completed",
+                              total_candidates=len(category_candidates),
+                              misconception_categories_processed=misconception_processing_count,
+                              processing_time_ms=f"{category_processing_time * 1000:.2f}",
+                              candidate_details=category_candidates[:3])  # Show top 3 for brevity
+        else:
+            recon_logger.debug("No category head available for correctness state",
+                              available_heads=list(outputs.keys()),
+                              required_head=category_key)
 
-        # Add fallback predictions if no strong categories found
-        if not predictions or max(pred[1] for pred in predictions) < FALLBACK_THRESHOLD:
+        # Fallback handling with detailed logging
+        max_confidence = max(pred[1] for pred in predictions) if predictions else 0.0
+        needs_fallback = not predictions or max_confidence < FALLBACK_THRESHOLD
+        
+        recon_logger.debug("Fallback evaluation",
+                          predictions_count=len(predictions),
+                          max_confidence=float(max_confidence),
+                          fallback_threshold=FALLBACK_THRESHOLD,
+                          needs_fallback=needs_fallback)
+        
+        if needs_fallback:
             fallback_category = Category(f"{prefix}Neither")
-            predictions.append((Prediction(category=fallback_category), 0.4))
+            fallback_prediction = (Prediction(category=fallback_category), 0.4)
+            predictions.append(fallback_prediction)
+            
+            recon_logger.debug("Fallback prediction added",
+                              fallback_category=str(fallback_category),
+                              fallback_confidence=0.4,
+                              reason="low_confidence" if predictions else "no_predictions")
 
-        # Return top predictions sorted by confidence
-        return self._select_top_predictions(predictions)
+        # Final selection and sorting with performance logging
+        selection_start = time.time()
+        final_predictions = self._select_top_predictions(predictions)
+        selection_time = time.time() - selection_start
+        
+        total_reconstruction_time = time.time() - reconstruction_start
+        
+        recon_logger.debug("Prediction reconstruction completed",
+                          raw_predictions_count=len(predictions),
+                          final_predictions_count=len(final_predictions),
+                          final_categories=[str(pred.category) for pred in final_predictions],
+                          final_misconceptions=[pred.misconception for pred in final_predictions if pred.misconception],
+                          selection_time_ms=f"{selection_time * 1000:.2f}",
+                          total_reconstruction_time_ms=f"{total_reconstruction_time * 1000:.2f}")
+
+        return final_predictions
 
     def _softmax(self, x: np.ndarray) -> np.ndarray:
         """Compute softmax probabilities."""
-        exp_x = np.exp(x - np.max(x))
-        return exp_x / np.sum(exp_x)
+        logger.debug("Computing softmax",
+                    input_shape=x.shape,
+                    input_range=[float(x.min()), float(x.max())],
+                    input_mean=float(x.mean()))
+        
+        # Numerical stability: subtract max to prevent overflow
+        max_x = np.max(x)
+        exp_x = np.exp(x - max_x)
+        softmax_probs = exp_x / np.sum(exp_x)
+        
+        logger.debug("Softmax computed",
+                    output_sum=float(softmax_probs.sum()),
+                    output_max=float(softmax_probs.max()),
+                    output_min=float(softmax_probs.min()),
+                    numerical_stability_offset=float(max_x))
+        
+        return softmax_probs
 
     def _sigmoid(self, x: np.ndarray) -> np.ndarray:
         """Compute sigmoid probabilities."""
-        return 1 / (1 + np.exp(-x))
+        logger.debug("Computing sigmoid",
+                    input_shape=x.shape,
+                    input_range=[float(x.min()), float(x.max())],
+                    input_mean=float(x.mean()))
+        
+        # Numerical stability for sigmoid computation
+        sigmoid_probs = 1 / (1 + np.exp(-np.clip(x, -500, 500)))  # Clip to prevent overflow
+        
+        logger.debug("Sigmoid computed",
+                    output_range=[float(sigmoid_probs.min()), float(sigmoid_probs.max())],
+                    output_mean=float(sigmoid_probs.mean()),
+                    values_above_05=(sigmoid_probs > 0.5).sum())
+        
+        return sigmoid_probs
 
     def _get_best_misconception(
         self, misconception_probs: np.ndarray, question_id: QuestionId
     ) -> str | None:
         """Get the most likely misconception for a question."""
+        logger.debug("Finding best misconception",
+                    question_id=question_id,
+                    misconception_probs_shape=misconception_probs.shape,
+                    confidence_threshold=MISCONCEPTION_CONFIDENCE_THRESHOLD)
+        
         if question_id not in self.question_misconceptions:
+            logger.debug("No misconceptions available for question",
+                        question_id=question_id,
+                        available_questions=len(self.question_misconceptions))
             return None
 
         misconceptions = self.question_misconceptions[question_id]
+        logger.debug("Misconceptions loaded",
+                    question_id=question_id,
+                    total_misconceptions=len(misconceptions),
+                    misconceptions=misconceptions[:3])  # Show first 3 for brevity
 
         # Exclude NA (last element) from consideration
         if len(misconceptions) > 1:
-            best_idx = np.argmax(misconception_probs[:-1])
-            if misconception_probs[best_idx] > MISCONCEPTION_CONFIDENCE_THRESHOLD:
-                return misconceptions[best_idx]
+            # Get probabilities excluding the NA class
+            valid_probs = misconception_probs[:-1]
+            best_idx = np.argmax(valid_probs)
+            best_prob = misconception_probs[best_idx]
+            best_misconception = misconceptions[best_idx]
+            
+            logger.debug("Best misconception analysis",
+                        best_index=int(best_idx),
+                        best_misconception=best_misconception,
+                        best_probability=float(best_prob),
+                        threshold=MISCONCEPTION_CONFIDENCE_THRESHOLD,
+                        above_threshold=best_prob > MISCONCEPTION_CONFIDENCE_THRESHOLD,
+                        na_probability=float(misconception_probs[-1]))
+            
+            if best_prob > MISCONCEPTION_CONFIDENCE_THRESHOLD:
+                logger.debug("Misconception selected",
+                            selected_misconception=best_misconception,
+                            confidence=float(best_prob))
+                return best_misconception
+            logger.debug("No misconception above threshold",
+                        best_probability=float(best_prob),
+                        threshold=MISCONCEPTION_CONFIDENCE_THRESHOLD)
+        else:
+            logger.debug("Insufficient misconceptions for selection",
+                        misconceptions_count=len(misconceptions))
 
         return None
 
@@ -967,24 +1303,74 @@ class MLPStrategy(Strategy):
 
     def _select_top_predictions(self, predictions: list) -> list[Prediction]:
         """Select top unique predictions by confidence."""
+        logger.debug("Selecting top predictions",
+                    total_predictions=len(predictions),
+                    max_predictions=MAX_PREDICTIONS)
+        
+        # Sort by confidence (descending)
         predictions.sort(key=lambda x: x[1], reverse=True)
+        
+        # Log sorted predictions for debugging
+        if predictions:
+            sorted_details = [(str(pred.category), pred.misconception, float(score))
+                             for pred, score in predictions[:5]]  # Show top 5
+            logger.debug("Predictions sorted by confidence",
+                        top_predictions=sorted_details,
+                        highest_confidence=float(predictions[0][1]) if predictions else 0.0)
 
         unique_predictions = []
         seen_categories = set()
-        for pred, _score in predictions:
+        duplicates_filtered = 0
+        
+        for pred, score in predictions:
             if pred.category not in seen_categories:
                 unique_predictions.append(pred)
                 seen_categories.add(pred.category)
+                logger.debug("Prediction selected",
+                           category=str(pred.category),
+                           misconception=pred.misconception,
+                           confidence=float(score),
+                           position=len(unique_predictions))
+            else:
+                duplicates_filtered += 1
+                logger.debug("Duplicate category filtered",
+                           category=str(pred.category),
+                           confidence=float(score))
+            
             if len(unique_predictions) >= MAX_PREDICTIONS:
                 break
+
+        logger.debug("Top prediction selection completed",
+                    unique_predictions_count=len(unique_predictions),
+                    duplicates_filtered=duplicates_filtered,
+                    final_categories=[str(pred.category) for pred in unique_predictions])
 
         return unique_predictions
 
     def _create_default_prediction(self, row: EvaluationRow) -> list[Prediction]:
         """Create default prediction for unknown questions."""
+        logger.debug("Creating default prediction for unknown question",
+                    question_id=row.question_id,
+                    row_id=row.row_id)
+        
+        # Check correctness using available correct answers
+        correctness_check_start = time.time()
         is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
+        correctness_check_time = time.time() - correctness_check_start
+        
         prefix = "True_" if is_correct else "False_"
-        return [Prediction(category=Category(f"{prefix}Neither"))]
+        default_category = Category(f"{prefix}Neither")
+        default_prediction = Prediction(category=default_category)
+        
+        logger.debug("Default prediction created",
+                    question_id=row.question_id,
+                    predicted_correctness=is_correct,
+                    correctness_source="rule_based",
+                    default_category=str(default_category),
+                    correctness_check_time_ms=f"{correctness_check_time * 1000:.2f}",
+                    available_correct_answers=len(self.correct_answers))
+        
+        return [default_prediction]
 
     @staticmethod
     def _parse_training_data(csv_path: Path) -> list[TrainingRow]:
@@ -1383,19 +1769,43 @@ class MLPStrategy(Strategy):
         """
         qid = row.question_id
 
-        # Get unique categories for each correctness state
-        correct_categories = list(set(question_categories[qid].get(True, [])))
-        incorrect_categories = list(set(question_categories[qid].get(False, [])))
+        # Get unique categories for each correctness state with consistent ordering
+        # CRITICAL: Must use same sorting as model head creation to ensure dimension alignment
+        correct_categories = sorted(set(question_categories[qid].get(True, [])), key=str)
+        incorrect_categories = sorted(set(question_categories[qid].get(False, [])), key=str)
+
+        # Add assertions to catch dimension mismatches early
+        assert correct_categories or incorrect_categories, (
+            f"Question {qid} has no categories for either correct or incorrect states"
+        )
 
         # Create one-hot labels
         correct_label = np.zeros(max(1, len(correct_categories)))
         incorrect_label = np.zeros(max(1, len(incorrect_categories)))
 
         # Set the appropriate label based on actual category and correctness
-        if is_correct and row.category in correct_categories:
-            correct_label[correct_categories.index(row.category)] = 1.0
-        elif not is_correct and row.category in incorrect_categories:
-            incorrect_label[incorrect_categories.index(row.category)] = 1.0
+        if is_correct and correct_categories and row.category in correct_categories:
+            category_index = correct_categories.index(row.category)
+            assert 0 <= category_index < len(correct_label), (
+                f"Category index {category_index} out of range for correct_label size {len(correct_label)}"
+            )
+            correct_label[category_index] = 1.0
+        elif not is_correct and incorrect_categories and row.category in incorrect_categories:
+            category_index = incorrect_categories.index(row.category)
+            assert 0 <= category_index < len(incorrect_label), (
+                f"Category index {category_index} out of range for incorrect_label size {len(incorrect_label)}"
+            )
+            incorrect_label[category_index] = 1.0
+
+        # Debug logging for dimension verification
+        logger.debug("Category labels created",
+                    question_id=qid,
+                    is_correct=is_correct,
+                    row_category=str(row.category),
+                    correct_categories_count=len(correct_categories),
+                    incorrect_categories_count=len(incorrect_categories),
+                    correct_label_shape=correct_label.shape,
+                    incorrect_label_shape=incorrect_label.shape)
 
         return correct_label, incorrect_label
 
@@ -1436,21 +1846,26 @@ class MLPStrategy(Strategy):
         question_ids_array = np.array(question_ids)
 
         # Convert category labels to arrays per question with consistent shapes
-        # Find max category sizes for padding
+        # Find max category sizes for padding - use same logic as model head creation
         max_correct_categories = max(
             (
-                len(set(category_map.get(True, [])))
+                len(sorted(set(category_map.get(True, [])), key=str))
                 for category_map in question_categories.values()
             ),
             default=1,
         )
         max_incorrect_categories = max(
             (
-                len(set(category_map.get(False, [])))
+                len(sorted(set(category_map.get(False, [])), key=str))
                 for category_map in question_categories.values()
             ),
             default=1,
         )
+        
+        logger.debug("Array conversion dimensions calculated",
+                    max_correct_categories=max_correct_categories,
+                    max_incorrect_categories=max_incorrect_categories,
+                    total_questions=len(question_categories))
 
         for qid, labels in category_labels.items():
             for correctness_state, max_size in [
@@ -1458,21 +1873,39 @@ class MLPStrategy(Strategy):
                 ("incorrect", max_incorrect_categories),
             ]:
                 if labels[correctness_state]:
-                    # Pad all label vectors to max_size
+                    # Pad all label vectors to max_size with dimension validation
                     padded_labels = []
-                    for label in labels[correctness_state]:
+                    for idx, label in enumerate(labels[correctness_state]):
+                        # Add assertion to catch dimension mismatches early
+                        assert len(label) <= max_size, (
+                            f"Question {qid}, {correctness_state} state, sample {idx}: "
+                            f"Label size {len(label)} exceeds max_size {max_size}. "
+                            f"This indicates inconsistent category counting between model head creation and label creation."
+                        )
+                        
                         if len(label) < max_size:
                             padded = np.zeros(max_size)
                             padded[: len(label)] = label
                             padded_labels.append(padded)
                         else:
-                            padded_labels.append(
-                                label[:max_size]
-                            )  # Truncate if too long
+                            padded_labels.append(label)  # Already correct size
+                            
+                    assert padded_labels, f"No padded labels created for question {qid}, {correctness_state} state"
                     category_labels[qid][correctness_state] = np.stack(padded_labels)
+                    
+                    logger.debug("Category labels padded",
+                                question_id=qid,
+                                correctness_state=correctness_state,
+                                original_samples=len(labels[correctness_state]),
+                                padded_shape=labels[correctness_state].shape,
+                                target_max_size=max_size)
                 else:
                     # No labels for this state - create empty array with correct shape
                     category_labels[qid][correctness_state] = np.empty((0, max_size))
+                    logger.debug("Empty category labels created",
+                                question_id=qid,
+                                correctness_state=correctness_state,
+                                empty_shape=(0, max_size))
 
         # Convert misconception labels to arrays per question with padding
         max_misconception_size = max(
@@ -1824,6 +2257,20 @@ class MLPStrategy(Strategy):
                 if (
                     category_target.sum() > 0
                 ):  # Only compute loss if we have a valid target
+                    # Add assertion to catch dimension mismatches early
+                    model_output = outputs[category_key]
+                    expected_classes = model_output.size(-1)  # Number of classes from model head
+                    target_size = category_target.size(-1)    # Size of target tensor
+                    
+                    assert target_size == expected_classes, (
+                        f"Dimension mismatch for question {qid}, category_key={category_key}: "
+                        f"Model output size: {model_output.size()} (expects {expected_classes} classes), "
+                        f"Target tensor size: {category_target.size()} ({target_size} classes). "
+                        f"This indicates inconsistent category counting between model head creation and label preparation. "
+                        f"Model head was created with {expected_classes} unique categories, "
+                        f"but label tensor has {target_size} categories."
+                    )
+                    
                     # Convert one-hot to class indices for CrossEntropyLoss
                     target_class = torch.argmax(category_target).unsqueeze(0)
                     category_loss = criterions["categories"](
