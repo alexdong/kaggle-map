@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+import math
+import re
+
+_FRAC_RE = re.compile(r"\\frac\s*\{\s*([^\}]+)\s*\}\s*\{\s*([^\}]+)\s*\}")
+_NUM_RE = re.compile(r"\d{2,}")
+
+
+def normalize_latex_answer(s: str) -> str:
+    """Turn LaTeX like \( \frac{3}{6} \) into '3/6 (aka 1/2)'.
+
+    Fallback: remove simple LaTeX commands and whitespace normalize.
+    """
+    if not s:
+        return ""
+    s = s.replace(r"\(", "").replace(r"\)", "").strip()
+    m = _FRAC_RE.search(s)
+    if m:
+        num, den = m.group(1), m.group(2)
+        try:
+            n, d = int(num), int(den)
+            g = math.gcd(n, d)
+            simp = f"{n//g}/{d//g}"
+            return f"{n}/{d} (aka {simp})"
+        except Exception:
+            pass
+    s = re.sub(r"\\[a-zA-Z]+", " ", s)  # remove LaTeX commands like \textbf
+    s = s.replace("{", "").replace("}", "")  # drop leftover braces
+    s = s.replace("\\", "")  # drop stray backslashes
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def normalize_text(s: str) -> str:
+    if not s:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+
+def compose_text_unit(question: str, latex_ans: str, explanation: str) -> str:
+    q = normalize_text(question)
+    ans = normalize_latex_answer(latex_ans)
+    exp = normalize_text(explanation)
+    return f"Question: {q} | Provided answer: {ans} | Student explanation: {exp}"
+
+
+def number_normalize(s: str) -> str:
+    return _NUM_RE.sub("<NUM>", s or "")

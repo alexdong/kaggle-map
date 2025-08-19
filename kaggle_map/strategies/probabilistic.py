@@ -11,7 +11,6 @@ from rich.console import Console
 from rich.table import Table
 
 from kaggle_map.models import (
-    _MAX_DISPLAY_CONTEXTS,
     Answer,
     Category,
     Misconception,
@@ -29,6 +28,10 @@ from .base import Strategy
 type CategoryDistribution = dict[Category, float]
 type MisconceptionDistribution = dict[Misconception, float]
 type StateCategory = tuple[ResponseContext, Category]
+
+
+# Limit for verbose display sections in dev tooling
+_MAX_DISPLAY_CONTEXTS = 5
 
 
 @dataclass(frozen=True)
@@ -60,11 +63,11 @@ class ProbabilisticStrategy(Strategy):
     @property
     def description(self) -> str:
         """Strategy description."""
-        return "Two-stage probabilistic model: P(Category|Context) × P(Misconception|Category,Context)"
+        return "Two-stage probabilistic model: P(Category|Context) x P(Misconception|Category,Context)"
 
     @classmethod
     def fit(
-        cls, train_csv_path: Path = Path("dataset/train.csv")
+        cls, train_csv_path: Path = Path("datasets/train.csv")
     ) -> "ProbabilisticStrategy":
         """Build probabilistic model from training data.
 
@@ -148,7 +151,7 @@ class ProbabilisticStrategy(Strategy):
     def save(self, filepath: Path) -> None:
         """Save model as JSON file."""
         logger.info(f"Saving probabilistic model to {filepath}")
-        
+
         # Convert ResponseContext objects and Category enums to strings for JSON serialization
         serializable_data = {
             "category_distributions": {
@@ -161,7 +164,9 @@ class ProbabilisticStrategy(Strategy):
                 f"{ctx.question_id}|{ctx.selected_answer}|{ctx.correct_answer}|{cat.value}": dist
                 for (ctx, cat), dist in self.misconception_distributions.items()
             },
-            "global_category_prior": {cat.value: prob for cat, prob in self.global_category_prior.items()},
+            "global_category_prior": {
+                cat.value: prob for cat, prob in self.global_category_prior.items()
+            },
             "global_misconception_prior": {
                 cat.value: dist for cat, dist in self.global_misconception_prior.items()
             },
@@ -170,7 +175,7 @@ class ProbabilisticStrategy(Strategy):
                 for qid, dist in self.question_category_priors.items()
             },
         }
-        
+
         with filepath.open("w") as f:
             json.dump(serializable_data, f, indent=2)
 
@@ -182,27 +187,32 @@ class ProbabilisticStrategy(Strategy):
 
         with filepath.open("r") as f:
             data = json.load(f)
-        
+
         # Reconstruct ResponseContext objects from string keys
         category_distributions = {}
         for key, dist in data["category_distributions"].items():
             parts = key.split("|")
             ctx = ResponseContext(int(parts[0]), parts[1], parts[2])
-            category_distributions[ctx] = {Category(cat): prob for cat, prob in dist.items()}
-        
+            category_distributions[ctx] = {
+                Category(cat): prob for cat, prob in dist.items()
+            }
+
         misconception_distributions = {}
         for key, dist in data["misconception_distributions"].items():
             parts = key.split("|")
             ctx = ResponseContext(int(parts[0]), parts[1], parts[2])
             cat = Category(parts[3])
             misconception_distributions[(ctx, cat)] = dist
-        
-        global_category_prior = {Category(cat): prob for cat, prob in data["global_category_prior"].items()}
-        
-        global_misconception_prior = {
-            Category(cat): dist for cat, dist in data["global_misconception_prior"].items()
+
+        global_category_prior = {
+            Category(cat): prob for cat, prob in data["global_category_prior"].items()
         }
-        
+
+        global_misconception_prior = {
+            Category(cat): dist
+            for cat, dist in data["global_misconception_prior"].items()
+        }
+
         question_category_priors = {
             int(qid): {Category(cat): prob for cat, prob in dist.items()}
             for qid, dist in data["question_category_priors"].items()
@@ -243,7 +253,9 @@ class ProbabilisticStrategy(Strategy):
         console.print(
             f"\\n[cyan]Sample response contexts ({min(_MAX_DISPLAY_CONTEXTS, len(self.category_distributions))}):[/cyan]"
         )
-        for i, (context, category_dist) in enumerate(self.category_distributions.items()):
+        for i, (context, category_dist) in enumerate(
+            self.category_distributions.items()
+        ):
             if i >= _MAX_DISPLAY_CONTEXTS:  # Show only first few
                 break
             console.print(
@@ -251,9 +263,9 @@ class ProbabilisticStrategy(Strategy):
             )
 
             # Show top 2 categories for this context
-            sorted_cats = sorted(category_dist.items(), key=lambda x: x[1], reverse=True)[
-                :2
-            ]
+            sorted_cats = sorted(
+                category_dist.items(), key=lambda x: x[1], reverse=True
+            )[:2]
             for category, prob in sorted_cats:
                 console.print(f"    {category.value}: {prob:.3f}")
 
@@ -285,9 +297,13 @@ class ProbabilisticStrategy(Strategy):
             for pred in sample_predictions[0].predicted_categories:
                 console.print(f"  {pred}")
 
-            console.print("\\n[bold green]✅ Probabilistic prediction works![/bold green]")
+            console.print(
+                "\\n[bold green]✅ Probabilistic prediction works![/bold green]"
+            )
         except Exception as e:
-            console.print(f"\\n[bold red]❌ Probabilistic prediction failed: {e}[/bold red]")
+            console.print(
+                f"\\n[bold red]❌ Probabilistic prediction failed: {e}[/bold red]"
+            )
 
     # Implementation methods
 
@@ -302,9 +318,9 @@ class ProbabilisticStrategy(Strategy):
                 correct_answer = context.correct_answer
                 break
 
-        assert (
-            correct_answer is not None
-        ), f"No correct answer found for question {test_row.question_id}"
+        assert correct_answer is not None, (
+            f"No correct answer found for question {test_row.question_id}"
+        )
 
         return ResponseContext(
             question_id=test_row.question_id,
@@ -323,7 +339,9 @@ class ProbabilisticStrategy(Strategy):
         prediction_probs = {}
 
         for category, category_prob in category_probs.items():
-            misconception_probs = self._get_misconception_probabilities(context, category)
+            misconception_probs = self._get_misconception_probabilities(
+                context, category
+            )
 
             for misconception, misconception_prob in misconception_probs.items():
                 # Joint probability: P(Category, Misconception | Context)
@@ -339,7 +357,9 @@ class ProbabilisticStrategy(Strategy):
 
         return prediction_probs
 
-    def _get_category_probabilities(self, context: ResponseContext) -> CategoryDistribution:
+    def _get_category_probabilities(
+        self, context: ResponseContext
+    ) -> CategoryDistribution:
         """Get P(Category | Context) with graceful fallbacks."""
         # Try exact context match first
         if context in self.category_distributions:
@@ -455,7 +475,9 @@ class ProbabilisticStrategy(Strategy):
 
     @staticmethod
     def _learn_category_distributions(
-        contexts_with_labels: list[tuple[ResponseContext, Category, Misconception | None]]
+        contexts_with_labels: list[
+            tuple[ResponseContext, Category, Misconception | None]
+        ],
     ) -> dict[ResponseContext, CategoryDistribution]:
         """Learn P(Category | ResponseContext) from training data."""
         # Group by context and count categories
@@ -482,7 +504,9 @@ class ProbabilisticStrategy(Strategy):
 
     @staticmethod
     def _learn_misconception_distributions(
-        contexts_with_labels: list[tuple[ResponseContext, Category, Misconception | None]]
+        contexts_with_labels: list[
+            tuple[ResponseContext, Category, Misconception | None]
+        ],
     ) -> dict[StateCategory, MisconceptionDistribution]:
         """Learn P(Misconception | Category, ResponseContext) from training data."""
         # Group by (context, category) and count misconceptions
@@ -513,7 +537,9 @@ class ProbabilisticStrategy(Strategy):
 
     @staticmethod
     def _compute_global_category_prior(
-        contexts_with_labels: list[tuple[ResponseContext, Category, Misconception | None]]
+        contexts_with_labels: list[
+            tuple[ResponseContext, Category, Misconception | None]
+        ],
     ) -> CategoryDistribution:
         """Compute global prior P(Category) for fallback."""
         category_counts = defaultdict(int)
@@ -526,7 +552,9 @@ class ProbabilisticStrategy(Strategy):
 
     @staticmethod
     def _compute_question_category_priors(
-        contexts_with_labels: list[tuple[ResponseContext, Category, Misconception | None]]
+        contexts_with_labels: list[
+            tuple[ResponseContext, Category, Misconception | None]
+        ],
     ) -> dict[QuestionId, CategoryDistribution]:
         """Compute per-question priors P(Category | QuestionId) for fallback."""
         question_category_counts = defaultdict(lambda: defaultdict(int))
@@ -545,7 +573,9 @@ class ProbabilisticStrategy(Strategy):
 
     @staticmethod
     def _compute_global_misconception_prior(
-        contexts_with_labels: list[tuple[ResponseContext, Category, Misconception | None]]
+        contexts_with_labels: list[
+            tuple[ResponseContext, Category, Misconception | None]
+        ],
     ) -> dict[Category, MisconceptionDistribution]:
         """Compute global misconception priors P(Misconception | Category) for fallback."""
         category_misconception_counts = defaultdict(lambda: defaultdict(int))

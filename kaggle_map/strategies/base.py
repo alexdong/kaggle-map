@@ -10,7 +10,7 @@ from kaggle_map.models import SubmissionRow, TestRow
 
 class Strategy(ABC):
     """Abstract base class for all prediction strategies.
-    
+
     All strategies must implement the same interface for fitting, prediction,
     and persistence, allowing easy comparison and experimentation.
     """
@@ -29,10 +29,10 @@ class Strategy(ABC):
     @abstractmethod
     def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "Strategy":
         """Fit the strategy on training data.
-        
+
         Args:
             train_csv_path: Path to training CSV file
-            
+
         Returns:
             Fitted strategy instance
         """
@@ -40,10 +40,10 @@ class Strategy(ABC):
     @abstractmethod
     def predict(self, test_data: list[TestRow]) -> list[SubmissionRow]:
         """Make predictions on test data.
-        
+
         Args:
             test_data: List of test rows to predict on
-            
+
         Returns:
             List of submission rows with predictions
         """
@@ -51,7 +51,7 @@ class Strategy(ABC):
     @abstractmethod
     def save(self, filepath: Path) -> None:
         """Save fitted model to disk.
-        
+
         Args:
             filepath: Where to save the model
         """
@@ -60,10 +60,10 @@ class Strategy(ABC):
     @abstractmethod
     def load(cls, filepath: Path) -> "Strategy":
         """Load fitted model from disk.
-        
+
         Args:
             filepath: Path to saved model file
-            
+
         Returns:
             Loaded strategy instance
         """
@@ -71,7 +71,7 @@ class Strategy(ABC):
     @abstractmethod
     def display_stats(self, console: Console) -> None:
         """Display model statistics.
-        
+
         Args:
             console: Rich console for formatted output
         """
@@ -79,7 +79,7 @@ class Strategy(ABC):
     @abstractmethod
     def display_detailed_info(self, console: Console) -> None:
         """Display detailed model info for verbose mode.
-        
+
         Args:
             console: Rich console for formatted output
         """
@@ -87,7 +87,7 @@ class Strategy(ABC):
     @abstractmethod
     def demonstrate_predictions(self, console: Console) -> None:
         """Show sample predictions to validate the model works.
-        
+
         Args:
             console: Rich console for formatted output
         """
