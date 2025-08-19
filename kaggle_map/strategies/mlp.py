@@ -3,6 +3,7 @@
 import pickle
 import random
 import tempfile
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 from loguru import logger
+from platformdirs import PlatformDirs
 from rich.console import Console
 from rich.table import Table
 from sklearn.model_selection import train_test_split
@@ -46,13 +48,20 @@ MAX_PREDICTIONS = 3  # Maximum number of predictions to return per observation
 def get_device() -> torch.device:
     """Get the best available device (MPS > CUDA > CPU)."""
     if torch.backends.mps.is_available():
-        logger.debug("Using MPS (Apple Metal) device")
-        return torch.device("mps")
+        device = torch.device("mps")
+        logger.debug("Device selection: using MPS (Apple Metal)",
+                    device_type="mps", available_backends=["mps", "cuda", "cpu"])
+        return device
     if torch.cuda.is_available():
-        logger.debug("Using CUDA device")
-        return torch.device("cuda")
-    logger.debug("Using CPU device")
-    return torch.device("cpu")
+        device = torch.device("cuda")
+        cuda_count = torch.cuda.device_count()
+        logger.debug("Device selection: using CUDA",
+                    device_type="cuda", cuda_devices=cuda_count, available_backends=["cuda", "cpu"])
+        return device
+    device = torch.device("cpu")
+    logger.debug("Device selection: fallback to CPU",
+                device_type="cpu", available_backends=["cpu"])
+    return device
 
 
 class MLPDataset(Dataset):
@@ -264,16 +273,18 @@ class MLPNet(nn.Module):
         for question_id, category_map in question_categories.items():
             qid_str = str(question_id)
 
-            # Head for correct answer categories
+            # Head for correct answer categories - use unique categories only
             if True in category_map:
+                unique_correct_cats = list(set(category_map[True]))
                 self.correct_category_heads[qid_str] = nn.Linear(
-                    128, len(category_map[True])
+                    128, len(unique_correct_cats)
                 )
 
-            # Head for incorrect answer categories
+            # Head for incorrect answer categories - use unique categories only
             if False in category_map:
+                unique_incorrect_cats = list(set(category_map[False]))
                 self.incorrect_category_heads[qid_str] = nn.Linear(
-                    128, len(category_map[False])
+                    128, len(unique_incorrect_cats)
                 )
 
         # Misconception prediction heads (for when category is *_Misconception)
@@ -384,18 +395,42 @@ class MLPStrategy(Strategy):
         Returns:
             Trained MLPStrategy instance
         """
-        logger.info(f"Fitting MLP strategy from {train_csv_path}")
+        fit_start_time = time.time()
+        # Set up logging for the entire fit process
+        log_dir = PlatformDirs().site_log_dir
+        logger.bind(
+            operation="mlp_fit",
+            train_path=str(train_csv_path),
+            train_split=train_split,
+            random_seed=random_seed,
+            embeddings_path=str(embeddings_path) if embeddings_path else None,
+            log_dir=str(log_dir)
+        ).info("Starting MLP strategy fit")
 
         # Set random seeds for deterministic training
+        logger.debug("Setting random seeds for deterministic training", seed=random_seed)
         cls._set_random_seeds(random_seed)
-        logger.debug(f"Set random seed to {random_seed} for deterministic training")
+        logger.debug("Random seeds configured",
+                    seed=random_seed,
+                    torch_seed=torch.initial_seed(),
+                    numpy_deterministic=True)
 
         # Parse training data
+        logger.debug("Starting training data parsing", file_path=str(train_csv_path))
+        parse_start = time.time()
         all_training_data = cls._parse_training_data(train_csv_path)
-        logger.debug(f"Parsed {len(all_training_data)} total training rows")
+        parse_duration = time.time() - parse_start
+        logger.debug("Training data parsing completed",
+                    total_rows=len(all_training_data),
+                    parse_time_seconds=f"{parse_duration:.3f}")
 
         # Split data if train_split < 1.0
         if train_split < 1.0:
+            logger.debug("Splitting data for train/eval",
+                        train_split=train_split,
+                        total_samples=len(all_training_data),
+                        stratify_by="question_id")
+            split_start = time.time()
             training_data, eval_data = train_test_split(
                 all_training_data,
                 train_size=train_split,
@@ -404,32 +439,44 @@ class MLPStrategy(Strategy):
                     row.question_id for row in all_training_data
                 ],  # Stratify by question
             )
-            logger.debug(
-                f"Split data: {len(training_data)} training, {len(eval_data)} eval"
-            )
+            split_duration = time.time() - split_start
+            logger.debug("Data split completed",
+                        training_samples=len(training_data),
+                        eval_samples=len(eval_data),
+                        split_time_seconds=f"{split_duration:.3f}")
             # Store eval data for later use
             cls._eval_data = eval_data
         else:
+            logger.debug("Using all data for training", train_split=1.0)
             training_data = all_training_data
             cls._eval_data = None
 
         # Extract metadata for new multi-head architecture
+        logger.debug("Starting metadata extraction for multi-head architecture")
+        metadata_start = time.time()
+        
         correct_answers = cls._extract_correct_answers(training_data)
         question_categories = cls._extract_question_categories(
             training_data, correct_answers
         )
         question_misconceptions = cls._extract_question_misconceptions(training_data)
-
-        logger.debug(f"Found {len(correct_answers)} questions")
-        logger.debug(f"Found categories for {len(question_categories)} questions")
-        logger.debug(
-            f"Found misconceptions for {len(question_misconceptions)} questions"
-        )
+        
+        metadata_duration = time.time() - metadata_start
+        logger.debug("Metadata extraction completed",
+                    questions_with_correct_answers=len(correct_answers),
+                    questions_with_categories=len(question_categories),
+                    questions_with_misconceptions=len(question_misconceptions),
+                    extraction_time_seconds=f"{metadata_duration:.3f}")
 
         # Generate or load embeddings and labels for multi-head training
         embedding_model = EmbeddingModel.MINI_LM
+        embeddings_start = time.time()
+        
         if embeddings_path is not None and embeddings_path.exists():
-            logger.info(f"Loading pre-computed embeddings from {embeddings_path}")
+            logger.info("Loading pre-computed embeddings",
+                       embeddings_path=str(embeddings_path),
+                       file_exists=True,
+                       embedding_model=embedding_model.model_id)
             (
                 embeddings,
                 correctness,
@@ -444,7 +491,9 @@ class MLPStrategy(Strategy):
                 embeddings_path,
             )
         else:
-            logger.info("Generating embeddings and labels for multi-head training...")
+            logger.info("Generating embeddings and labels for multi-head training",
+                       embedding_model=embedding_model.model_id,
+                       training_samples=len(training_data))
             (
                 embeddings,
                 correctness,
@@ -458,10 +507,23 @@ class MLPStrategy(Strategy):
                 question_misconceptions,
                 embedding_model,
             )
+            
+        embeddings_duration = time.time() - embeddings_start
+        logger.debug("Embeddings preparation completed",
+                    embeddings_shape=embeddings.shape,
+                    correctness_shape=correctness.shape,
+                    question_ids_shape=question_ids.shape,
+                    preparation_time_seconds=f"{embeddings_duration:.3f}")
 
         # Get device and train multi-head model
         device = get_device()
-        logger.info(f"Training multi-head MLP on device: {device}")
+        training_start = time.time()
+        logger.info("Starting multi-head MLP training",
+                   device=str(device),
+                   device_type=device.type,
+                   embeddings_shape=embeddings.shape,
+                   training_samples=len(training_data))
+        
         model = cls._train_multihead_model(
             embeddings,
             correctness,
@@ -472,6 +534,15 @@ class MLPStrategy(Strategy):
             question_misconceptions,
             device,
         )
+        
+        training_duration = time.time() - training_start
+        total_duration = time.time() - fit_start_time
+        
+        logger.info("MLP strategy fit completed",
+                   training_time_seconds=f"{training_duration:.3f}",
+                   total_fit_time_seconds=f"{total_duration:.3f}",
+                   model_parameters=sum(p.numel() for p in model.parameters()),
+                   device=str(device))
 
         return cls(
             model=model,
@@ -918,17 +989,39 @@ class MLPStrategy(Strategy):
     @staticmethod
     def _parse_training_data(csv_path: Path) -> list[TrainingRow]:
         """Parse CSV into strongly-typed training rows."""
+        logger.debug("Starting CSV parsing", file_path=str(csv_path))
         assert csv_path.exists(), f"Training file not found: {csv_path}"
+        
+        file_size = csv_path.stat().st_size
+        logger.debug("File validation passed",
+                    file_exists=True,
+                    file_size_bytes=file_size,
+                    file_size_mb=f"{file_size / 1024 / 1024:.2f}")
 
+        csv_start = time.time()
         training_df = pd.read_csv(csv_path)
-        logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
+        csv_load_time = time.time() - csv_start
+        
+        logger.debug("CSV loaded successfully",
+                    columns=list(training_df.columns),
+                    rows=len(training_df),
+                    load_time_seconds=f"{csv_load_time:.3f}")
         assert not training_df.empty, "Training CSV cannot be empty"
 
+        parse_start = time.time()
         training_rows = []
-        for _, row in training_df.iterrows():
+        misconceptions_found = 0
+        categories_found = set()
+        
+        for idx, row in training_df.iterrows():
             misconception = (
                 row["Misconception"] if pd.notna(row["Misconception"]) else None
             )
+            if misconception is not None:
+                misconceptions_found += 1
+                
+            category = Category(row["Category"])
+            categories_found.add(category)
 
             training_rows.append(
                 TrainingRow(
@@ -937,12 +1030,24 @@ class MLPStrategy(Strategy):
                     question_text=str(row["QuestionText"]),
                     mc_answer=str(row["MC_Answer"]),
                     student_explanation=str(row["StudentExplanation"]),
-                    category=Category(row["Category"]),
+                    category=category,
                     misconception=misconception,
                 )
             )
+            
+            if idx > 0 and idx % 1000 == 0:
+                logger.debug("Row parsing progress", processed_rows=idx + 1)
 
-        logger.debug(f"Parsed {len(training_rows)} training rows")
+        parse_duration = time.time() - parse_start
+        unique_questions = len({row.question_id for row in training_rows})
+        
+        logger.debug("Training data parsing completed",
+                    total_rows=len(training_rows),
+                    unique_questions=unique_questions,
+                    rows_with_misconceptions=misconceptions_found,
+                    unique_categories=len(categories_found),
+                    categories=sorted([cat.value for cat in categories_found]),
+                    parse_time_seconds=f"{parse_duration:.3f}")
         assert training_rows, "Must parse at least one training row"
         return training_rows
 
@@ -951,19 +1056,31 @@ class MLPStrategy(Strategy):
         training_data: list[TrainingRow],
     ) -> dict[QuestionId, Answer]:
         """Extract the correct answer for each question."""
+        logger.debug("Starting correct answer extraction", total_rows=len(training_data))
         assert training_data, "Training data cannot be empty"
 
+        extract_start = time.time()
         correct_answers = {}
+        true_correct_count = 0
+        conflicts_checked = 0
+        
         for row in training_data:
             if row.category == Category.TRUE_CORRECT:
+                true_correct_count += 1
                 if row.question_id in correct_answers:
+                    conflicts_checked += 1
                     assert correct_answers[row.question_id] == row.mc_answer, (
                         f"Conflicting correct answers for question {row.question_id}"
                     )
                 else:
                     correct_answers[row.question_id] = row.mc_answer
 
-        logger.debug(f"Extracted correct answers for {len(correct_answers)} questions")
+        extract_duration = time.time() - extract_start
+        logger.debug("Correct answer extraction completed",
+                    questions_with_correct_answers=len(correct_answers),
+                    true_correct_rows=true_correct_count,
+                    conflict_checks=conflicts_checked,
+                    extraction_time_seconds=f"{extract_duration:.3f}")
         assert correct_answers, "Must find at least one correct answer"
         return correct_answers
 
@@ -977,29 +1094,54 @@ class MLPStrategy(Strategy):
         This mirrors the baseline's category frequency approach but stores
         the raw category lists for neural network training.
         """
+        logger.debug("Starting question category extraction",
+                    total_rows=len(training_data),
+                    questions_with_correct_answers=len(correct_answers))
         assert training_data, "Training data cannot be empty"
         assert correct_answers, "Correct answers cannot be empty"
 
         # Group categories by question and correctness
+        extract_start = time.time()
         question_correctness_categories = defaultdict(lambda: defaultdict(list))
+        correct_matches = 0
+        incorrect_matches = 0
 
         for row in training_data:
             is_correct = (
                 row.question_id in correct_answers
                 and row.mc_answer == correct_answers[row.question_id]
             )
+            if is_correct:
+                correct_matches += 1
+            else:
+                incorrect_matches += 1
+                
             question_correctness_categories[row.question_id][is_correct].append(
                 row.category
             )
 
         # Convert to final format (keep raw lists, don't count frequencies yet)
         result = {}
+        questions_with_correct_categories = 0
+        questions_with_incorrect_categories = 0
+        
         for question_id, correctness_map in question_correctness_categories.items():
             result[question_id] = {}
             for is_correct, categories in correctness_map.items():
                 result[question_id][is_correct] = categories
+                if is_correct and categories:
+                    questions_with_correct_categories += 1
+                elif not is_correct and categories:
+                    questions_with_incorrect_categories += 1
 
-        logger.debug(f"Extracted categories for {len(result)} questions")
+        extract_duration = time.time() - extract_start
+        logger.debug("Question category extraction completed",
+                    questions_processed=len(result),
+                    correct_answer_matches=correct_matches,
+                    incorrect_answer_matches=incorrect_matches,
+                    questions_with_correct_categories=questions_with_correct_categories,
+                    questions_with_incorrect_categories=questions_with_incorrect_categories,
+                    extraction_time_seconds=f"{extract_duration:.3f}")
         return result
 
     @staticmethod
@@ -1007,24 +1149,38 @@ class MLPStrategy(Strategy):
         training_data: list[TrainingRow],
     ) -> dict[QuestionId, list[str]]:
         """Extract unique misconceptions per question, adding NA class."""
+        logger.debug("Starting misconception extraction", total_rows=len(training_data))
         assert training_data, "Training data cannot be empty"
 
+        extract_start = time.time()
         question_misconceptions_set = defaultdict(set)
+        total_misconceptions_found = 0
 
         for row in training_data:
             if row.misconception is not None:
                 question_misconceptions_set[row.question_id].add(row.misconception)
+                total_misconceptions_found += 1
 
         # Convert to lists and add NA class
         question_misconceptions = {}
+        total_unique_misconceptions = 0
+        
         for question_id, misconceptions in question_misconceptions_set.items():
             misconception_list = sorted(misconceptions)  # Sort for consistency
+            total_unique_misconceptions += len(misconception_list)
             misconception_list.append("NA")  # Add NA class
             question_misconceptions[question_id] = misconception_list
 
-        logger.debug(
-            f"Extracted misconceptions for {len(question_misconceptions)} questions"
-        )
+        extract_duration = time.time() - extract_start
+        avg_misconceptions_per_question = (total_unique_misconceptions / len(question_misconceptions)
+                                         if question_misconceptions else 0)
+        
+        logger.debug("Misconception extraction completed",
+                    questions_with_misconceptions=len(question_misconceptions),
+                    total_misconception_instances=total_misconceptions_found,
+                    total_unique_misconceptions=total_unique_misconceptions,
+                    avg_misconceptions_per_question=f"{avg_misconceptions_per_question:.2f}",
+                    extraction_time_seconds=f"{extract_duration:.3f}")
         return question_misconceptions
 
     @staticmethod
@@ -1072,9 +1228,21 @@ class MLPStrategy(Strategy):
         np.ndarray,
     ]:
         """Prepare embeddings and multi-head labels for training."""
-        logger.info("Generating embeddings and multi-head labels...")
+        logger.info("Starting multi-head training data preparation",
+                   training_samples=len(training_data),
+                   embedding_model=embedding_model.model_id,
+                   questions_with_categories=len(question_categories),
+                   questions_with_misconceptions=len(question_misconceptions))
 
+        tokenizer_start = time.time()
         tokenizer = get_tokenizer(embedding_model)
+        tokenizer_load_time = time.time() - tokenizer_start
+        
+        logger.debug("Tokenizer loaded",
+                    model_id=embedding_model.model_id,
+                    load_time_seconds=f"{tokenizer_load_time:.3f}")
+        
+        processing_start = time.time()
         embeddings, correctness, question_ids, category_labels, misconception_labels = (
             MLPStrategy._process_training_rows_multihead(
                 training_data,
@@ -1084,8 +1252,14 @@ class MLPStrategy(Strategy):
                 tokenizer,
             )
         )
+        processing_time = time.time() - processing_start
+        
+        logger.debug("Training row processing completed",
+                    embeddings_count=len(embeddings),
+                    processing_time_seconds=f"{processing_time:.3f}")
 
-        return MLPStrategy._convert_to_arrays_multihead(
+        conversion_start = time.time()
+        result = MLPStrategy._convert_to_arrays_multihead(
             embeddings,
             correctness,
             question_ids,
@@ -1094,6 +1268,12 @@ class MLPStrategy(Strategy):
             question_categories,
             question_misconceptions,
         )
+        conversion_time = time.time() - conversion_start
+        
+        logger.debug("Array conversion completed",
+                    conversion_time_seconds=f"{conversion_time:.3f}")
+        
+        return result
 
     @staticmethod
     def _process_training_rows_multihead(
@@ -1104,6 +1284,11 @@ class MLPStrategy(Strategy):
         tokenizer: "SentenceTransformer",
     ) -> tuple[list, list, list, dict, dict]:
         """Process training rows for multi-head training."""
+        logger.debug("Starting training row processing for multi-head model",
+                    total_rows=len(training_data),
+                    tokenizer_type=type(tokenizer).__name__)
+        
+        process_start = time.time()
         embeddings = []
         correctness = []
         question_ids = []
@@ -1111,15 +1296,23 @@ class MLPStrategy(Strategy):
             qid: {"correct": [], "incorrect": []} for qid in question_categories
         }
         misconception_labels = {qid: [] for qid in question_misconceptions}
+        
+        skipped_rows = 0
+        processed_embeddings = 0
 
-        for row in training_data:
+        for idx, row in enumerate(training_data):
             if row.question_id not in question_categories:
+                skipped_rows += 1
                 continue
 
             # Generate embedding (question/answer/explanation only)
             text = repr(row)
+            embedding_start = time.time()
             embedding = tokenizer.encode(text)
+            embedding_time = time.time() - embedding_start
+            
             embeddings.append(embedding)
+            processed_embeddings += 1
 
             # Determine correctness
             is_correct = (
@@ -1128,6 +1321,13 @@ class MLPStrategy(Strategy):
             )
             correctness.append(float(is_correct))
             question_ids.append(row.question_id)
+            
+            # Log progress for large datasets
+            if idx > 0 and idx % 500 == 0:
+                logger.debug("Row processing progress",
+                           processed_rows=idx + 1,
+                           embeddings_generated=processed_embeddings,
+                           avg_embedding_time_ms=f"{embedding_time * 1000:.2f}")
 
             # Create category labels (one-hot for the actual category within correctness state)
             category_label_correct, category_label_incorrect = (
@@ -1152,6 +1352,16 @@ class MLPStrategy(Strategy):
                     row.question_id, []
                 )
 
+        process_duration = time.time() - process_start
+        avg_embedding_time = process_duration / max(processed_embeddings, 1)
+        
+        logger.debug("Training row processing completed",
+                    total_processed=processed_embeddings,
+                    skipped_rows=skipped_rows,
+                    total_time_seconds=f"{process_duration:.3f}",
+                    avg_embedding_time_ms=f"{avg_embedding_time * 1000:.2f}",
+                    embedding_dimension=len(embeddings[0]) if embeddings else 0)
+        
         return (
             embeddings,
             correctness,
@@ -1308,11 +1518,26 @@ class MLPStrategy(Strategy):
         device: torch.device,
     ) -> MLPNet:
         """Train the multi-head MLP model."""
-        logger.info("Training multi-head MLP model...")
+        logger.info("Starting multi-head MLP model training",
+                   embeddings_shape=embeddings.shape,
+                   correctness_shape=correctness.shape,
+                   question_ids_shape=question_ids.shape,
+                   device=str(device),
+                   unique_questions=len(set(question_ids)))
 
+        setup_start = time.time()
         model, criterions, optimizer = MLPStrategy._setup_multihead_training(
             question_categories, question_misconceptions, device
         )
+        setup_time = time.time() - setup_start
+        
+        logger.debug("Model setup completed",
+                    model_parameters=sum(p.numel() for p in model.parameters()),
+                    criterion_types=[type(c).__name__ for c in criterions.values()],
+                    optimizer_type=type(optimizer).__name__,
+                    setup_time_seconds=f"{setup_time:.3f}")
+        
+        dataset_start = time.time()
         dataset = MLPDataset(
             embeddings,
             correctness,
@@ -1321,6 +1546,11 @@ class MLPStrategy(Strategy):
             question_ids,
             device,
         )
+        dataset_time = time.time() - dataset_start
+        
+        logger.debug("Dataset creation completed",
+                    dataset_size=len(dataset),
+                    dataset_time_seconds=f"{dataset_time:.3f}")
 
         # Custom collate function to handle variable tensor shapes
         def collate_multihead_batch(batch):
@@ -1403,19 +1633,32 @@ class MLPStrategy(Strategy):
 
             return features, multi_labels, question_ids, indices
 
+        batch_size = 32
+        num_epochs = 100
+        
         dataloader = DataLoader(
-            dataset, batch_size=32, shuffle=True, collate_fn=collate_multihead_batch
+            dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_multihead_batch
         )
-
+        
+        logger.info("Starting training epochs",
+                   batch_size=batch_size,
+                   num_epochs=num_epochs,
+                   total_batches_per_epoch=len(dataloader))
+        
+        training_start = time.time()
         MLPStrategy._train_multihead_epochs(
             model,
             criterions,
             optimizer,
             dataloader,
-            num_epochs=100,  # More epochs for complex model
+            num_epochs=num_epochs,
         )
+        training_duration = time.time() - training_start
 
-        logger.info("Multi-head MLP training completed")
+        logger.info("Multi-head MLP training completed",
+                   training_time_seconds=f"{training_duration:.3f}",
+                   epochs_completed=num_epochs,
+                   final_model_parameters=sum(p.numel() for p in model.parameters()))
         return model
 
     @staticmethod
@@ -1425,7 +1668,22 @@ class MLPStrategy(Strategy):
         device: torch.device,
     ) -> tuple[MLPNet, dict[str, nn.Module], optim.Adam]:
         """Setup multi-head model, criterions, and optimizer."""
+        logger.debug("Setting up multi-head training components",
+                    questions_with_categories=len(question_categories),
+                    questions_with_misconceptions=len(question_misconceptions),
+                    target_device=str(device))
+        
+        model_create_start = time.time()
         model = MLPNet(question_categories, question_misconceptions).to(device)
+        model_create_time = time.time() - model_create_start
+        
+        # Verify model is on correct device
+        model_device = next(model.parameters()).device
+        logger.debug("Model created and moved to device",
+                    model_device=str(model_device),
+                    device_matches=model_device.type == device.type,
+                    model_parameters=sum(p.numel() for p in model.parameters()),
+                    creation_time_seconds=f"{model_create_time:.3f}")
 
         # Multiple loss functions for different heads
         criterions = {
@@ -1433,10 +1691,20 @@ class MLPStrategy(Strategy):
             "categories": nn.CrossEntropyLoss(),  # Multi-class for category selection
             "misconceptions": nn.BCEWithLogitsLoss(),  # Multi-label for misconceptions
         }
+        
+        # Move criterions to device
+        for name, criterion in criterions.items():
+            criterions[name] = criterion.to(device)
 
         # Lower learning rate for more complex multi-head model
-        optimizer = optim.Adam(model.parameters(), lr=5e-4)
-        logger.debug(f"Multi-head model moved to device: {device}")
+        learning_rate = 5e-4
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        
+        logger.debug("Training setup completed",
+                    criterions_count=len(criterions),
+                    learning_rate=learning_rate,
+                    optimizer_params=len(list(model.parameters())),
+                    device=str(device))
         return model, criterions, optimizer
 
     @staticmethod
@@ -1552,12 +1820,14 @@ class MLPStrategy(Strategy):
             label_key = "correct_categories" if is_correct else "incorrect_categories"
 
             if category_key in outputs and label_key in multi_labels:
-                category_target = multi_labels[label_key][i].unsqueeze(0)
+                category_target = multi_labels[label_key][i]
                 if (
                     category_target.sum() > 0
                 ):  # Only compute loss if we have a valid target
+                    # Convert one-hot to class indices for CrossEntropyLoss
+                    target_class = torch.argmax(category_target).unsqueeze(0)
                     category_loss = criterions["categories"](
-                        outputs[category_key], category_target
+                        outputs[category_key], target_class
                     )
                     batch_losses["categories"] += category_loss
 
