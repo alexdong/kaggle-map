@@ -13,7 +13,7 @@ from kaggle_map.models import (
     EvaluationResult,
     Prediction,
     SubmissionRow,
-    TestRow,
+    EvaluationRow,
     TrainingRow,
 )
 from kaggle_map.strategies.baseline import BaselineStrategy
@@ -194,14 +194,14 @@ def sample_training_data():
 def sample_test_data():
     """Sample test data for predictions."""
     return [
-        TestRow(
+        EvaluationRow(
             row_id=1001,
             question_id=100,
             question_text="What is 2+2?",
             mc_answer="4",
             student_explanation="Simple addition"
         ),
-        TestRow(
+        EvaluationRow(
             row_id=1002,
             question_id=101,
             question_text="What is 3+3?",
@@ -276,7 +276,7 @@ def test_model_predict_applies_misconceptions_to_misconception_categories(temp_t
     model = BaselineStrategy.fit(temp_training_csv)
     
     # Test with incorrect answer to trigger misconception categories
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=9999,
         question_id=100,
         question_text="What is 2+2?",
@@ -295,7 +295,7 @@ def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv)
     """Model orders predictions by frequency from training data."""
     model = BaselineStrategy.fit(temp_training_csv)
     
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=9999,
         question_id=100,
         question_text="What is 2+2?", 
@@ -389,7 +389,7 @@ def test_model_predict_handles_questions_not_in_training_data(temp_training_csv)
     model = BaselineStrategy.fit(temp_training_csv)
     
     # Test with question ID not in training data
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=9999,
         question_id=999,  # Not in training data
         question_text="New question",
@@ -443,7 +443,7 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     original_model = BaselineStrategy.fit(temp_training_csv)
     
     # Create test data
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=1,
         question_id=100,
         question_text="Test",

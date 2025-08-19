@@ -6,6 +6,8 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, field_validator
 
+from kaggle_map.utils.formula import normalize_latex_answer, normalize_text
+
 # Domain-specific type aliases
 type QuestionId = int
 type Answer = str
@@ -90,20 +92,7 @@ class Prediction(BaseModel):
 
 
 @dataclass(frozen=True)
-class TrainingRow:
-    """Single row from train.csv."""
-
-    row_id: int
-    question_id: QuestionId
-    question_text: str
-    mc_answer: Answer
-    student_explanation: str
-    category: Category
-    misconception: Misconception | None
-
-
-@dataclass(frozen=True)
-class TestRow:
+class EvaluationRow:
     """Single row from test.csv."""
 
     row_id: int
@@ -111,6 +100,25 @@ class TestRow:
     question_text: str
     mc_answer: Answer
     student_explanation: str
+
+    def __repr__(self) -> str:
+        """Compose the canonical Q/A/E string used for embeddings.
+
+        Example output:
+            "Question: {question}, Answer: {normalized_answer}, Explanation: {explanation}"
+        """
+        q = normalize_text(self.question_text)
+        a = normalize_latex_answer(self.mc_answer)
+        e = normalize_text(self.student_explanation)
+        return f"Question: {q}, Answer: {a}, Explanation: {e}"
+
+
+@dataclass(frozen=True)
+class TrainingRow(EvaluationRow):
+    """Single row from train.csv, extends EvaluationRow with ground truth labels."""
+
+    category: Category
+    misconception: Misconception | None
 
 
 class SubmissionRow(NamedTuple):

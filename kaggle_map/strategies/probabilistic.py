@@ -13,12 +13,12 @@ from rich.table import Table
 from kaggle_map.models import (
     Answer,
     Category,
+    EvaluationRow,
     Misconception,
     Prediction,
     QuestionId,
     ResponseContext,
     SubmissionRow,
-    TestRow,
     TrainingRow,
 )
 
@@ -114,7 +114,7 @@ class ProbabilisticStrategy(Strategy):
             question_category_priors=question_category_priors,
         )
 
-    def predict(self, test_data: list[TestRow]) -> list[SubmissionRow]:
+    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
         """Make probabilistic predictions for test data.
 
         For each test row, computes P(Category, Misconception | Context)
@@ -280,7 +280,7 @@ class ProbabilisticStrategy(Strategy):
     def demonstrate_predictions(self, console: Console) -> None:
         """Show sample predictions."""
         # Test prediction with a sample that should exist
-        sample_test_row = TestRow(
+        sample_test_row = EvaluationRow(
             row_id=99999,
             question_id=31772,  # This should exist in our training data
             question_text="Sample question",
@@ -307,7 +307,7 @@ class ProbabilisticStrategy(Strategy):
 
     # Implementation methods
 
-    def _create_test_context(self, test_row: TestRow) -> ResponseContext:
+    def _create_test_context(self, test_row: EvaluationRow) -> ResponseContext:
         """Create ResponseContext for a test row by finding the correct answer."""
         # Find correct answer from our learned knowledge
         correct_answer = None

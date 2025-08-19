@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from kaggle_map.models import SubmissionRow, TestRow
+from kaggle_map.models import EvaluationRow, SubmissionRow
 
 
 class Strategy(ABC):
@@ -38,7 +38,7 @@ class Strategy(ABC):
         """
 
     @abstractmethod
-    def predict(self, test_data: list[TestRow]) -> list[SubmissionRow]:
+    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
         """Make predictions on test data.
 
         Args:

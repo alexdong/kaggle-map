@@ -97,8 +97,8 @@ def test_model_prediction_format(temp_train_csv):
     model = BaselineStrategy.fit(train_path)
     
     # Create test data
-    from kaggle_map.models import TestRow
-    test_row = TestRow(
+    from kaggle_map.models import EvaluationRow
+    test_row = EvaluationRow(
         row_id=999,
         question_id=101,
         question_text="Test question",

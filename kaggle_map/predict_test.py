@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 import pandas as pd
-from kaggle_map.models import Category, Prediction, TestRow
+from kaggle_map.models import Category, Prediction, EvaluationRow
 from kaggle_map.strategies.baseline import BaselineStrategy
 
 
@@ -66,7 +66,7 @@ def test_model_prediction(test_case, simple_model, temp_test_csv):
     test_df = pd.read_csv(test_path)
     test_rows = []
     for _, row in test_df.iterrows():
-        test_rows.append(TestRow(
+        test_rows.append(EvaluationRow(
             row_id=int(row["row_id"]),
             question_id=int(row["QuestionId"]),
             question_text=str(row["QuestionText"]),
@@ -88,7 +88,7 @@ def test_model_prediction(test_case, simple_model, temp_test_csv):
 
 def test_prediction_format(simple_model):
     """Test that predictions have correct format."""
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=999,
         question_id=101,
         question_text="Test question",
@@ -122,7 +122,7 @@ def test_prediction_format(simple_model):
 def test_correct_vs_incorrect_predictions(simple_model):
     """Test that model behaves differently for correct vs incorrect answers."""
     # Correct answer
-    correct_row = TestRow(
+    correct_row = EvaluationRow(
         row_id=1,
         question_id=101,
         question_text="Test",
@@ -131,7 +131,7 @@ def test_correct_vs_incorrect_predictions(simple_model):
     )
     
     # Incorrect answer
-    incorrect_row = TestRow(
+    incorrect_row = EvaluationRow(
         row_id=2,
         question_id=101,
         question_text="Test",
@@ -152,7 +152,7 @@ def test_correct_vs_incorrect_predictions(simple_model):
 
 def test_misconception_handling(simple_model):
     """Test that misconceptions are properly applied to misconception categories."""
-    test_row = TestRow(
+    test_row = EvaluationRow(
         row_id=1,
         question_id=101,
         question_text="Test",

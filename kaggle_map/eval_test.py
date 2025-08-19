@@ -19,7 +19,7 @@ from kaggle_map.models import (
     EvaluationResult, 
     Prediction, 
     Category, 
-    TestRow,
+    EvaluationRow,
     SubmissionRow
 )
 

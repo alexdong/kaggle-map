@@ -4,8 +4,8 @@ from .eval import evaluate
 from .models import (
     Category,
     EvaluationResult,
+    EvaluationRow,
     Prediction,
-    TestRow,
     TrainingRow,
 )
 from .strategies.baseline import BaselineStrategy
@@ -14,8 +14,8 @@ __all__ = [
     "BaselineStrategy",
     "Category",
     "EvaluationResult",
+    "EvaluationRow",
     "Prediction",
-    "TestRow",
     "TrainingRow",
     "evaluate",
 ]

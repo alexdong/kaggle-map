@@ -13,11 +13,11 @@ from rich.table import Table
 from kaggle_map.models import (
     Answer,
     Category,
+    EvaluationRow,
     Misconception,
     Prediction,
     QuestionId,
     SubmissionRow,
-    TestRow,
     TrainingRow,
 )
 
@@ -76,7 +76,7 @@ class BaselineStrategy(Strategy):
             common_misconceptions=common_misconceptions,
         )
 
-    def predict(self, test_data: list[TestRow]) -> list[SubmissionRow]:
+    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
         """Make predictions for test data.
 
         Args:
@@ -176,7 +176,7 @@ class BaselineStrategy(Strategy):
     def demonstrate_predictions(self, console: Console) -> None:
         """Show sample predictions."""
         # Test prediction format with a sample
-        sample_test_row = TestRow(
+        sample_test_row = EvaluationRow(
             row_id=99999,
             question_id=31772,
             question_text="Sample question",
@@ -210,7 +210,7 @@ class BaselineStrategy(Strategy):
 
     # Implementation methods
 
-    def _predict_categories_for_row(self, row: TestRow) -> list[Prediction]:
+    def _predict_categories_for_row(self, row: EvaluationRow) -> list[Prediction]:
         """Predict ordered categories for a single test row."""
         is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
 

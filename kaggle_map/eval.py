@@ -16,8 +16,8 @@ from rich.table import Table
 from kaggle_map.models import (
     Category,
     EvaluationResult,
+    EvaluationRow,
     Prediction,
-    TestRow,
 )
 from kaggle_map.strategies.baseline import BaselineStrategy
 
@@ -414,14 +414,14 @@ def _log_data_quality_issues(train_df: pd.DataFrame) -> None:
         logger.warning(f"⚠️  Found {duplicate_row_ids} duplicate row_ids")
 
 
-def _convert_to_test_rows(train_df: pd.DataFrame) -> list[TestRow]:
-    """Convert DataFrame rows to TestRow objects."""
+def _convert_to_test_rows(train_df: pd.DataFrame) -> list[EvaluationRow]:
+    """Convert DataFrame rows to EvaluationRow objects."""
     test_rows = []
     failed_conversions = 0
 
     for idx, row in train_df.iterrows():
         try:
-            test_row = TestRow(
+            test_row = EvaluationRow(
                 row_id=int(row["row_id"]),
                 question_id=int(row["QuestionId"]),
                 question_text=str(row["QuestionText"]),
@@ -431,12 +431,12 @@ def _convert_to_test_rows(train_df: pd.DataFrame) -> list[TestRow]:
             test_rows.append(test_row)
         except (ValueError, TypeError) as e:
             failed_conversions += 1
-            logger.warning(f"⚠️  Failed to convert row {idx} to TestRow: {e}")
+            logger.warning(f"⚠️  Failed to convert row {idx} to EvaluationRow: {e}")
             logger.debug(f"Problematic row data: {dict(row)}")
 
     if failed_conversions > 0:
         logger.warning(
-            f"⚠️  Failed to convert {failed_conversions} rows to TestRow objects"
+            f"⚠️  Failed to convert {failed_conversions} rows to EvaluationRow objects"
         )
 
     return test_rows
@@ -444,7 +444,7 @@ def _convert_to_test_rows(train_df: pd.DataFrame) -> list[TestRow]:
 
 def _prepare_cross_validation_data(
     train_csv_path: Path,
-) -> tuple[list[TestRow], pd.DataFrame]:
+) -> tuple[list[EvaluationRow], pd.DataFrame]:
     """Prepare test rows and ground truth data from train.csv."""
     train_df = pd.read_csv(train_csv_path)
     assert not train_df.empty, "Training CSV cannot be empty"
@@ -546,7 +546,7 @@ def _display_cross_validation_results(
 
 def _display_detailed_cross_validation_analysis(
     console: Console,
-    test_rows: list[TestRow],
+    test_rows: list[EvaluationRow],
     predictions: list,
     ground_truth_data: pd.DataFrame,
 ) -> None:
