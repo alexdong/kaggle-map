@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from sentence_transformers import SentenceTransformer
+
 """Embedding model registry and metadata.
 
 Defines the `EmbeddingModel` enum with a few strong baseline choices and
 metadata helpful for configuration (dimensions and recommended max sequence).
 """
-
-from sentence_transformers import SentenceTransformer
 
 
 @dataclass(frozen=True)
@@ -93,15 +93,17 @@ class EmbeddingModel(Enum):
         return list(EmbeddingModel)
 
 
-def get_tokenizer(model: EmbeddingModel = EmbeddingModel.MINI_LM) -> SentenceTransformer:
+def get_tokenizer(
+    model: EmbeddingModel = EmbeddingModel.MINI_LM,
+) -> SentenceTransformer:
     """Initialize and return a SentenceTransformer model.
-    
+
     Args:
         model: The embedding model to use (defaults to MiniLM for speed)
-        
+
     Returns:
         An initialized SentenceTransformer instance
-        
+
     Raises:
         ImportError: If sentence-transformers is not installed
     """

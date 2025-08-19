@@ -1,6 +1,6 @@
 import pytest
 
-from kaggle_map.utils.embeddings import EmbeddingModel, get_tokenizer
+from kaggle_map.utils.embedding_models import EmbeddingModel, get_tokenizer
 
 
 def test_embedding_metadata_dims_and_seq():
