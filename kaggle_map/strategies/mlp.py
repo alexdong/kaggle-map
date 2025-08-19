@@ -1,6 +1,8 @@
 """MLP neural network strategy for student misconception prediction."""
 
 import pickle
+import random
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,9 +14,11 @@ import torch
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
+from sklearn.model_selection import train_test_split
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
+from kaggle_map.eval import evaluate
 from kaggle_map.models import (
     Answer,
     Category,
@@ -49,32 +53,36 @@ class MLPDataset(Dataset):
         self.embeddings = torch.FloatTensor(embeddings)
         self.correctness = torch.FloatTensor(correctness).unsqueeze(1)
         self.question_ids = question_ids
-        
+
         # Flatten misconception labels to match global indexing
         self.labels = []
         self._build_label_mapping(misconception_labels, question_ids)
 
-    def _build_label_mapping(self, misconception_labels: dict[QuestionId, np.ndarray], question_ids: np.ndarray) -> None:
+    def _build_label_mapping(
+        self,
+        misconception_labels: dict[QuestionId, np.ndarray],
+        question_ids: np.ndarray,
+    ) -> None:
         """Build mapping from global index to misconception labels."""
         # Find the maximum label size across all questions for padding
         max_label_size = max(
-            labels.shape[1] if len(labels) > 0 else 2 
+            labels.shape[1] if len(labels) > 0 else 2
             for labels in misconception_labels.values()
         )
-        
+
         # Create a mapping from question_id to local indices for that question
         question_local_indices = {}
         for qid in set(question_ids):
             question_local_indices[qid] = 0
-        
+
         # Build labels list in the same order as the global dataset
-        for global_idx, qid in enumerate(question_ids):
+        for _global_idx, qid in enumerate(question_ids):
             local_idx = question_local_indices[qid]
             if local_idx < len(misconception_labels[qid]):
                 label = misconception_labels[qid][local_idx]
                 # Pad to max_label_size
                 padded_label = np.zeros(max_label_size)
-                padded_label[:len(label)] = label
+                padded_label[: len(label)] = label
                 self.labels.append(torch.FloatTensor(padded_label))
             else:
                 # Fallback: create zero label with max_label_size
@@ -84,9 +92,7 @@ class MLPDataset(Dataset):
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(
-        self, idx: int
-    ) -> tuple[torch.Tensor, torch.Tensor, int, int]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, int, int]:
         question_id = self.question_ids[idx]
         features = torch.cat([self.embeddings[idx], self.correctness[idx]])
         misconception_label = self.labels[idx]
@@ -111,11 +117,13 @@ class MLPNet(nn.Module):
         )
 
         # Find max output size for consistent tensor shapes
-        self.max_output_size = max(len(misconceptions) for misconceptions in question_misconceptions.values())
+        self.max_output_size = max(
+            len(misconceptions) for misconceptions in question_misconceptions.values()
+        )
 
         # Question-specific misconception heads - all output max_output_size
         self.question_heads = nn.ModuleDict()
-        for question_id, misconceptions in question_misconceptions.items():
+        for question_id in question_misconceptions:
             self.question_heads[str(question_id)] = nn.Linear(128, self.max_output_size)
 
         self.question_misconceptions = question_misconceptions
@@ -149,20 +157,50 @@ class MLPStrategy(Strategy):
         return "Question-specific MLP for misconception detection and reasoning quality"
 
     @classmethod
-    def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "MLPStrategy":
+    def fit(
+        cls,
+        train_csv_path: Path = Path("dataset/train.csv"),
+        train_split: float = 1.0,
+        random_seed: int = 42,
+    ) -> "MLPStrategy":
         """Train the MLP strategy on training data.
 
         Args:
             train_csv_path: Path to training CSV file
+            train_split: Fraction of data to use for training (default: 1.0 = all data)
+            random_seed: Random seed for reproducible results
 
         Returns:
             Trained MLPStrategy instance
         """
         logger.info(f"Fitting MLP strategy from {train_csv_path}")
 
+        # Set random seeds for deterministic training
+        cls._set_random_seeds(random_seed)
+        logger.debug(f"Set random seed to {random_seed} for deterministic training")
+
         # Parse training data
-        training_data = cls._parse_training_data(train_csv_path)
-        logger.debug(f"Parsed {len(training_data)} training rows")
+        all_training_data = cls._parse_training_data(train_csv_path)
+        logger.debug(f"Parsed {len(all_training_data)} total training rows")
+
+        # Split data if train_split < 1.0
+        if train_split < 1.0:
+            training_data, eval_data = train_test_split(
+                all_training_data,
+                train_size=train_split,
+                random_state=random_seed,
+                stratify=[
+                    row.question_id for row in all_training_data
+                ],  # Stratify by question
+            )
+            logger.debug(
+                f"Split data: {len(training_data)} training, {len(eval_data)} eval"
+            )
+            # Store eval data for later use
+            cls._eval_data = eval_data
+        else:
+            training_data = all_training_data
+            cls._eval_data = None
 
         # Extract metadata
         correct_answers = cls._extract_correct_answers(training_data)
@@ -245,9 +283,11 @@ class MLPStrategy(Strategy):
                 else:
                     logits = self.model(features.unsqueeze(0), row.question_id)
                     probs = torch.sigmoid(logits).squeeze().numpy()
-                    
+
                     # Only use the relevant part of the output for this question
-                    num_misconceptions = len(self.question_misconceptions[row.question_id])
+                    num_misconceptions = len(
+                        self.question_misconceptions[row.question_id]
+                    )
                     relevant_probs = probs[:num_misconceptions]
 
                     predicted_categories = self._reconstruct_predictions(
@@ -372,6 +412,102 @@ class MLPStrategy(Strategy):
         )
 
     # Implementation helper methods
+
+    @staticmethod
+    def _set_random_seeds(seed: int) -> None:
+        """Set random seeds for deterministic training."""
+        random.seed(seed)
+        # Use simple seed setting (legacy but functional)
+        np.random.seed(seed)  # noqa: NPY002
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+        # Make torch deterministic
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    @classmethod
+    def evaluate_on_split(
+        cls, model: "MLPStrategy", eval_data: list[TrainingRow] | None = None
+    ) -> dict[str, float]:
+        """Evaluate model performance on eval split.
+
+        Args:
+            model: Trained MLPStrategy model
+            eval_data: Evaluation data (uses stored split if None)
+
+        Returns:
+            Dictionary with evaluation metrics
+        """
+        if eval_data is None:
+            eval_data = getattr(cls, "_eval_data", None)
+
+        if eval_data is None:
+            msg = "No evaluation data available. Train with train_split < 1.0 first."
+            raise ValueError(msg)
+
+        logger.info(f"Evaluating model on {len(eval_data)} validation samples")
+
+        # Convert training rows to evaluation rows for prediction
+        eval_rows = [
+            EvaluationRow(
+                row_id=row.row_id,
+                question_id=row.question_id,
+                question_text=row.question_text,
+                mc_answer=row.mc_answer,
+                student_explanation=row.student_explanation,
+            )
+            for row in eval_data
+        ]
+
+        # Make predictions
+        predictions = model.predict(eval_rows)
+
+        # Use existing evaluation pipeline with temporary files
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+
+            # Create ground truth CSV
+            ground_truth_data = [
+                {
+                    "row_id": row.row_id,
+                    "Category": row.category.value,
+                    "Misconception": row.misconception
+                    if row.misconception is not None
+                    else "NA",
+                }
+                for row in eval_data
+            ]
+
+            ground_truth_df = pd.DataFrame(ground_truth_data)
+            ground_truth_path = tmp_path / "ground_truth.csv"
+            ground_truth_df.to_csv(ground_truth_path, index=False)
+
+            # Create submission CSV
+            submission_data = []
+            for pred in predictions:
+                prediction_strs = [str(p) for p in pred.predicted_categories]
+                submission_data.append(
+                    {"row_id": pred.row_id, "predictions": " ".join(prediction_strs)}
+                )
+
+            submission_df = pd.DataFrame(submission_data)
+            submission_path = tmp_path / "submission.csv"
+            submission_df.to_csv(submission_path, index=False)
+
+            # Use existing evaluate function
+            eval_result = evaluate(ground_truth_path, submission_path)
+
+            return {
+                "map_score": eval_result.map_score,
+                "total_observations": eval_result.total_observations,
+                "perfect_predictions": eval_result.perfect_predictions,
+                "accuracy": eval_result.perfect_predictions
+                / eval_result.total_observations
+                if eval_result.total_observations > 0
+                else 0.0,
+            }
 
     def _is_answer_correct(
         self, question_id: QuestionId, student_answer: Answer
@@ -598,7 +734,7 @@ class MLPStrategy(Strategy):
                 padded_labels = []
                 for label in labels:
                     padded_label = np.zeros(max_label_size)
-                    padded_label[:len(label)] = label
+                    padded_label[: len(label)] = label
                     padded_labels.append(padded_label)
                 misconception_labels[qid] = np.stack(padded_labels)
             else:

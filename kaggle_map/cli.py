@@ -1,5 +1,8 @@
 """Command-line interface for kaggle-map prediction strategies."""
 
+import json
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -24,6 +27,18 @@ def cli() -> None:
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed model information")
 @click.option("--model-path", type=click.Path(), help="Path to saved model file")
 @click.option("--output-path", type=click.Path(), help="Path for output files")
+@click.option(
+    "--train-split",
+    type=float,
+    default=0.8,
+    help="Fraction of data for training (default: 0.8)",
+)
+@click.option(
+    "--random-seed",
+    type=int,
+    default=42,
+    help="Random seed for reproducible results (default: 42)",
+)
 def run(
     strategy: str,
     action: str,
@@ -31,6 +46,8 @@ def run(
     verbose: bool,
     model_path: str | None,
     output_path: str | None,
+    train_split: float,
+    random_seed: int,
 ) -> None:
     """Run a strategy with the specified action.
 
@@ -50,9 +67,16 @@ def run(
                 console,
                 verbose=verbose,
                 output_path=output_path,
+                train_split=train_split,
+                random_seed=random_seed,
             ),
             "eval": lambda: _handle_eval(
-                strategy, strategy_class, console, model_path=model_path
+                strategy,
+                strategy_class,
+                console,
+                model_path=model_path,
+                train_split=train_split,
+                random_seed=random_seed,
             ),
             "predict": lambda: _handle_predict(
                 strategy,
@@ -116,10 +140,24 @@ def _handle_fit(
     *,
     verbose: bool,
     output_path: str | None,
+    train_split: float,
+    random_seed: int,
 ) -> None:
     """Handle the fit action."""
+    console.print(
+        f"[bold blue]Training {strategy} strategy with {train_split:.0%} of data (seed: {random_seed})[/bold blue]"
+    )
+
     with console.status(f"[bold green]Fitting {strategy} strategy..."):
-        model = strategy_class.fit()
+        # Check if strategy supports train_split parameter
+        if (
+            hasattr(strategy_class.fit, "__code__")
+            and "train_split" in strategy_class.fit.__code__.co_varnames
+        ):
+            model = strategy_class.fit(train_split=train_split, random_seed=random_seed)  # type: ignore[call-arg]
+        else:
+            # Fallback for strategies that don't support split
+            model = strategy_class.fit()
 
     console.print(
         f"✅ [bold green]{strategy.title()} strategy completed successfully![/bold green]"
@@ -134,7 +172,7 @@ def _handle_fit(
     model.demonstrate_predictions(console)
 
     # Save model
-    model_path = Path(output_path) if output_path else Path(f"{strategy}_model.json")
+    model_path = Path(output_path) if output_path else Path(f"{strategy}_model.pkl")
 
     model.save(model_path)
     console.print(f"✅ [bold green]Model saved to {model_path}[/bold green]")
@@ -146,28 +184,51 @@ def _handle_eval(
     console: Console,
     *,
     model_path: str | None,
+    train_split: float,
+    random_seed: int,  # noqa: ARG001
 ) -> None:
     """Handle the eval action."""
     # Determine model path
-    model_file = Path(model_path) if model_path else Path(f"{strategy}_model.json")
+    model_file = Path(model_path) if model_path else Path(f"{strategy}_model.pkl")
 
     if not model_file.exists():
         console.print(f"[bold red]Model file not found: {model_file}[/bold red]")
         console.print(
-            f"[yellow]Hint: Run '{strategy} fit' first, or specify --model-path[/yellow]"
+            f"[yellow]Hint: Run '{strategy} fit --train-split {train_split}' first, or specify --model-path[/yellow]"
         )
         raise click.Abort()
 
     with console.status(f"[bold blue]Loading {strategy} model..."):
-        strategy_class.load(model_file)
+        model = strategy_class.load(model_file)
 
     console.print(
         f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]"
     )
 
-    # TODO: Implement evaluation logic
-    console.print("[yellow]Evaluation functionality not yet implemented[/yellow]")
-    console.print("[dim]This would run cross-validation or test set evaluation[/dim]")
+    # Run evaluation if the strategy supports it
+    if hasattr(strategy_class, "evaluate_on_split"):
+        try:
+            with console.status(f"[bold blue]Evaluating {strategy} model..."):
+                eval_results = strategy_class.evaluate_on_split(model)  # type: ignore[misc]
+
+            console.print("✅ [bold green]Evaluation completed![/bold green]")
+
+            # Display evaluation results
+            _display_eval_results(console, eval_results)
+
+            # Update performance history
+            _update_performance_history(strategy, eval_results)
+
+        except ValueError as e:
+            console.print(f"[bold red]Evaluation error:[/bold red] {e}")
+            console.print(
+                f"[yellow]Hint: Train with --train-split {train_split} to create validation split[/yellow]"
+            )
+    else:
+        console.print("[yellow]Strategy does not support evaluation[/yellow]")
+        console.print(
+            "[dim]Only available for strategies with evaluate_on_split method[/dim]"
+        )
 
 
 def _handle_predict(
@@ -201,6 +262,97 @@ def _handle_predict(
     _ = output_path
     console.print("[yellow]Prediction functionality not yet implemented[/yellow]")
     console.print("[dim]This would generate predictions for test.csv[/dim]")
+
+
+def _display_eval_results(console: Console, eval_results: dict[str, float]) -> None:
+    """Display evaluation results in a formatted table."""
+    eval_table = Table(title="Evaluation Results")
+    eval_table.add_column("Metric", style="cyan", no_wrap=True)
+    eval_table.add_column("Value", style="magenta")
+    eval_table.add_column("Description", style="dim")
+
+    eval_table.add_row(
+        "MAP@3 Score", f"{eval_results['map_score']:.4f}", "Mean Average Precision at 3"
+    )
+    eval_table.add_row(
+        "Total Observations",
+        str(eval_results["total_observations"]),
+        "Validation set size",
+    )
+    eval_table.add_row(
+        "Perfect Predictions",
+        f"{eval_results['perfect_predictions']} ({eval_results['accuracy']:.1%})",
+        "Correct in 1st position",
+    )
+
+    console.print(eval_table)
+
+    # Performance assessment thresholds
+    excellent_threshold = 0.8
+    good_threshold = 0.6
+    moderate_threshold = 0.4
+
+    map_score = eval_results["map_score"]
+    if map_score >= excellent_threshold:
+        console.print(
+            "\n🎉 [bold green]Excellent performance![/bold green] Model shows strong validation results."
+        )
+    elif map_score >= good_threshold:
+        console.print(
+            "\n✅ [bold blue]Good performance.[/bold blue] Model shows reasonable validation results."
+        )
+    elif map_score >= moderate_threshold:
+        console.print(
+            "\n⚠️  [bold yellow]Moderate performance.[/bold yellow] Model has room for improvement."
+        )
+    else:
+        console.print(
+            "\n⚠️  [bold red]Poor performance.[/bold red] Model needs significant improvement."
+        )
+
+
+def _update_performance_history(strategy: str, eval_results: dict[str, float]) -> None:
+    """Update performance_history.json with evaluation results."""
+    performance_file = Path("performance_history.json")
+
+    # Load existing history
+    performance_history = []
+    if performance_file.exists():
+        with performance_file.open() as f:
+            performance_history = json.load(f)
+
+    # Get current git commit hash
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        )
+        commit_hash = result.stdout.strip()
+    except subprocess.CalledProcessError:
+        commit_hash = "unknown"
+
+    # Create new entry
+    timestamp = datetime.now(UTC).isoformat()
+    new_entry = {
+        "timestamp": timestamp,
+        "commit_hash": commit_hash,
+        "strategy": strategy,
+        "map_score": eval_results["map_score"],
+        "total_observations": eval_results["total_observations"],
+        "perfect_predictions": eval_results["perfect_predictions"],
+        "total_execution_time": 0.0,  # CLI doesn't track execution time
+    }
+
+    # Add new entry and sort by score (best first)
+    performance_history.append(new_entry)
+    performance_history.sort(key=lambda x: x["map_score"], reverse=True)
+
+    # Save updated history
+    with performance_file.open("w") as f:
+        json.dump(performance_history, f, indent=2)
+
+    logger.info(
+        f"Updated performance history: MAP@3={eval_results['map_score']:.4f} for {strategy}"
+    )
 
 
 # Add commands to CLI group
