@@ -1,4 +1,4 @@
-.PHONY: dev test
+.PHONY: dev test test-all
 
 dev:
 	uv run ruff check . --fix --unsafe-fixes
@@ -6,5 +6,9 @@ dev:
 	uv run ty check .
 
 test:
-	# Run tests fast: only dev deps (not full project), with parallelism via addopts
+	# Run fast tests only (excludes slow integration tests)
+	uv run --only-dev -m pytest -m "not slow"
+
+test-all:
+	# Run all tests including slow integration tests
 	uv run --only-dev -m pytest

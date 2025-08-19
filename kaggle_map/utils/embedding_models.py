@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from sentence_transformers import SentenceTransformer
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 """Embedding model registry and metadata.
 
@@ -95,7 +97,7 @@ class EmbeddingModel(Enum):
 
 def get_tokenizer(
     model: EmbeddingModel = EmbeddingModel.MINI_LM,
-) -> SentenceTransformer:
+) -> "SentenceTransformer":
     """Initialize and return a SentenceTransformer model.
 
     Args:
@@ -107,4 +109,7 @@ def get_tokenizer(
     Raises:
         ImportError: If sentence-transformers is not installed
     """
+    # Move the import here to avoid slowing pytest down by importing the heavy module
+    from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+
     return SentenceTransformer(model.model_id)
