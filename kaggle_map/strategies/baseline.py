@@ -48,7 +48,7 @@ class BaselineStrategy(Strategy):
 
     @classmethod
     def fit(
-        cls, train_csv_path: Path = Path("dataset/train.csv")
+        cls, train_csv_path: Path = Path("datasets/train.csv")
     ) -> "BaselineStrategy":
         """Build model from training data.
 

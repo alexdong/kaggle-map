@@ -128,11 +128,12 @@ def run(
         }
 
         context_logger.info("Executing action", action=action, action_start=True)
-        handlers[action]()
+        action_result = handlers[action]()
         
         execution_time = time.time() - start_time
         context_logger.info("CLI run completed successfully",
                            execution_time_seconds=execution_time,
+                           action_timing_info=action_result if isinstance(action_result, dict) else None,
                            extra={"command": "run", "status": "completed"})
 
     except ValueError as e:
@@ -209,8 +210,8 @@ def _handle_fit(
     train_split: float,
     random_seed: int,
     embeddings_path: Path | None,
-) -> None:
-    """Handle the fit action."""
+) -> dict[str, float]:
+    """Handle the fit action and return timing information."""
     fit_start_time = time.time()
     
     context_logger.info("Starting fit operation",
@@ -310,6 +311,15 @@ def _handle_fit(
                        extra={"action": "fit", "phase": "completed"})
     
     console.print(f"✅ [bold green]Model saved to {model_path}[/bold green]")
+    
+    # Return timing information for performance tracking
+    timing_info = {
+        "model_fit_time_seconds": model_fit_time,
+        "model_save_time_seconds": save_time,
+        "total_fit_time_seconds": total_fit_time,
+    }
+    context_logger.debug("Fit timing summary", timing_info=timing_info)
+    return timing_info
 
 
 def _handle_eval(
@@ -321,8 +331,8 @@ def _handle_eval(
     model_path: str | None,
     train_split: float,
     random_seed: int,
-) -> None:
-    """Handle the eval action."""
+) -> dict[str, float] | None:
+    """Handle the eval action and return timing information."""
     eval_start_time = time.time()
     
     context_logger.info("Starting eval operation",
@@ -386,15 +396,24 @@ def _handle_eval(
             context_logger.debug("Displaying evaluation results")
             _display_eval_results(console, eval_results)
 
-            # Update performance history
-            context_logger.debug("Updating performance history")
-            _update_performance_history(strategy, eval_results, context_logger)
-            
+            # Create timing information for performance tracking
             total_eval_time = time.time() - eval_start_time
+            timing_info = {
+                "model_load_time_seconds": load_time,
+                "evaluation_time_seconds": eval_compute_time,
+                "total_eval_time_seconds": total_eval_time,
+            }
+            
+            # Update performance history with timing information
+            context_logger.debug("Updating performance history with timing", timing_info=timing_info)
+            _update_performance_history(strategy, eval_results, timing_info, context_logger)
+            
             context_logger.info("Eval operation completed successfully",
                                total_eval_time_seconds=total_eval_time,
                                map_score=eval_results.get("map_score"),
                                extra={"action": "eval", "phase": "completed"})
+            
+            return timing_info
 
         except ValueError as e:
             total_eval_time = time.time() - eval_start_time
@@ -407,14 +426,18 @@ def _handle_eval(
             console.print(
                 f"[yellow]Hint: Train with --train-split {train_split} to create validation split[/yellow]"
             )
+            return None
     else:
+        total_eval_time = time.time() - eval_start_time
         context_logger.warning("Strategy does not support evaluation",
                               strategy_class_name=strategy_class.__name__,
+                              total_eval_time_seconds=total_eval_time,
                               extra={"action": "eval", "phase": "skipped", "reason": "not_supported"})
         console.print("[yellow]Strategy does not support evaluation[/yellow]")
         console.print(
             "[dim]Only available for strategies with evaluate_on_split method[/dim]"
         )
+        return None
 
 
 def _handle_predict(
@@ -522,11 +545,17 @@ def _display_eval_results(console: Console, eval_results: dict[str, float]) -> N
         )
 
 
-def _update_performance_history(strategy: str, eval_results: dict[str, float], context_logger: "Logger") -> None:
-    """Update performance_history.json with evaluation results."""
+def _update_performance_history(
+    strategy: str,
+    eval_results: dict[str, float],
+    timing_info: dict[str, float],
+    context_logger: "Logger"
+) -> None:
+    """Update performance_history.json with evaluation results and timing information."""
     performance_file = Path("performance_history.json")
     context_logger.debug("Updating performance history file",
-                        performance_file=str(performance_file))
+                        performance_file=str(performance_file),
+                        timing_info=timing_info)
 
     # Load existing history
     performance_history = []
@@ -552,8 +581,10 @@ def _update_performance_history(strategy: str, eval_results: dict[str, float], c
         context_logger.warning("Failed to retrieve git commit hash", error=str(e))
         commit_hash = "unknown"
 
-    # Create new entry
+    # Create new entry with actual timing information
     timestamp = datetime.now(UTC).isoformat()
+    total_execution_time = timing_info.get("total_eval_time_seconds", 0.0)
+    
     new_entry = {
         "timestamp": timestamp,
         "commit_hash": commit_hash,
@@ -561,15 +592,23 @@ def _update_performance_history(strategy: str, eval_results: dict[str, float], c
         "map_score": eval_results["map_score"],
         "total_observations": eval_results["total_observations"],
         "perfect_predictions": eval_results["perfect_predictions"],
-        "total_execution_time": 0.0,  # CLI doesn't track execution time
+        "total_execution_time": total_execution_time,
+        # Add detailed timing breakdown for analysis
+        "timing_breakdown": {
+            "model_load_time_seconds": timing_info.get("model_load_time_seconds", 0.0),
+            "evaluation_time_seconds": timing_info.get("evaluation_time_seconds", 0.0),
+            "total_eval_time_seconds": total_execution_time,
+        }
     }
     
     context_logger.debug("Created new performance entry",
                         new_entry_summary={
                             "strategy": strategy,
                             "map_score": eval_results["map_score"],
+                            "total_execution_time_seconds": total_execution_time,
                             "commit_hash": commit_hash[:8] if commit_hash != "unknown" else "unknown"
-                        })
+                        },
+                        timing_breakdown=new_entry["timing_breakdown"])
 
     # Add new entry and sort by score (best first)
     performance_history.append(new_entry)
@@ -592,7 +631,8 @@ def _update_performance_history(strategy: str, eval_results: dict[str, float], c
         raise
 
     logger.info(
-        f"Updated performance history: MAP@3={eval_results['map_score']:.4f} for {strategy}"
+        f"Updated performance history: MAP@3={eval_results['map_score']:.4f} for {strategy} "
+        f"(execution time: {total_execution_time:.3f}s)"
     )
 
 

@@ -409,7 +409,7 @@ class MLPStrategy(Strategy):
         """
         fit_start_time = time.time()
         # Set up logging for the entire fit process
-        log_dir = PlatformDirs().site_log_dir
+        log_dir = PlatformDirs().user_log_dir
         logger.bind(
             operation="mlp_fit",
             train_path=str(train_csv_path),
