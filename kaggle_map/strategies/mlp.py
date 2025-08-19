@@ -35,9 +35,24 @@ from .base import Strategy
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-# Constants
-MISCONCEPTION_THRESHOLD = 0.5
+# Constants - Lower thresholds for neural network outputs
+MISCONCEPTION_THRESHOLD = (
+    0.3  # Lowered from 0.5 - neural networks often output lower probabilities
+)
 CORRECTNESS_THRESHOLD = 0.5
+MAX_PREDICTIONS = 3  # Maximum number of predictions to return per observation
+
+
+def get_device() -> torch.device:
+    """Get the best available device (MPS > CUDA > CPU)."""
+    if torch.backends.mps.is_available():
+        logger.debug("Using MPS (Apple Metal) device")
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        logger.debug("Using CUDA device")
+        return torch.device("cuda")
+    logger.debug("Using CPU device")
+    return torch.device("cpu")
 
 
 class MLPDataset(Dataset):
@@ -49,9 +64,11 @@ class MLPDataset(Dataset):
         correctness: np.ndarray,
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
+        device: torch.device | None = None,
     ) -> None:
-        self.embeddings = torch.FloatTensor(embeddings)
-        self.correctness = torch.FloatTensor(correctness).unsqueeze(1)
+        self.device = device or get_device()
+        self.embeddings = torch.FloatTensor(embeddings).to(self.device)
+        self.correctness = torch.FloatTensor(correctness).unsqueeze(1).to(self.device)
         self.question_ids = question_ids
 
         # Flatten misconception labels to match global indexing
@@ -83,10 +100,10 @@ class MLPDataset(Dataset):
                 # Pad to max_label_size
                 padded_label = np.zeros(max_label_size)
                 padded_label[: len(label)] = label
-                self.labels.append(torch.FloatTensor(padded_label))
+                self.labels.append(torch.FloatTensor(padded_label).to(self.device))
             else:
                 # Fallback: create zero label with max_label_size
-                self.labels.append(torch.zeros(max_label_size))
+                self.labels.append(torch.zeros(max_label_size).to(self.device))
             question_local_indices[qid] += 1
 
     def __len__(self) -> int:
@@ -236,13 +253,16 @@ class MLPStrategy(Strategy):
                 )
             )
 
-        # Train model
+        # Get device and train model
+        device = get_device()
+        logger.info(f"Training on device: {device}")
         model = cls._train_model(
             embeddings,
             correctness,
             misconception_labels,
             question_ids,
             question_misconceptions,
+            device,
         )
 
         return cls(
@@ -266,6 +286,11 @@ class MLPStrategy(Strategy):
         if not test_data:
             return []
 
+        # Get device for predictions
+        device = get_device()
+        logger.debug(f"Running predictions on device: {device}")
+        self.model.to(device)
+
         # Generate embeddings for test data
         tokenizer = get_tokenizer(self.embedding_model)
         test_embeddings = []
@@ -281,8 +306,8 @@ class MLPStrategy(Strategy):
             is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
             test_correctness.append(float(is_correct))
 
-        embeddings = torch.FloatTensor(np.stack(test_embeddings))
-        correctness = torch.FloatTensor(test_correctness).unsqueeze(1)
+        embeddings = torch.FloatTensor(np.stack(test_embeddings)).to(device)
+        correctness = torch.FloatTensor(test_correctness).unsqueeze(1).to(device)
 
         # Make predictions
         predictions = []
@@ -299,7 +324,7 @@ class MLPStrategy(Strategy):
                     predicted_categories = self._create_default_prediction(row)
                 else:
                     logits = self.model(features.unsqueeze(0), row.question_id)
-                    probs = torch.sigmoid(logits).squeeze().numpy()
+                    probs = torch.sigmoid(logits).squeeze().cpu().numpy()
 
                     # Only use the relevant part of the output for this question
                     num_misconceptions = len(
@@ -317,8 +342,8 @@ class MLPStrategy(Strategy):
                     SubmissionRow(
                         row_id=row.row_id,
                         predicted_categories=predicted_categories[
-                            :3
-                        ],  # Max 3 predictions
+                            :MAX_PREDICTIONS
+                        ],  # Max predictions per observation
                     )
                 )
 
@@ -334,6 +359,9 @@ class MLPStrategy(Strategy):
             "correct_answers": self.correct_answers,
             "question_misconceptions": self.question_misconceptions,
             "embedding_model": self.embedding_model.model_id,
+            "eval_data": getattr(
+                self.__class__, "_eval_data", None
+            ),  # Save eval data if available
         }
 
         with filepath.open("wb") as f:
@@ -363,6 +391,11 @@ class MLPStrategy(Strategy):
         if embedding_model is None:
             raise ValueError(f"Unknown embedding model: {save_data['embedding_model']}")
 
+        # Restore eval data if available
+        if "eval_data" in save_data and save_data["eval_data"] is not None:
+            cls._eval_data = save_data["eval_data"]
+            logger.debug(f"Restored {len(save_data['eval_data'])} eval data rows")
+
         return cls(
             model=model,
             correct_answers=save_data["correct_answers"],
@@ -382,6 +415,10 @@ class MLPStrategy(Strategy):
         stats_table.add_row(
             "Questions with misconceptions", str(len(self.question_misconceptions))
         )
+
+        # Get model device
+        model_device = next(self.model.parameters()).device
+        stats_table.add_row("Model device", str(model_device))
 
         total_params = sum(p.numel() for p in self.model.parameters())
         stats_table.add_row("Total model parameters", f"{total_params:,}")
@@ -440,6 +477,9 @@ class MLPStrategy(Strategy):
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
+        if torch.backends.mps.is_available():
+            # MPS doesn't have separate seed setting, but torch.manual_seed covers it
+            pass
         # Make torch deterministic
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
@@ -543,9 +583,35 @@ class MLPStrategy(Strategy):
         """Reconstruct category predictions from misconception probabilities."""
         prefix = "True_" if is_correct else "False_"
         misconceptions = self.question_misconceptions[question_id]
-        predictions = []
 
-        # Check for misconceptions (exclude NA which is last)
+        # Generate all possible predictions with probabilities
+        predictions = []
+        misconception_found = self._add_misconception_predictions(
+            predictions, misconception_probs, prefix, misconceptions
+        )
+
+        # Add fallback categories
+        na_prob = misconception_probs[-1] if len(misconception_probs) > 0 else 0.5
+        self._add_fallback_predictions(
+            predictions,
+            prefix,
+            na_prob,
+            misconception_found=misconception_found,
+            is_correct=is_correct,
+        )
+
+        # Return top unique predictions sorted by confidence
+        return self._select_top_predictions(predictions)
+
+    def _add_misconception_predictions(
+        self,
+        predictions: list,
+        misconception_probs: np.ndarray,
+        prefix: str,
+        misconceptions: list[str],
+    ) -> bool:
+        """Add misconception predictions above threshold. Returns True if any found."""
+        misconception_found = False
         for i, prob in enumerate(misconception_probs[:-1]):
             if prob > MISCONCEPTION_THRESHOLD:
                 misconception = misconceptions[i]
@@ -554,16 +620,43 @@ class MLPStrategy(Strategy):
                     misconception=misconception,
                 )
                 predictions.append((pred, prob))
+                misconception_found = True
+        return misconception_found
 
-        # If no misconceptions detected, use NA probability for Neither
-        if not predictions:
-            na_prob = misconception_probs[-1]
-            pred = Prediction(category=Category(f"{prefix}Neither"))
-            predictions.append((pred, na_prob))
+    def _add_fallback_predictions(
+        self,
+        predictions: list,
+        prefix: str,
+        na_prob: float,
+        *,
+        misconception_found: bool,
+        is_correct: bool,
+    ) -> None:
+        """Add fallback Neither and Correct category predictions."""
+        # Always add Neither as an option
+        neither_pred = Prediction(category=Category(f"{prefix}Neither"))
+        predictions.append((neither_pred, na_prob))
 
-        # Sort by confidence and return top predictions
+        # Add Correct category for correct answers
+        if is_correct:
+            correct_pred = Prediction(category=Category(f"{prefix}Correct"))
+            correct_prob = max(0.4, na_prob) if not misconception_found else 0.2
+            predictions.append((correct_pred, correct_prob))
+
+    def _select_top_predictions(self, predictions: list) -> list[Prediction]:
+        """Select top unique predictions by confidence."""
         predictions.sort(key=lambda x: x[1], reverse=True)
-        return [pred for pred, _score in predictions]
+
+        unique_predictions = []
+        seen_categories = set()
+        for pred, _score in predictions:
+            if pred.category not in seen_categories:
+                unique_predictions.append(pred)
+                seen_categories.add(pred.category)
+            if len(unique_predictions) >= MAX_PREDICTIONS:
+                break
+
+        return unique_predictions
 
     def _create_default_prediction(self, row: EvaluationRow) -> list[Prediction]:
         """Create default prediction for unknown questions."""
@@ -835,15 +928,16 @@ class MLPStrategy(Strategy):
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
         question_misconceptions: dict[QuestionId, list[str]],
+        device: torch.device,
     ) -> MLPNet:
         """Train the MLP model."""
         logger.info("Training MLP model...")
 
         model, criterion, optimizer = MLPStrategy._setup_training(
-            question_misconceptions
+            question_misconceptions, device
         )
         dataset = MLPDataset(
-            embeddings, correctness, misconception_labels, question_ids
+            embeddings, correctness, misconception_labels, question_ids, device
         )
         dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
@@ -857,11 +951,13 @@ class MLPStrategy(Strategy):
     @staticmethod
     def _setup_training(
         question_misconceptions: dict[QuestionId, list[str]],
+        device: torch.device,
     ) -> tuple[MLPNet, nn.BCEWithLogitsLoss, optim.Adam]:
         """Setup model, criterion, and optimizer for training."""
-        model = MLPNet(question_misconceptions)
+        model = MLPNet(question_misconceptions).to(device)
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
+        logger.debug(f"Model moved to device: {device}")
         return model, criterion, optimizer
 
     @staticmethod
@@ -916,7 +1012,9 @@ class MLPStrategy(Strategy):
         question_id_batch: torch.Tensor,
     ) -> torch.Tensor:
         """Process a single batch for training."""
-        batch_loss = torch.tensor(0.0)
+        # Get device from features tensor
+        device = features.device
+        batch_loss = torch.tensor(0.0, device=device)
         for i in range(len(features)):
             qid = question_id_batch[i].item()
             feature = features[i].unsqueeze(0)
