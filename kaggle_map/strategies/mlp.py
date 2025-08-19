@@ -35,11 +35,11 @@ from .base import Strategy
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
-# Constants - Lower thresholds for neural network outputs
-MISCONCEPTION_THRESHOLD = (
-    0.3  # Lowered from 0.5 - neural networks often output lower probabilities
-)
+# Constants for multi-head MLP predictions
 CORRECTNESS_THRESHOLD = 0.5
+CATEGORY_CONFIDENCE_THRESHOLD = 0.1  # Minimum confidence to include a category
+MISCONCEPTION_CONFIDENCE_THRESHOLD = 0.3  # Minimum confidence for misconception
+FALLBACK_THRESHOLD = 0.3  # Add fallback if max prediction confidence below this
 MAX_PREDICTIONS = 3  # Maximum number of predictions to return per observation
 
 
@@ -56,12 +56,22 @@ def get_device() -> torch.device:
 
 
 class MLPDataset(Dataset):
-    """PyTorch dataset for MLP training."""
+    """PyTorch dataset for multi-head MLP training.
+
+    Provides:
+    - Embeddings (question/answer/explanation)
+    - Correctness labels (binary)
+    - Category labels (per question, per correctness state)
+    - Misconception labels (when applicable)
+    """
 
     def __init__(
         self,
         embeddings: np.ndarray,
         correctness: np.ndarray,
+        category_labels: dict[
+            QuestionId, dict[str, np.ndarray]
+        ],  # 'correct'/'incorrect' -> one-hot vectors
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
         device: torch.device | None = None,
@@ -71,83 +81,265 @@ class MLPDataset(Dataset):
         self.correctness = torch.FloatTensor(correctness).unsqueeze(1).to(self.device)
         self.question_ids = question_ids
 
-        # Flatten misconception labels to match global indexing
-        self.labels = []
-        self._build_label_mapping(misconception_labels, question_ids)
+        # Build label mappings for multi-head training
+        self.category_labels = {}
+        self.misconception_labels = []
+        self._build_label_mappings(category_labels, misconception_labels, question_ids)
 
-    def _build_label_mapping(
+    def _build_label_mappings(
         self,
+        category_labels: dict[QuestionId, dict[str, np.ndarray]],
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
     ) -> None:
-        """Build mapping from global index to misconception labels."""
-        # Find the maximum label size across all questions for padding
-        max_label_size = max(
-            labels.shape[1] if len(labels) > 0 else 2
-            for labels in misconception_labels.values()
-        )
-
-        # Create a mapping from question_id to local indices for that question
+        """Build mappings for multi-head training labels."""
+        # Create local index trackers for each question
         question_local_indices = {}
         for qid in set(question_ids):
             question_local_indices[qid] = 0
 
-        # Build labels list in the same order as the global dataset
+        # Initialize storage
+        for qid in set(question_ids):
+            self.category_labels[qid] = {"correct": [], "incorrect": []}
+
+        # Build labels in same order as global dataset
         for _global_idx, qid in enumerate(question_ids):
             local_idx = question_local_indices[qid]
-            if local_idx < len(misconception_labels[qid]):
-                label = misconception_labels[qid][local_idx]
-                # Pad to max_label_size
-                padded_label = np.zeros(max_label_size)
-                padded_label[: len(label)] = label
-                self.labels.append(torch.FloatTensor(padded_label).to(self.device))
+
+            # Category labels for this sample
+            if qid in category_labels:
+                # Correct state categories
+                if "correct" in category_labels[qid] and local_idx < len(
+                    category_labels[qid]["correct"]
+                ):
+                    correct_label = category_labels[qid]["correct"][local_idx]
+                    self.category_labels[qid]["correct"].append(
+                        torch.FloatTensor(correct_label).to(self.device)
+                    )
+                else:
+                    # Default: no category (zero vector)
+                    self.category_labels[qid]["correct"].append(
+                        torch.zeros(1).to(
+                            self.device
+                        )  # Will be resized based on actual question
+                    )
+
+                # Incorrect state categories
+                if "incorrect" in category_labels[qid] and local_idx < len(
+                    category_labels[qid]["incorrect"]
+                ):
+                    incorrect_label = category_labels[qid]["incorrect"][local_idx]
+                    self.category_labels[qid]["incorrect"].append(
+                        torch.FloatTensor(incorrect_label).to(self.device)
+                    )
+                else:
+                    self.category_labels[qid]["incorrect"].append(
+                        torch.zeros(1).to(self.device)
+                    )
+
+            # Misconception labels
+            if qid in misconception_labels and local_idx < len(
+                misconception_labels[qid]
+            ):
+                misc_label = misconception_labels[qid][local_idx]
+                self.misconception_labels.append(
+                    torch.FloatTensor(misc_label).to(self.device)
+                )
             else:
-                # Fallback: create zero label with max_label_size
-                self.labels.append(torch.zeros(max_label_size).to(self.device))
+                # Default: no misconception (zero vector)
+                self.misconception_labels.append(
+                    torch.zeros(1).to(
+                        self.device
+                    )  # Will be resized based on actual question
+                )
+
             question_local_indices[qid] += 1
 
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, int, int]:
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int, int]:
+        """Get training sample with multi-head labels.
+
+        Returns:
+            features: Embedding tensor (384-dim)
+            labels: Dictionary with correctness, category, and misconception labels
+            question_id: Question ID
+            idx: Sample index
+        """
+        assert 0 <= idx < len(self.embeddings), (
+            f"Index {idx} out of range [0, {len(self.embeddings)})"
+        )
         question_id = self.question_ids[idx]
-        features = torch.cat([self.embeddings[idx], self.correctness[idx]])
-        misconception_label = self.labels[idx]
-        return features, misconception_label, question_id, idx
+
+        # Features: embedding only (no ground truth correctness)
+        features = self.embeddings[idx]
+        # Note: On MPS, device names can vary (mps vs mps:0), so check device type instead
+        assert features.device.type == self.device.type, (
+            f"Features device type mismatch: expected {self.device.type}, got {features.device.type}"
+        )
+
+        # Multi-head labels
+        labels = {
+            "correctness": self.correctness[
+                idx
+            ],  # Ground truth correctness for training
+            "misconceptions": self.misconception_labels[idx],
+        }
+
+        # Add question-specific category labels
+        # Find which local index this global index corresponds to for this question
+        question_samples = [
+            i for i, qid in enumerate(self.question_ids) if qid == question_id
+        ]
+        local_idx = question_samples.index(idx)
+
+        if question_id in self.category_labels:
+            if local_idx < len(self.category_labels[question_id]["correct"]):
+                labels["correct_categories"] = self.category_labels[question_id][
+                    "correct"
+                ][local_idx]
+            if local_idx < len(self.category_labels[question_id]["incorrect"]):
+                labels["incorrect_categories"] = self.category_labels[question_id][
+                    "incorrect"
+                ][local_idx]
+
+        # Ensure all labels are on correct device (check device type for MPS compatibility)
+        for key, tensor in labels.items():
+            assert tensor.device.type == self.device.type, (
+                f"{key} label device type mismatch: expected {self.device.type}, got {tensor.device.type}"
+            )
+
+        return features, labels, question_id, idx
 
 
 class MLPNet(nn.Module):
-    """Multi-layer perceptron with question-specific misconception heads."""
+    """Multi-head MLP for direct category prediction aligned with competition format.
 
-    def __init__(self, question_misconceptions: dict[QuestionId, list[str]]) -> None:
+    Architecture:
+    1. Shared embedding trunk: processes question/answer/explanation
+    2. Correctness head: predicts if student answer is correct
+    3. Category heads: predict category distributions for correct/incorrect states
+
+    This directly mirrors the baseline's two-step process:
+    - Determine correctness (neural vs rule-based)
+    - Select category within correctness state (neural vs frequency-based)
+    """
+
+    def __init__(
+        self,
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
+        question_misconceptions: dict[QuestionId, list[str]],
+    ) -> None:
         super().__init__()
 
-        # Shared trunk: embedding(384) + correctness(1) = 385 -> 128
+        # Store metadata for prediction reconstruction
+        self.question_categories = question_categories
+        self.question_misconceptions = question_misconceptions
+
+        # Shared trunk: embedding(384) only, no correctness input
+        # Let the model learn correctness from content, not ground truth
         self.shared_trunk = nn.Sequential(
-            nn.Linear(385, 512),
+            nn.Linear(384, 512),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.2),
             nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.2),
             nn.Linear(256, 128),
         )
 
-        # Find max output size for consistent tensor shapes
-        self.max_output_size = max(
-            len(misconceptions) for misconceptions in question_misconceptions.values()
+        # Correctness prediction head (binary classification)
+        self.correctness_head = nn.Linear(128, 1)
+
+        # Category prediction heads - separate for correct/incorrect states
+        self.max_categories = 6  # Maximum possible categories (True_/False_ x Correct/Neither/Misconception)
+
+        # Question-specific category heads
+        self.correct_category_heads = nn.ModuleDict()
+        self.incorrect_category_heads = nn.ModuleDict()
+
+        for question_id, category_map in question_categories.items():
+            qid_str = str(question_id)
+
+            # Head for correct answer categories
+            if True in category_map:
+                self.correct_category_heads[qid_str] = nn.Linear(
+                    128, len(category_map[True])
+                )
+
+            # Head for incorrect answer categories
+            if False in category_map:
+                self.incorrect_category_heads[qid_str] = nn.Linear(
+                    128, len(category_map[False])
+                )
+
+        # Misconception prediction heads (for when category is *_Misconception)
+        self.misconception_heads = nn.ModuleDict()
+        for question_id, misconceptions in question_misconceptions.items():
+            if misconceptions:  # Only create head if question has misconceptions
+                self.misconception_heads[str(question_id)] = nn.Linear(
+                    128, len(misconceptions)
+                )
+
+    def forward(self, x: torch.Tensor, question_id: int) -> dict[str, torch.Tensor]:
+        """Multi-head forward pass returning all prediction components.
+
+        Args:
+            x: Input tensor (embedding only, shape: [batch_size, 384])
+            question_id: Question ID for question-specific heads
+
+        Returns:
+            Dictionary with keys:
+            - 'correctness': Correctness prediction logits [batch_size, 1]
+            - 'correct_categories': Category logits for correct state (if applicable)
+            - 'incorrect_categories': Category logits for incorrect state (if applicable)
+            - 'misconceptions': Misconception logits (if question has misconceptions)
+        """
+        assert isinstance(x, torch.Tensor), f"Input must be a tensor, got {type(x)}"
+        qid_str = str(question_id)
+
+        # Ensure input tensor is on the same device as model (check device type for MPS)
+        model_device = next(self.parameters()).device
+        assert x.device.type == model_device.type, (
+            f"Input device type mismatch: model on {model_device.type}, input on {x.device.type}"
         )
 
-        # Question-specific misconception heads - all output max_output_size
-        self.question_heads = nn.ModuleDict()
-        for question_id in question_misconceptions:
-            self.question_heads[str(question_id)] = nn.Linear(128, self.max_output_size)
-
-        self.question_misconceptions = question_misconceptions
-
-    def forward(self, x: torch.Tensor, question_id: int) -> torch.Tensor:
+        # Shared feature extraction
         shared_features = self.shared_trunk(x)
-        return self.question_heads[str(question_id)](shared_features)
+
+        # Multi-head outputs
+        outputs = {}
+
+        # Correctness prediction (always present)
+        outputs["correctness"] = self.correctness_head(shared_features)
+
+        # Category predictions (question-specific)
+        if qid_str in self.correct_category_heads:
+            outputs["correct_categories"] = self.correct_category_heads[qid_str](
+                shared_features
+            )
+
+        if qid_str in self.incorrect_category_heads:
+            outputs["incorrect_categories"] = self.incorrect_category_heads[qid_str](
+                shared_features
+            )
+
+        # Misconception predictions (if question has misconceptions)
+        if qid_str in self.misconception_heads:
+            outputs["misconceptions"] = self.misconception_heads[qid_str](
+                shared_features
+            )
+
+        # Ensure all outputs are on correct device (check device type for MPS)
+        for key, tensor in outputs.items():
+            assert tensor.device.type == model_device.type, (
+                f"{key} device type mismatch: expected {model_device.type}, got {tensor.device.type}"
+            )
+
+        return outputs
 
 
 @dataclass(frozen=True)
@@ -221,46 +413,62 @@ class MLPStrategy(Strategy):
             training_data = all_training_data
             cls._eval_data = None
 
-        # Extract metadata
+        # Extract metadata for new multi-head architecture
         correct_answers = cls._extract_correct_answers(training_data)
+        question_categories = cls._extract_question_categories(
+            training_data, correct_answers
+        )
         question_misconceptions = cls._extract_question_misconceptions(training_data)
 
         logger.debug(f"Found {len(correct_answers)} questions")
+        logger.debug(f"Found categories for {len(question_categories)} questions")
         logger.debug(
             f"Found misconceptions for {len(question_misconceptions)} questions"
         )
 
-        # Generate or load embeddings and labels
+        # Generate or load embeddings and labels for multi-head training
         embedding_model = EmbeddingModel.MINI_LM
         if embeddings_path is not None and embeddings_path.exists():
             logger.info(f"Loading pre-computed embeddings from {embeddings_path}")
-            embeddings, correctness, misconception_labels, question_ids = (
-                cls._load_precomputed_embeddings(
-                    training_data,
-                    correct_answers,
-                    question_misconceptions,
-                    embeddings_path,
-                )
+            (
+                embeddings,
+                correctness,
+                category_labels,
+                misconception_labels,
+                question_ids,
+            ) = cls._load_precomputed_embeddings_multihead(
+                training_data,
+                correct_answers,
+                question_categories,
+                question_misconceptions,
+                embeddings_path,
             )
         else:
-            logger.info("Generating embeddings from training data...")
-            embeddings, correctness, misconception_labels, question_ids = (
-                cls._prepare_training_data(
-                    training_data,
-                    correct_answers,
-                    question_misconceptions,
-                    embedding_model,
-                )
+            logger.info("Generating embeddings and labels for multi-head training...")
+            (
+                embeddings,
+                correctness,
+                category_labels,
+                misconception_labels,
+                question_ids,
+            ) = cls._prepare_training_data_multihead(
+                training_data,
+                correct_answers,
+                question_categories,
+                question_misconceptions,
+                embedding_model,
             )
 
-        # Get device and train model
+        # Get device and train multi-head model
         device = get_device()
-        logger.info(f"Training on device: {device}")
-        model = cls._train_model(
+        logger.info(f"Training multi-head MLP on device: {device}")
+        model = cls._train_multihead_model(
             embeddings,
             correctness,
+            category_labels,
             misconception_labels,
             question_ids,
+            question_categories,
             question_misconceptions,
             device,
         )
@@ -281,6 +489,7 @@ class MLPStrategy(Strategy):
         Returns:
             List of submission rows with predictions
         """
+        assert test_data is not None, "Test data cannot be None"
         logger.info(f"Making MLP predictions for {len(test_data)} test rows")
 
         if not test_data:
@@ -291,59 +500,66 @@ class MLPStrategy(Strategy):
         logger.debug(f"Running predictions on device: {device}")
         self.model.to(device)
 
-        # Generate embeddings for test data
+        # Verify model is on correct device
+        model_device = next(self.model.parameters()).device
+        assert model_device == device, (
+            f"Model device mismatch: expected {device}, got {model_device}"
+        )
+
+        # Generate embeddings for test data (no ground truth correctness needed)
         tokenizer = get_tokenizer(self.embedding_model)
         test_embeddings = []
-        test_correctness = []
 
         for row in test_data:
-            # Generate embedding
+            # Generate embedding (question/answer/explanation)
             text = repr(row)  # Uses EvaluationRow.__repr__ format
             embedding = tokenizer.encode(text)
             test_embeddings.append(embedding)
 
-            # Determine correctness
-            is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
-            test_correctness.append(float(is_correct))
-
         embeddings = torch.FloatTensor(np.stack(test_embeddings)).to(device)
-        correctness = torch.FloatTensor(test_correctness).unsqueeze(1).to(device)
 
-        # Make predictions
+        # Ensure tensors are on correct device (check device type for MPS)
+        assert embeddings.device.type == device.type, (
+            f"Embeddings device type mismatch: expected {device.type}, got {embeddings.device.type}"
+        )
+
+        # Make multi-head predictions
         predictions = []
         self.model.eval()
 
         with torch.no_grad():
             for i, row in enumerate(test_data):
-                features = torch.cat([embeddings[i], correctness[i]])
+                embedding_features = embeddings[i].unsqueeze(0)  # Shape: [1, 384]
 
-                # Get misconception probabilities
-                if row.question_id not in self.question_misconceptions:
+                # Check if question was in training data
+                if (
+                    not hasattr(self.model, "question_categories")
+                    or row.question_id not in self.model.question_categories
+                ):
                     logger.warning(f"Question {row.question_id} not in training data")
-                    # Default to no misconception
                     predicted_categories = self._create_default_prediction(row)
                 else:
-                    logits = self.model(features.unsqueeze(0), row.question_id)
-                    probs = torch.sigmoid(logits).squeeze().cpu().numpy()
+                    # Get multi-head model outputs
+                    outputs = self.model(embedding_features, row.question_id)
 
-                    # Only use the relevant part of the output for this question
-                    num_misconceptions = len(
-                        self.question_misconceptions[row.question_id]
-                    )
-                    relevant_probs = probs[:num_misconceptions]
+                    # Predict correctness (neural network prediction)
+                    correctness_logit = outputs["correctness"].squeeze().cpu().numpy()
+                    predicted_correctness = float(
+                        correctness_logit > 0
+                    )  # Sigmoid > 0.5 equivalent
 
-                    predicted_categories = self._reconstruct_predictions(
-                        relevant_probs,
-                        is_correct=correctness[i].item() > CORRECTNESS_THRESHOLD,
+                    # Get category predictions based on predicted correctness
+                    predicted_categories = self._reconstruct_multihead_predictions(
+                        outputs,
+                        predicted_correctness=predicted_correctness
+                        > CORRECTNESS_THRESHOLD,
                         question_id=row.question_id,
                     )
 
                 predictions.append(
                     SubmissionRow(
                         row_id=row.row_id,
-                        predicted_categories=predicted_categories[
-                            :MAX_PREDICTIONS
-                        ],  # Max predictions per observation
+                        predicted_categories=predicted_categories[:MAX_PREDICTIONS],
                     )
                 )
 
@@ -353,10 +569,11 @@ class MLPStrategy(Strategy):
         """Save model to disk."""
         logger.info(f"Saving MLP model to {filepath}")
 
-        # Save model state and metadata
+        # Save multi-head model state and metadata
         save_data = {
             "model_state_dict": self.model.state_dict(),
             "correct_answers": self.correct_answers,
+            "question_categories": getattr(self.model, "question_categories", {}),
             "question_misconceptions": self.question_misconceptions,
             "embedding_model": self.embedding_model.model_id,
             "eval_data": getattr(
@@ -376,9 +593,10 @@ class MLPStrategy(Strategy):
         with filepath.open("rb") as f:
             save_data = pickle.load(f)
 
-        # Reconstruct model
+        # Reconstruct multi-head model
+        question_categories = save_data.get("question_categories", {})
         question_misconceptions = save_data["question_misconceptions"]
-        model = MLPNet(question_misconceptions)
+        model = MLPNet(question_categories, question_misconceptions)
         model.load_state_dict(save_data["model_state_dict"])
 
         # Find embedding model
@@ -573,75 +791,108 @@ class MLPStrategy(Strategy):
         correct_answer = self.correct_answers.get(question_id, "")
         return student_answer == correct_answer
 
-    def _reconstruct_predictions(
+    def _reconstruct_multihead_predictions(
         self,
-        misconception_probs: np.ndarray,
+        outputs: dict[str, torch.Tensor],
         *,
-        is_correct: bool,
+        predicted_correctness: bool,
         question_id: QuestionId,
     ) -> list[Prediction]:
-        """Reconstruct category predictions from misconception probabilities."""
-        prefix = "True_" if is_correct else "False_"
-        misconceptions = self.question_misconceptions[question_id]
+        """Reconstruct predictions from multi-head model outputs.
 
-        # Generate all possible predictions with probabilities
+        This method mirrors the baseline's approach:
+        1. Determine correctness (neural vs rule-based)
+        2. Select best categories within that correctness state
+        3. Add misconceptions when appropriate
+        """
+        prefix = "True_" if predicted_correctness else "False_"
         predictions = []
-        misconception_found = self._add_misconception_predictions(
-            predictions, misconception_probs, prefix, misconceptions
+
+        # Get category probabilities for the predicted correctness state
+        category_key = (
+            "correct_categories" if predicted_correctness else "incorrect_categories"
         )
 
-        # Add fallback categories
-        na_prob = misconception_probs[-1] if len(misconception_probs) > 0 else 0.5
-        self._add_fallback_predictions(
-            predictions,
-            prefix,
-            na_prob,
-            misconception_found=misconception_found,
-            is_correct=is_correct,
-        )
+        if category_key in outputs:
+            category_logits = outputs[category_key].squeeze().cpu().numpy()
+            category_probs = self._softmax(category_logits)
 
-        # Return top unique predictions sorted by confidence
+            # Get available categories for this correctness state
+            available_categories = list(
+                set(
+                    self.model.question_categories[question_id].get(
+                        predicted_correctness, []
+                    )
+                )
+            )
+
+            # Add category predictions in order of confidence
+            for i, prob in enumerate(category_probs):
+                if (
+                    i < len(available_categories)
+                    and prob > CATEGORY_CONFIDENCE_THRESHOLD
+                ):
+                    category = available_categories[i]
+
+                    # Check if this is a misconception category
+                    if category.is_misconception and "misconceptions" in outputs:
+                        # Get misconception predictions
+                        misconception_logits = (
+                            outputs["misconceptions"].squeeze().cpu().numpy()
+                        )
+                        misconception_probs = self._sigmoid(misconception_logits)
+
+                        # Find best misconception
+                        best_misconception = self._get_best_misconception(
+                            misconception_probs, question_id
+                        )
+
+                        predictions.append(
+                            (
+                                Prediction(
+                                    category=category, misconception=best_misconception
+                                ),
+                                prob,
+                            )
+                        )
+                    else:
+                        predictions.append((Prediction(category=category), prob))
+
+        # Add fallback predictions if no strong categories found
+        if not predictions or max(pred[1] for pred in predictions) < FALLBACK_THRESHOLD:
+            fallback_category = Category(f"{prefix}Neither")
+            predictions.append((Prediction(category=fallback_category), 0.4))
+
+        # Return top predictions sorted by confidence
         return self._select_top_predictions(predictions)
 
-    def _add_misconception_predictions(
-        self,
-        predictions: list,
-        misconception_probs: np.ndarray,
-        prefix: str,
-        misconceptions: list[str],
-    ) -> bool:
-        """Add misconception predictions above threshold. Returns True if any found."""
-        misconception_found = False
-        for i, prob in enumerate(misconception_probs[:-1]):
-            if prob > MISCONCEPTION_THRESHOLD:
-                misconception = misconceptions[i]
-                pred = Prediction(
-                    category=Category(f"{prefix}Misconception"),
-                    misconception=misconception,
-                )
-                predictions.append((pred, prob))
-                misconception_found = True
-        return misconception_found
+    def _softmax(self, x: np.ndarray) -> np.ndarray:
+        """Compute softmax probabilities."""
+        exp_x = np.exp(x - np.max(x))
+        return exp_x / np.sum(exp_x)
 
-    def _add_fallback_predictions(
-        self,
-        predictions: list,
-        prefix: str,
-        na_prob: float,
-        *,
-        misconception_found: bool,
-        is_correct: bool,
-    ) -> None:
-        """Add fallback Neither and Correct category predictions."""
-        # Always add Neither as an option
-        neither_pred = Prediction(category=Category(f"{prefix}Neither"))
-        predictions.append((neither_pred, na_prob))
+    def _sigmoid(self, x: np.ndarray) -> np.ndarray:
+        """Compute sigmoid probabilities."""
+        return 1 / (1 + np.exp(-x))
 
-        # Add Correct category for correct answers
-        if is_correct:
-            correct_pred = Prediction(category=Category(f"{prefix}Correct"))
-            correct_prob = max(0.4, na_prob) if not misconception_found else 0.2
-            predictions.append((correct_pred, correct_prob))
+    def _get_best_misconception(
+        self, misconception_probs: np.ndarray, question_id: QuestionId
+    ) -> str | None:
+        """Get the most likely misconception for a question."""
+        if question_id not in self.question_misconceptions:
+            return None
+
+        misconceptions = self.question_misconceptions[question_id]
+
+        # Exclude NA (last element) from consideration
+        if len(misconceptions) > 1:
+            best_idx = np.argmax(misconception_probs[:-1])
+            if misconception_probs[best_idx] > MISCONCEPTION_CONFIDENCE_THRESHOLD:
+                return misconceptions[best_idx]
+
+        return None
+
+    # Removed old single-head prediction methods - replaced with multi-head approach
 
     def _select_top_predictions(self, predictions: list) -> list[Prediction]:
         """Select top unique predictions by confidence."""
@@ -717,6 +968,41 @@ class MLPStrategy(Strategy):
         return correct_answers
 
     @staticmethod
+    def _extract_question_categories(
+        training_data: list[TrainingRow],
+        correct_answers: dict[QuestionId, Answer],
+    ) -> dict[QuestionId, dict[bool, list[Category]]]:
+        """Extract category patterns per question by correctness state.
+
+        This mirrors the baseline's category frequency approach but stores
+        the raw category lists for neural network training.
+        """
+        assert training_data, "Training data cannot be empty"
+        assert correct_answers, "Correct answers cannot be empty"
+
+        # Group categories by question and correctness
+        question_correctness_categories = defaultdict(lambda: defaultdict(list))
+
+        for row in training_data:
+            is_correct = (
+                row.question_id in correct_answers
+                and row.mc_answer == correct_answers[row.question_id]
+            )
+            question_correctness_categories[row.question_id][is_correct].append(
+                row.category
+            )
+
+        # Convert to final format (keep raw lists, don't count frequencies yet)
+        result = {}
+        for question_id, correctness_map in question_correctness_categories.items():
+            result[question_id] = {}
+            for is_correct, categories in correctness_map.items():
+                result[question_id][is_correct] = categories
+
+        logger.debug(f"Extracted categories for {len(result)} questions")
+        return result
+
+    @staticmethod
     def _extract_question_misconceptions(
         training_data: list[TrainingRow],
     ) -> dict[QuestionId, list[str]]:
@@ -742,111 +1028,95 @@ class MLPStrategy(Strategy):
         return question_misconceptions
 
     @staticmethod
-    def _load_precomputed_embeddings(
+    def _load_precomputed_embeddings_multihead(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
         embeddings_path: Path,
-    ) -> tuple[np.ndarray, np.ndarray, dict[QuestionId, np.ndarray], np.ndarray]:
-        """Load pre-computed embeddings from npz file and align with training data."""
-        # Load the embeddings file
-        embeddings_data = np.load(embeddings_path)
-        stored_row_ids = embeddings_data["row_ids"]
-        stored_embeddings = embeddings_data["embeddings"]
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        dict[QuestionId, dict[str, np.ndarray]],
+        dict[QuestionId, np.ndarray],
+        np.ndarray,
+    ]:
+        """Load pre-computed embeddings and prepare for multi-head training."""
+        # For now, fall back to generating embeddings from scratch for multi-head
+        # This could be optimized later to handle pre-computed embeddings
+        logger.warning(
+            "Pre-computed embeddings not yet supported for multi-head model, generating from scratch"
+        )
 
-        logger.debug(f"Loaded {len(stored_row_ids)} embeddings from {embeddings_path}")
-
-        # Create mapping from row_id to embedding
-        row_id_to_embedding = {}
-        for i, row_id in enumerate(stored_row_ids):
-            row_id_to_embedding[row_id] = stored_embeddings[i]
-
-        # Process training data and align with embeddings
-        embeddings = []
-        correctness = []
-        question_ids = []
-        misconception_labels = {qid: [] for qid in question_misconceptions}
-
-        matched_count = 0
-        for row in training_data:
-            if row.question_id not in question_misconceptions:
-                continue
-
-            # Check if we have embedding for this row
-            if row.row_id not in row_id_to_embedding:
-                logger.warning(f"No embedding found for row_id {row.row_id}, skipping")
-                continue
-
-            matched_count += 1
-            embeddings.append(row_id_to_embedding[row.row_id])
-
-            # Determine correctness
-            is_correct = (
-                row.question_id in correct_answers
-                and row.mc_answer == correct_answers[row.question_id]
-            )
-            correctness.append(float(is_correct))
-            question_ids.append(row.question_id)
-
-            # Create misconception label
-            label = MLPStrategy._create_misconception_label(
-                row, question_misconceptions
-            )
-            misconception_labels[row.question_id].append(label)
-
-        logger.info(f"Matched {matched_count} rows with pre-computed embeddings")
-
-        return MLPStrategy._convert_to_arrays(
-            embeddings,
-            correctness,
-            question_ids,
-            misconception_labels,
+        embedding_model = EmbeddingModel.MINI_LM
+        return MLPStrategy._prepare_training_data_multihead(
+            training_data,
+            correct_answers,
+            question_categories,
             question_misconceptions,
+            embedding_model,
         )
 
     @staticmethod
-    def _prepare_training_data(
+    def _prepare_training_data_multihead(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
         embedding_model: EmbeddingModel,
-    ) -> tuple[np.ndarray, np.ndarray, dict[QuestionId, np.ndarray], np.ndarray]:
-        """Prepare embeddings and labels for training."""
-        logger.info("Generating embeddings for training data...")
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        dict[QuestionId, dict[str, np.ndarray]],
+        dict[QuestionId, np.ndarray],
+        np.ndarray,
+    ]:
+        """Prepare embeddings and multi-head labels for training."""
+        logger.info("Generating embeddings and multi-head labels...")
 
         tokenizer = get_tokenizer(embedding_model)
-        embeddings, correctness, question_ids, misconception_labels = (
-            MLPStrategy._process_training_rows(
-                training_data, correct_answers, question_misconceptions, tokenizer
+        embeddings, correctness, question_ids, category_labels, misconception_labels = (
+            MLPStrategy._process_training_rows_multihead(
+                training_data,
+                correct_answers,
+                question_categories,
+                question_misconceptions,
+                tokenizer,
             )
         )
 
-        return MLPStrategy._convert_to_arrays(
+        return MLPStrategy._convert_to_arrays_multihead(
             embeddings,
             correctness,
             question_ids,
+            category_labels,
             misconception_labels,
+            question_categories,
             question_misconceptions,
         )
 
     @staticmethod
-    def _process_training_rows(
+    def _process_training_rows_multihead(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
         tokenizer: "SentenceTransformer",
-    ) -> tuple[list, list, list, dict]:
-        """Process training rows to extract features and labels."""
+    ) -> tuple[list, list, list, dict, dict]:
+        """Process training rows for multi-head training."""
         embeddings = []
         correctness = []
         question_ids = []
+        category_labels = {
+            qid: {"correct": [], "incorrect": []} for qid in question_categories
+        }
         misconception_labels = {qid: [] for qid in question_misconceptions}
 
         for row in training_data:
-            if row.question_id not in question_misconceptions:
+            if row.question_id not in question_categories:
                 continue
 
-            # Generate embedding
+            # Generate embedding (question/answer/explanation only)
             text = repr(row)
             embedding = tokenizer.encode(text)
             embeddings.append(embedding)
@@ -859,13 +1129,65 @@ class MLPStrategy(Strategy):
             correctness.append(float(is_correct))
             question_ids.append(row.question_id)
 
-            # Create misconception label
-            label = MLPStrategy._create_misconception_label(
-                row, question_misconceptions
+            # Create category labels (one-hot for the actual category within correctness state)
+            category_label_correct, category_label_incorrect = (
+                MLPStrategy._create_category_labels(
+                    row, question_categories, is_correct
+                )
             )
-            misconception_labels[row.question_id].append(label)
+            category_labels[row.question_id]["correct"].append(category_label_correct)
+            category_labels[row.question_id]["incorrect"].append(
+                category_label_incorrect
+            )
 
-        return embeddings, correctness, question_ids, misconception_labels
+            # Create misconception label (when applicable)
+            if row.question_id in question_misconceptions:
+                misconception_label = MLPStrategy._create_misconception_label(
+                    row, question_misconceptions
+                )
+                misconception_labels[row.question_id].append(misconception_label)
+            else:
+                # No misconceptions for this question
+                misconception_labels[row.question_id] = misconception_labels.get(
+                    row.question_id, []
+                )
+
+        return (
+            embeddings,
+            correctness,
+            question_ids,
+            category_labels,
+            misconception_labels,
+        )
+
+    @staticmethod
+    def _create_category_labels(
+        row: TrainingRow,
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
+        is_correct: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Create one-hot category labels for correct and incorrect states.
+
+        Returns:
+            (correct_label, incorrect_label): One-hot vectors for each correctness state
+        """
+        qid = row.question_id
+
+        # Get unique categories for each correctness state
+        correct_categories = list(set(question_categories[qid].get(True, [])))
+        incorrect_categories = list(set(question_categories[qid].get(False, [])))
+
+        # Create one-hot labels
+        correct_label = np.zeros(max(1, len(correct_categories)))
+        incorrect_label = np.zeros(max(1, len(incorrect_categories)))
+
+        # Set the appropriate label based on actual category and correctness
+        if is_correct and row.category in correct_categories:
+            correct_label[correct_categories.index(row.category)] = 1.0
+        elif not is_correct and row.category in incorrect_categories:
+            incorrect_label[incorrect_categories.index(row.category)] = 1.0
+
+        return correct_label, incorrect_label
 
     @staticmethod
     def _create_misconception_label(
@@ -883,145 +1205,378 @@ class MLPStrategy(Strategy):
         return label
 
     @staticmethod
-    def _convert_to_arrays(
+    def _convert_to_arrays_multihead(
         embeddings: list,
         correctness: list,
         question_ids: list,
+        category_labels: dict,
         misconception_labels: dict,
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
-    ) -> tuple[np.ndarray, np.ndarray, dict[QuestionId, np.ndarray], np.ndarray]:
-        """Convert lists to numpy arrays."""
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        dict[QuestionId, dict[str, np.ndarray]],
+        dict[QuestionId, np.ndarray],
+        np.ndarray,
+    ]:
+        """Convert lists to numpy arrays for multi-head training."""
         embeddings_array = np.stack(embeddings)
         correctness_array = np.array(correctness)
         question_ids_array = np.array(question_ids)
 
-        # Find maximum label size across all questions for consistent tensor shapes
-        max_label_size = max(
-            len(misconceptions) for misconceptions in question_misconceptions.values()
+        # Convert category labels to arrays per question with consistent shapes
+        # Find max category sizes for padding
+        max_correct_categories = max(
+            (
+                len(set(category_map.get(True, [])))
+                for category_map in question_categories.values()
+            ),
+            default=1,
+        )
+        max_incorrect_categories = max(
+            (
+                len(set(category_map.get(False, [])))
+                for category_map in question_categories.values()
+            ),
+            default=1,
         )
 
+        for qid, labels in category_labels.items():
+            for correctness_state, max_size in [
+                ("correct", max_correct_categories),
+                ("incorrect", max_incorrect_categories),
+            ]:
+                if labels[correctness_state]:
+                    # Pad all label vectors to max_size
+                    padded_labels = []
+                    for label in labels[correctness_state]:
+                        if len(label) < max_size:
+                            padded = np.zeros(max_size)
+                            padded[: len(label)] = label
+                            padded_labels.append(padded)
+                        else:
+                            padded_labels.append(
+                                label[:max_size]
+                            )  # Truncate if too long
+                    category_labels[qid][correctness_state] = np.stack(padded_labels)
+                else:
+                    # No labels for this state - create empty array with correct shape
+                    category_labels[qid][correctness_state] = np.empty((0, max_size))
+
         # Convert misconception labels to arrays per question with padding
+        max_misconception_size = max(
+            (
+                len(misconceptions)
+                for misconceptions in question_misconceptions.values()
+            ),
+            default=1,
+        )
+
         for qid, labels in misconception_labels.items():
             if labels:
-                # Pad all labels to max_label_size
+                # Pad all labels to max_misconception_size
                 padded_labels = []
                 for label in labels:
-                    padded_label = np.zeros(max_label_size)
+                    padded_label = np.zeros(max_misconception_size)
                     padded_label[: len(label)] = label
                     padded_labels.append(padded_label)
                 misconception_labels[qid] = np.stack(padded_labels)
             else:
-                misconception_labels[qid] = np.empty((0, max_label_size))
+                misconception_labels[qid] = np.empty((0, max_misconception_size))
 
-        logger.info(f"Generated {len(embeddings_array)} embeddings")
+        logger.info(
+            f"Generated {len(embeddings_array)} embeddings for multi-head training"
+        )
         return (
             embeddings_array,
             correctness_array,
+            category_labels,
             misconception_labels,
             question_ids_array,
         )
 
     @staticmethod
-    def _train_model(
+    def _train_multihead_model(
         embeddings: np.ndarray,
         correctness: np.ndarray,
+        category_labels: dict[QuestionId, dict[str, np.ndarray]],
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
         device: torch.device,
     ) -> MLPNet:
-        """Train the MLP model."""
-        logger.info("Training MLP model...")
+        """Train the multi-head MLP model."""
+        logger.info("Training multi-head MLP model...")
 
-        model, criterion, optimizer = MLPStrategy._setup_training(
-            question_misconceptions, device
+        model, criterions, optimizer = MLPStrategy._setup_multihead_training(
+            question_categories, question_misconceptions, device
         )
         dataset = MLPDataset(
-            embeddings, correctness, misconception_labels, question_ids, device
+            embeddings,
+            correctness,
+            category_labels,
+            misconception_labels,
+            question_ids,
+            device,
         )
-        dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
-        MLPStrategy._train_epochs(
-            model, criterion, optimizer, dataloader, num_epochs=50
+        # Custom collate function to handle variable tensor shapes
+        def collate_multihead_batch(batch):
+            features = torch.stack([item[0] for item in batch])
+            question_ids = torch.tensor([item[2] for item in batch])
+            indices = torch.tensor([item[3] for item in batch])
+
+            # Handle multi-labels with different shapes per sample
+            multi_labels = {}
+
+            # Correctness labels (consistent shape)
+            multi_labels["correctness"] = torch.stack(
+                [item[1]["correctness"] for item in batch]
+            )
+
+            # Misconception labels (pad to max size in batch)
+            misc_labels = [item[1]["misconceptions"] for item in batch]
+            if misc_labels:
+                max_misc_size = max(label.size(0) for label in misc_labels)
+                padded_misc = []
+                for label in misc_labels:
+                    if label.size(0) < max_misc_size:
+                        padded = torch.zeros(max_misc_size, device=label.device)
+                        padded[: label.size(0)] = label
+                        padded_misc.append(padded)
+                    else:
+                        padded_misc.append(label)
+                multi_labels["misconceptions"] = torch.stack(padded_misc)
+
+            # Category labels (pad to max size in batch for each type)
+            correct_cat_labels = [
+                item[1].get("correct_categories")
+                for item in batch
+                if "correct_categories" in item[1]
+            ]
+            if correct_cat_labels:
+                max_correct_size = max(label.size(0) for label in correct_cat_labels)
+                padded_correct = []
+                for item in batch:
+                    if "correct_categories" in item[1]:
+                        label = item[1]["correct_categories"]
+                        if label.size(0) < max_correct_size:
+                            padded = torch.zeros(max_correct_size, device=label.device)
+                            padded[: label.size(0)] = label
+                            padded_correct.append(padded)
+                        else:
+                            padded_correct.append(label)
+                    else:
+                        padded_correct.append(
+                            torch.zeros(max_correct_size, device=features.device)
+                        )
+                multi_labels["correct_categories"] = torch.stack(padded_correct)
+
+            incorrect_cat_labels = [
+                item[1].get("incorrect_categories")
+                for item in batch
+                if "incorrect_categories" in item[1]
+            ]
+            if incorrect_cat_labels:
+                max_incorrect_size = max(
+                    label.size(0) for label in incorrect_cat_labels
+                )
+                padded_incorrect = []
+                for item in batch:
+                    if "incorrect_categories" in item[1]:
+                        label = item[1]["incorrect_categories"]
+                        if label.size(0) < max_incorrect_size:
+                            padded = torch.zeros(
+                                max_incorrect_size, device=label.device
+                            )
+                            padded[: label.size(0)] = label
+                            padded_incorrect.append(padded)
+                        else:
+                            padded_incorrect.append(label)
+                    else:
+                        padded_incorrect.append(
+                            torch.zeros(max_incorrect_size, device=features.device)
+                        )
+                multi_labels["incorrect_categories"] = torch.stack(padded_incorrect)
+
+            return features, multi_labels, question_ids, indices
+
+        dataloader = DataLoader(
+            dataset, batch_size=32, shuffle=True, collate_fn=collate_multihead_batch
         )
 
-        logger.info("MLP training completed")
+        MLPStrategy._train_multihead_epochs(
+            model,
+            criterions,
+            optimizer,
+            dataloader,
+            num_epochs=100,  # More epochs for complex model
+        )
+
+        logger.info("Multi-head MLP training completed")
         return model
 
     @staticmethod
-    def _setup_training(
+    def _setup_multihead_training(
+        question_categories: dict[QuestionId, dict[bool, list[Category]]],
         question_misconceptions: dict[QuestionId, list[str]],
         device: torch.device,
-    ) -> tuple[MLPNet, nn.BCEWithLogitsLoss, optim.Adam]:
-        """Setup model, criterion, and optimizer for training."""
-        model = MLPNet(question_misconceptions).to(device)
-        criterion = nn.BCEWithLogitsLoss()
-        optimizer = optim.Adam(model.parameters(), lr=1e-3)
-        logger.debug(f"Model moved to device: {device}")
-        return model, criterion, optimizer
+    ) -> tuple[MLPNet, dict[str, nn.Module], optim.Adam]:
+        """Setup multi-head model, criterions, and optimizer."""
+        model = MLPNet(question_categories, question_misconceptions).to(device)
+
+        # Multiple loss functions for different heads
+        criterions = {
+            "correctness": nn.BCEWithLogitsLoss(),  # Binary classification for correctness
+            "categories": nn.CrossEntropyLoss(),  # Multi-class for category selection
+            "misconceptions": nn.BCEWithLogitsLoss(),  # Multi-label for misconceptions
+        }
+
+        # Lower learning rate for more complex multi-head model
+        optimizer = optim.Adam(model.parameters(), lr=5e-4)
+        logger.debug(f"Multi-head model moved to device: {device}")
+        return model, criterions, optimizer
 
     @staticmethod
-    def _train_epochs(
+    def _train_multihead_epochs(
         model: MLPNet,
-        criterion: nn.BCEWithLogitsLoss,
+        criterions: dict[str, nn.Module],
         optimizer: optim.Adam,
         dataloader: DataLoader,
         num_epochs: int,
     ) -> None:
-        """Train model for specified number of epochs."""
+        """Train multi-head model for specified number of epochs."""
         model.train()
         for epoch in range(num_epochs):
-            total_loss = MLPStrategy._train_single_epoch(
-                model, criterion, optimizer, dataloader
+            total_losses = MLPStrategy._train_multihead_single_epoch(
+                model, criterions, optimizer, dataloader
             )
 
-            if epoch % 10 == 0:
-                logger.debug(f"Epoch {epoch}, Average Loss: {total_loss:.4f}")
+            if epoch % 20 == 0:
+                loss_str = ", ".join([f"{k}: {v:.4f}" for k, v in total_losses.items()])
+                logger.debug(f"Epoch {epoch}, Losses: {loss_str}")
 
     @staticmethod
-    def _train_single_epoch(
+    def _train_multihead_single_epoch(
         model: MLPNet,
-        criterion: nn.BCEWithLogitsLoss,
+        criterions: dict[str, nn.Module],
         optimizer: optim.Adam,
         dataloader: DataLoader,
-    ) -> float:
-        """Train model for a single epoch."""
-        total_loss = 0.0
+    ) -> dict[str, float]:
+        """Train multi-head model for a single epoch."""
+        total_losses = {
+            "correctness": 0.0,
+            "categories": 0.0,
+            "misconceptions": 0.0,
+            "combined": 0.0,
+        }
         num_batches = 0
 
-        for features, labels, question_id_batch, _indices in dataloader:
+        for features, multi_labels, question_id_batch, _indices in dataloader:
             optimizer.zero_grad()
-            batch_loss = MLPStrategy._process_batch(
-                model, criterion, features, labels, question_id_batch
+            batch_losses = MLPStrategy._process_multihead_batch(
+                model, criterions, features, multi_labels, question_id_batch
             )
 
-            if batch_loss > 0:
-                batch_loss.backward()
+            if any(loss > 0 for loss in batch_losses.values()):
+                # Combined loss with weights
+                combined_loss = (
+                    batch_losses["correctness"] * 2.0  # Correctness is most important
+                    + batch_losses["categories"] * 1.5  # Categories are important
+                    + batch_losses["misconceptions"] * 1.0  # Misconceptions are helpful
+                )
+
+                combined_loss.backward()
                 optimizer.step()
-                total_loss += batch_loss.item()
+
+                # Track losses
+                for key, loss in batch_losses.items():
+                    total_losses[key] += loss.item()
+                total_losses["combined"] += combined_loss.item()
                 num_batches += 1
 
-        return total_loss / num_batches if num_batches > 0 else 0.0
+        # Return average losses
+        if num_batches > 0:
+            for key in total_losses:
+                total_losses[key] /= num_batches
+
+        return total_losses
 
     @staticmethod
-    def _process_batch(
+    def _process_multihead_batch(
         model: MLPNet,
-        criterion: nn.BCEWithLogitsLoss,
+        criterions: dict[str, nn.Module],
         features: torch.Tensor,
-        labels: torch.Tensor,
+        multi_labels: dict[str, torch.Tensor],
         question_id_batch: torch.Tensor,
-    ) -> torch.Tensor:
-        """Process a single batch for training."""
-        # Get device from features tensor
+    ) -> dict[str, torch.Tensor]:
+        """Process a single batch for multi-head training."""
         device = features.device
-        batch_loss = torch.tensor(0.0, device=device)
+        model_device = next(model.parameters()).device
+        assert model_device.type == device.type, (
+            f"Model device type mismatch: expected {device.type}, got {model_device.type}"
+        )
+
+        # Initialize losses
+        batch_losses = {
+            "correctness": torch.tensor(0.0, device=device),
+            "categories": torch.tensor(0.0, device=device),
+            "misconceptions": torch.tensor(0.0, device=device),
+        }
+
+        valid_samples = 0
+
         for i in range(len(features)):
             qid = question_id_batch[i].item()
-            feature = features[i].unsqueeze(0)
-            label = labels[i].unsqueeze(0)
+            feature = features[i].unsqueeze(0)  # Shape: [1, 384]
 
-            output = model(feature, qid)
-            loss = criterion(output, label)
-            batch_loss += loss
+            # Get multi-head model outputs
+            outputs = model(feature, qid)
 
-        return batch_loss
+            # Correctness loss (always present)
+            if "correctness" in outputs and "correctness" in multi_labels:
+                correctness_target = multi_labels["correctness"][i].unsqueeze(0)
+                correctness_loss = criterions["correctness"](
+                    outputs["correctness"], correctness_target
+                )
+                batch_losses["correctness"] += correctness_loss
+
+            # Category losses (question-specific)
+            # Determine which category head to use based on ground truth correctness
+            is_correct = multi_labels["correctness"][i].item() > CORRECTNESS_THRESHOLD
+            category_key = (
+                "correct_categories" if is_correct else "incorrect_categories"
+            )
+            label_key = "correct_categories" if is_correct else "incorrect_categories"
+
+            if category_key in outputs and label_key in multi_labels:
+                category_target = multi_labels[label_key][i].unsqueeze(0)
+                if (
+                    category_target.sum() > 0
+                ):  # Only compute loss if we have a valid target
+                    category_loss = criterions["categories"](
+                        outputs[category_key], category_target
+                    )
+                    batch_losses["categories"] += category_loss
+
+            # Misconception loss (when applicable)
+            if "misconceptions" in outputs and "misconceptions" in multi_labels:
+                misconception_target = multi_labels["misconceptions"][i].unsqueeze(0)
+                if (
+                    misconception_target.sum() > 0
+                ):  # Only if there are actual misconceptions
+                    misconception_loss = criterions["misconceptions"](
+                        outputs["misconceptions"], misconception_target
+                    )
+                    batch_losses["misconceptions"] += misconception_loss
+
+            valid_samples += 1
+
+        # Average over batch
+        if valid_samples > 0:
+            for key in batch_losses:
+                batch_losses[key] = batch_losses[key] / valid_samples
+
+        return batch_losses
