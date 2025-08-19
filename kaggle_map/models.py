@@ -6,7 +6,7 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, field_validator
 
-from kaggle_map.utils.formula import normalize_latex_answer, normalize_text
+from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
 
 # Domain-specific type aliases
 type QuestionId = int
@@ -119,6 +119,15 @@ class TrainingRow(EvaluationRow):
 
     category: Category
     misconception: Misconception | None
+
+    def __post_init__(self) -> None:
+        """Normalize text fields using formula.py functions."""
+        # Use object.__setattr__ because the dataclass is frozen
+        object.__setattr__(self, "question_text", normalize_text(self.question_text))
+        object.__setattr__(self, "mc_answer", normalize_latex_answer(self.mc_answer))
+        object.__setattr__(
+            self, "student_explanation", normalize_text(self.student_explanation)
+        )
 
 
 class SubmissionRow(NamedTuple):

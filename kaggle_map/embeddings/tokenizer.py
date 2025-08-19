@@ -6,8 +6,8 @@ Primary entrypoints:
 - `encode(model, text)` - Encode text into vector embeddings
 """
 
+from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.models import EvaluationRow
-from kaggle_map.utils.embedding_models import EmbeddingModel, get_tokenizer
 
 
 def main() -> None:

@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset
 
+from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.eval import evaluate
 from kaggle_map.models import (
     Answer,
@@ -28,7 +29,6 @@ from kaggle_map.models import (
     SubmissionRow,
     TrainingRow,
 )
-from kaggle_map.utils.embedding_models import EmbeddingModel, get_tokenizer
 
 from .base import Strategy
 
