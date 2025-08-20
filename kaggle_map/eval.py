@@ -34,6 +34,7 @@ def evaluate(
     # Calculate metric using provided function
     total_score = 0.0
     common_row_ids = set(ground_truth.keys()) & set(submissions.keys())
+    assert len(common_row_ids) > 0, "No common row IDs found"
 
     for row_id in common_row_ids:
         gt_prediction = ground_truth[row_id]
@@ -42,8 +43,7 @@ def evaluate(
         total_score += score
 
     total_observations = len(common_row_ids)
-    map_score = total_score / total_observations if total_observations > 0 else 0.0
-
+    map_score = total_score / total_observations
     logger.debug(f"Metric score: {map_score:.4f} over {total_observations} observations")
     return map_score
 
@@ -55,11 +55,10 @@ def _load_ground_truth(path: Path) -> dict[RowId, Prediction]:
     ground_truth_data = pd.read_csv(path)
     assert not ground_truth_data.empty, "Ground truth file cannot be empty"
 
-    result = {}
-    for _, row in ground_truth_data.iterrows():
-        row_id = RowId(row["row_id"])
-        prediction = Prediction.from_ground_truth_row(row)
-        result[row_id] = prediction
+    result = {
+        int(row["row_id"]): Prediction.from_ground_truth_row(row)
+        for _, row in ground_truth_data.iterrows()
+    }
 
     logger.debug(f"Loaded {len(result)} ground truth rows")
     return result
@@ -71,24 +70,13 @@ def _load_submissions(path: Path) -> dict[RowId, list[Prediction]]:
 
     submission_data = pd.read_csv(path)
 
-    result = {}
-    for _, row in submission_data.iterrows():
-        row_id = RowId(row["row_id"])
-        predictions_str = str(row["predictions"]).strip()
-
-        # Split by spaces and parse into Prediction objects
-        predictions = []
-        if predictions_str and predictions_str != "nan":
-            prediction_strings = predictions_str.split()[:3]
-            for pred_str in prediction_strings:
-                try:
-                    prediction = Prediction.from_string(pred_str)
-                    predictions.append(prediction)
-                except ValueError:
-                    # Invalid prediction format - skip it
-                    logger.debug(f"Skipping invalid prediction: {pred_str}")
-
-        result[row_id] = predictions
+    result = {
+        int(row["row_id"]): [
+            Prediction.from_string(s)
+            for s in str(row["Category:Misconception"]).split()
+        ]
+        for _, row in submission_data.iterrows()
+    }
 
     logger.debug(f"Loaded {len(result)} submission rows")
     return result

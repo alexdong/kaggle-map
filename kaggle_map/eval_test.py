@@ -40,7 +40,7 @@ def temp_csv_files(tmp_path):
             },
             "submission": {
                 "row_id": [1, 2, 3],
-                "predictions": [
+                "Category:Misconception": [
                     "True_Correct:Adding_across False_Neither:Other_tag True_Misconception:Another_tag",
                     "False_Misconception:Denominator-only_change True_Correct:Some_tag False_Neither:Bad_tag", 
                     "True_Misconception:Incorrect_equivalent_fraction_addition False_Neither:Wrong_tag True_Correct:Other_tag"
@@ -61,7 +61,7 @@ def temp_csv_files(tmp_path):
             },
             "submission": {
                 "row_id": [1, 2, 3],
-                "predictions": [
+                "Category:Misconception": [
                     "False_Neither:Other_tag True_Correct:Adding_across True_Neither:Another_tag",
                     "True_Neither:Some_tag False_Misconception:Denominator-only_change False_Neither:Bad_tag",
                     "False_Neither:Wrong_tag True_Misconception:Incorrect_equivalent_fraction_addition True_Neither:Other_tag"
@@ -82,7 +82,7 @@ def temp_csv_files(tmp_path):
             },
             "submission": {
                 "row_id": [1, 2],
-                "predictions": [
+                "Category:Misconception": [
                     "False_Neither:Other_tag True_Neither:Another_tag True_Correct:Adding_across",
                     "True_Neither:Some_tag False_Neither:Bad_tag False_Misconception:Denominator-only_change"
                 ]
@@ -102,7 +102,7 @@ def temp_csv_files(tmp_path):
             },
             "submission": {
                 "row_id": [1, 2, 3, 4],
-                "predictions": [
+                "Category:Misconception": [
                     "True_Correct:Adding_across False_Neither:Other_tag True_Neither:Another_tag",         # 1st position: AP = 1.0
                     "False_Neither:Other_tag False_Misconception:Denominator-only_change True_Neither:Another_tag",  # 2nd position: AP = 0.5
                     "False_Neither:Other_tag True_Neither:Another_tag True_Misconception:Incorrect_equivalent_fraction_addition",  # 3rd position: AP = 1/3
@@ -124,7 +124,7 @@ def temp_csv_files(tmp_path):
             },
             "submission": {
                 "row_id": [1, 2],
-                "predictions": [
+                "Category:Misconception": [
                     "False_Neither:Other_tag True_Neither:Another_tag False_Neither:Bad_tag",
                     "True_Neither:Some_tag False_Neither:Wrong_tag True_Neither:Bad_tag"
                 ]
@@ -165,10 +165,10 @@ def test_load_submissions(temp_csv_files):
     """Test loading submission CSV into Prediction objects."""
     submission_data = {
         "row_id": [1, 2, 3],
-        "predictions": [
+        "Category:Misconception": [
             "True_Correct:Adding_across False_Neither:Other_tag",
             "False_Misconception:Denominator-only_change",
-            "True_Neither False_Correct"
+            "True_Neither:NA False_Correct:NA"
         ]
     }
     
@@ -194,7 +194,7 @@ def test_parse_prediction_string():
     assert pred1 == Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
     
     # Test without misconception
-    pred2 = Prediction.from_string("False_Neither")
+    pred2 = Prediction.from_string("False_Neither:NA")
     assert pred2 == Prediction(category=Category.FALSE_NEITHER, misconception="NA")
     
     # Test with empty misconception
@@ -230,10 +230,10 @@ def test_load_submissions_file_assertions(tmp_path):
 
 
 def test_load_submissions_with_invalid_predictions(temp_csv_files):
-    """Test that _load_submissions handles invalid prediction strings gracefully."""
+    """Test that _load_submissions raises error for invalid prediction strings."""
     submission_data = {
         "row_id": [1, 2, 3],
-        "predictions": [
+        "Category:Misconception": [
             "True_Correct:Adding_across Invalid_Category:Some_tag",  # Invalid category
             "False_Misconception:Denominator-only_change",  # Valid
             "nan"  # NaN value
@@ -242,18 +242,9 @@ def test_load_submissions_with_invalid_predictions(temp_csv_files):
     
     _, sub_path = temp_csv_files({}, submission_data)
     
-    result = _load_submissions(sub_path)
-    
-    # First row should only have the valid prediction
-    assert len(result[1]) == 1
-    assert result[1][0] == Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
-    
-    # Second row should have the valid prediction
-    assert len(result[2]) == 1
-    assert result[2][0] == Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Denominator-only_change")
-    
-    # Third row should be empty due to nan
-    assert len(result[3]) == 0
+    # Should raise ValueError for invalid category
+    with pytest.raises(ValueError):
+        _load_submissions(sub_path)
 
 
 def test_evaluate_with_custom_metric_function(temp_csv_files):
@@ -266,7 +257,7 @@ def test_evaluate_with_custom_metric_function(temp_csv_files):
     
     submission_data = {
         "row_id": [1, 2],
-        "predictions": [
+        "Category:Misconception": [
             "True_Correct:Adding_across False_Neither:Other_tag",
             "False_Neither:Other_tag False_Misconception:Denominator-only_change"
         ]
@@ -294,7 +285,7 @@ def test_evaluate_with_default_map_at_3_metric(temp_csv_files):
     
     submission_data = {
         "row_id": [1, 2],
-        "predictions": [
+        "Category:Misconception": [
             "True_Correct:Adding_across False_Neither:Other_tag",  # 1st position: 1.0
             "False_Neither:Other_tag False_Misconception:Denominator-only_change"  # 2nd position: 0.5
         ]
