@@ -1,6 +1,5 @@
 """CLI for generating and saving embeddings from training data."""
 
-import sys
 from pathlib import Path
 
 import click
@@ -62,61 +61,55 @@ def generate_embeddings(
     config_table.add_row("Batch Size", str(batch_size))
     console.print(config_table)
 
-    try:
-        # Load and parse training data
-        with console.status("[bold green]Loading training data..."):
-            training_data = _load_training_data(input_csv)
-            logger.info(f"Loaded {len(training_data)} training rows")
+    # Load and parse training data
+    with console.status("[bold green]Loading training data..."):
+        training_data = _load_training_rows_from_csv(input_csv)
+        logger.info(f"Loaded {len(training_data)} training rows")
 
-        console.print(
-            f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]"
+    console.print(
+        f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]"
+    )
+
+    # Initialize embedding model
+    with console.status("[bold green]Initializing embedding model..."):
+        embedding_model_obj = EmbeddingModel.MINI_LM
+        tokenizer = get_tokenizer(embedding_model_obj)
+        logger.info(f"Initialized embedding model: {embedding_model_obj.model_id}")
+
+    console.print(
+        f"✅ [bold green]Initialized {embedding_model_obj.model_id}[/bold green]"
+    )
+
+    # Generate embeddings
+    console.print("[bold blue]Generating embeddings...[/bold blue]")
+    row_ids, misconceptions, embeddings = _generate_embeddings_batch(
+        training_data, tokenizer, batch_size, console
+    )
+
+    # Save to numpy format
+    output_dir.mkdir(exist_ok=True)
+    output_file = output_dir / "train_embeddings.npz"
+
+    with console.status(f"[bold green]Saving embeddings to {output_file}..."):
+        np.savez_compressed(
+            output_file,
+            row_ids=np.array(row_ids),
+            misconceptions=np.array(
+                misconceptions
+            ),  # String array, no object dtype needed
+            embeddings=np.array(embeddings),
         )
+        logger.info(f"Saved embeddings to {output_file}")
 
-        # Initialize embedding model
-        with console.status("[bold green]Initializing embedding model..."):
-            embedding_model_obj = EmbeddingModel.MINI_LM
-            tokenizer = get_tokenizer(embedding_model_obj)
-            logger.info(f"Initialized embedding model: {embedding_model_obj.model_id}")
+    console.print(f"✅ [bold green]Embeddings saved to {output_file}[/bold green]")
 
-        console.print(
-            f"✅ [bold green]Initialized {embedding_model_obj.model_id}[/bold green]"
-        )
-
-        # Generate embeddings
-        console.print("[bold blue]Generating embeddings...[/bold blue]")
-        row_ids, misconceptions, embeddings = _generate_embeddings_batch(
-            training_data, tokenizer, batch_size, console
-        )
-
-        # Save to numpy format
-        output_dir.mkdir(exist_ok=True)
-        output_file = output_dir / "train_embeddings.npz"
-
-        with console.status(f"[bold green]Saving embeddings to {output_file}..."):
-            np.savez_compressed(
-                output_file,
-                row_ids=np.array(row_ids),
-                misconceptions=np.array(
-                    misconceptions
-                ),  # String array, no object dtype needed
-                embeddings=np.array(embeddings),
-            )
-            logger.info(f"Saved embeddings to {output_file}")
-
-        console.print(f"✅ [bold green]Embeddings saved to {output_file}[/bold green]")
-
-        # Display summary
-        _display_summary(
-            console, output_file, len(training_data), embeddings[0].shape[0]
-        )
-
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        logger.exception("Failed to generate embeddings")
-        sys.exit(1)
+    # Display summary
+    _display_summary(
+        console, output_file, len(training_data), embeddings[0].shape[0]
+    )
 
 
-def _load_training_data(csv_path: Path) -> list[TrainingRow]:
+def _load_training_rows_from_csv(csv_path: Path) -> list[TrainingRow]:
     """Load and parse training data from CSV."""
     assert csv_path.exists(), f"Training file not found: {csv_path}"
 
