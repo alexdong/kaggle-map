@@ -32,15 +32,6 @@ MAX_HISTORY_DISPLAY = 5
 
 
 def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
-    """Calculate MAP@3 score for kaggle submission.
-
-    Args:
-        ground_truth_path: Path to ground truth CSV with Category and Misconception columns
-        submission_path: Path to submission CSV with predictions column
-
-    Returns:
-        EvaluationResult with MAP@3 score and detailed breakdown
-    """
     logger.debug(f"Evaluating {submission_path} against {ground_truth_path}")
 
     # Load and parse files
@@ -97,7 +88,6 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
 
 
 def _get_git_commit_hash() -> str:
-    """Get current git commit hash."""
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     )
@@ -109,11 +99,6 @@ def _log_model_performance(
     strategy: str = "baseline",
     total_execution_time: float = 0.0,
 ) -> bool:
-    """Log model performance to performance history file only if it beats the current best.
-
-    Returns:
-        True if the model was logged (new best), False otherwise
-    """
     # Load existing performance history
     performance_history = []
     if MODEL_PERFORMANCE_LOG.exists():
@@ -157,7 +142,6 @@ def _log_model_performance(
 
 
 def _display_performance_history(console: Console) -> None:
-    """Display recent performance history if available."""
     if not MODEL_PERFORMANCE_LOG.exists():
         return
 
@@ -204,7 +188,6 @@ def _display_performance_history(console: Console) -> None:
 
 
 def _load_ground_truth(path: Path) -> dict[int, Prediction]:
-    """Load ground truth CSV into dict mapping row_id -> Prediction object."""
     assert path.exists(), f"Ground truth file not found: {path}"
 
     ground_truth_data = pd.read_csv(path)
@@ -228,7 +211,6 @@ def _load_ground_truth(path: Path) -> dict[int, Prediction]:
 
 
 def _load_submissions(path: Path) -> dict[int, list[Prediction]]:
-    """Load submission CSV into dict mapping row_id -> list of up to 3 Prediction objects."""
     assert path.exists(), f"Submission file not found: {path}"
 
     submission_data = pd.read_csv(path)
@@ -257,7 +239,6 @@ def _load_submissions(path: Path) -> dict[int, list[Prediction]]:
 
 
 def _parse_prediction_string(pred_str: str) -> Prediction:
-    """Parse a prediction string into a Prediction object."""
     pred_str = pred_str.strip()
 
     if ":" in pred_str:
@@ -276,7 +257,6 @@ def _parse_prediction_string(pred_str: str) -> Prediction:
 def _calculate_average_precision(
     ground_truth: Prediction, predictions: list[Prediction]
 ) -> float:
-    """Calculate average precision for a single observation using MAP@3 formula."""
     if not predictions:
         return 0.0
 
@@ -291,13 +271,11 @@ def _calculate_average_precision(
 
 
 def _predictions_match(ground_truth: Prediction, prediction: Prediction) -> bool:
-    """Check if two predictions match using their value representation."""
-    return ground_truth.value == prediction.value
+    return str(ground_truth) == str(prediction)
 
 
 @click.command()
 def main() -> None:
-    """Cross-validate baseline model against train.csv ground truth."""
     console = Console()
 
     console.print(
@@ -308,7 +286,6 @@ def main() -> None:
 
 
 def _run_cross_validation(console: Console) -> None:
-    """Run cross-validation using baseline model against train.csv."""
     start_time = time.time()
 
     model_path = Path("models/baseline.json")
@@ -476,7 +453,7 @@ def _save_submission_csv(predictions: list, submission_path: Path) -> None:
     for submission_row in predictions:
         # Convert Prediction objects to space-separated string format
         prediction_strings = [
-            pred.value for pred in submission_row.predicted_categories
+            str(pred) for pred in submission_row.predicted_categories
         ]
 
         total_individual_predictions += len(prediction_strings)
@@ -577,7 +554,7 @@ def _display_detailed_cross_validation_analysis(
         ground_truth = f"{gt_row['Category']}:{misconception}"
 
         # Format predictions
-        pred_strings = [pred.value for pred in pred_row.predicted_categories]
+        pred_strings = [str(pred) for pred in pred_row.predicted_categories]
 
         sample_table.add_row(
             str(row_id),
@@ -708,13 +685,13 @@ def _demonstrate_map_evaluation(console: Console, *, verbose: bool) -> None:
             gt_data = _load_ground_truth(gt_path)
             console.print("\n[cyan]Ground truth as Prediction objects:[/cyan]")
             for row_id, prediction in gt_data.items():
-                console.print(f"  Row {row_id}: {prediction} -> '{prediction.value}'")
+                console.print(f"  Row {row_id}: {prediction} -> '{prediction!s}'")
 
             # Show how submissions are parsed into Prediction objects
             sub_data = _load_submissions(sub_path)
             console.print("\n[cyan]Submissions as Prediction objects:[/cyan]")
             for row_id, predictions in sub_data.items():
-                pred_strs = [f"'{pred.value}'" for pred in predictions]
+                pred_strs = [f"'{pred!s}'" for pred in predictions]
                 console.print(f"  Row {row_id}: {pred_strs}")
 
         logger.info("MAP@3 evaluation demonstration completed successfully")

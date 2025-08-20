@@ -21,7 +21,7 @@ from .strategies.base import Strategy
 
 @click.group()
 def cli() -> None:
-    """Kaggle MAP student misconception prediction toolkit."""
+    pass
 
 
 @click.command()
@@ -60,11 +60,6 @@ def run(
     random_seed: int,
     embeddings_path: Path | None,
 ) -> None:
-    """Run a strategy with the specified action.
-
-    STRATEGY: Name of the prediction strategy to use
-    ACTION: Action to perform (fit, eval, predict)
-    """
     start_time = time.time()
 
     # Create context logger with all parameters for debugging
@@ -170,7 +165,6 @@ def run(
 
 @click.command()
 def list_strategies_cmd() -> None:
-    """List all available strategies with descriptions."""
     logger.info(
         "Starting list-strategies command",
         extra={"command": "list-strategies", "status": "started"},
@@ -227,7 +221,6 @@ def _handle_fit(
     random_seed: int,
     embeddings_path: Path | None,
 ) -> dict[str, float]:
-    """Handle the fit action and return timing information."""
     fit_start_time = time.time()
 
     context_logger.info(
@@ -361,7 +354,6 @@ def _handle_eval(
     train_split: float,
     random_seed: int,
 ) -> dict[str, float] | None:
-    """Handle the eval action and return timing information."""
     eval_start_time = time.time()
 
     context_logger.info(
@@ -503,7 +495,6 @@ def _handle_predict(
     model_path: str | None,
     output_path: str | None,
 ) -> None:
-    """Handle the predict action."""
     time.time()
 
     context_logger.info(
@@ -561,7 +552,6 @@ def _handle_predict(
 
 
 def _display_eval_results(console: Console, eval_results: dict[str, float]) -> None:
-    """Display evaluation results in a formatted table."""
     eval_table = Table(title="Evaluation Results")
     eval_table.add_column("Metric", style="cyan", no_wrap=True)
     eval_table.add_column("Value", style="magenta")
@@ -613,7 +603,6 @@ def _update_performance_history(
     timing_info: dict[str, float],
     context_logger: "Logger",
 ) -> None:
-    """Update performance_history.json with evaluation results and timing information."""
     performance_file = Path("models/performance_history.json")
     context_logger.debug(
         "Updating performance history file",

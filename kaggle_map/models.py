@@ -17,8 +17,6 @@ type Misconception = (
 
 
 class Category(Enum):
-    """All possible categories in the competition."""
-
     TRUE_CORRECT = "True_Correct"
     TRUE_NEITHER = "True_Neither"
     TRUE_MISCONCEPTION = "True_Misconception"
@@ -28,53 +26,37 @@ class Category(Enum):
 
     @property
     def is_misconception(self) -> bool:
-        """Check if this category involves a misconception."""
         return self.value.endswith("_Misconception")
 
     @property
     def is_correct_answer(self) -> bool:
-        """Check if this represents a correct answer."""
         return self.value.startswith("True_")
+
+    @classmethod
+    def by_truth_value(cls, *, is_true: bool) -> list["Category"]:
+        """Return all Category values corresponding to the given truth value.
+
+        Args:
+            is_true: True returns TRUE_* categories, False returns FALSE_* categories
+
+        Returns:
+            List of Category enum values matching the boolean prefix
+        """
+        prefix = "True_" if is_true else "False_"
+        return [category for category in cls if category.value.startswith(prefix)]
 
 
 class Prediction(BaseModel):
-    """A prediction in 'Category:Misconception' format for submission."""
-
     category: Category
     misconception: Misconception | None = None
 
-    @property
-    def value(self) -> str:
-        """Return the prediction string in 'Category:Misconception' format."""
+    def __str__(self) -> str:
         if self.category.is_misconception and self.misconception is not None:
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
 
-    def __str__(self) -> str:
-        """Return the prediction string for easy use."""
-        return self.value
-
-    def __repr__(self) -> str:
-        """Return a clear representation."""
-        return f"Prediction(category={self.category}, misconception={self.misconception!r})"
-
-    def __hash__(self) -> int:
-        """Make Prediction hashable for use as dictionary keys."""
-        return hash((self.category, self.misconception))
-
-    def __eq__(self, other: object) -> bool:
-        """Define equality for Prediction objects."""
-        if not isinstance(other, Prediction):
-            return False
-        return (
-            self.category == other.category
-            and self.misconception == other.misconception
-        )
-
 
 class EvaluationRow(BaseModel):
-    """Single row from test.csv."""
-
     row_id: int
     question_id: QuestionId
     question_text: str
@@ -84,13 +66,11 @@ class EvaluationRow(BaseModel):
     @field_validator("question_text", "student_explanation")
     @classmethod
     def normalize_text_fields(cls, v: str) -> str:
-        """Normalize text fields automatically."""
         return normalize_text(v)
 
     @field_validator("mc_answer")
     @classmethod
     def normalize_answer(cls, v: str) -> str:
-        """Normalize LaTeX answer automatically."""
         return normalize_latex_answer(v)
 
     def __repr__(self) -> str:
@@ -103,22 +83,16 @@ class EvaluationRow(BaseModel):
 
 
 class TrainingRow(EvaluationRow):
-    """Single row from train.csv, extends EvaluationRow with ground truth labels."""
-
     category: Category
     misconception: Misconception | None
 
 
 class SubmissionRow(NamedTuple):
-    """Prediction result for MAP@3 evaluation."""
-
     row_id: int
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
 
 
 class EvaluationResult(BaseModel):
-    """MAP@3 evaluation result with detailed breakdown."""
-
     map_score: float
     total_observations: int
     perfect_predictions: int

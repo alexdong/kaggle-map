@@ -62,6 +62,34 @@ def test_correct_answer_categories_start_with_true_prefix():
         assert category.is_correct_answer, f"{category.value} should be a correct answer category"
 
 
+def test_by_truth_value_returns_correct_categories_for_true():
+    """by_truth_value with is_true=True returns all TRUE_* categories."""
+    true_categories = Category.by_truth_value(is_true=True)
+    
+    expected_categories = {
+        Category.TRUE_CORRECT,
+        Category.TRUE_NEITHER,
+        Category.TRUE_MISCONCEPTION
+    }
+    
+    assert set(true_categories) == expected_categories
+    assert len(true_categories) == 3
+
+
+def test_by_truth_value_returns_correct_categories_for_false():
+    """by_truth_value with is_true=False returns all FALSE_* categories."""
+    false_categories = Category.by_truth_value(is_true=False)
+    
+    expected_categories = {
+        Category.FALSE_CORRECT,
+        Category.FALSE_NEITHER,
+        Category.FALSE_MISCONCEPTION
+    }
+    
+    assert set(false_categories) == expected_categories
+    assert len(false_categories) == 3
+
+
 # =============================================================================
 # Prediction Class Tests
 # =============================================================================
@@ -74,7 +102,7 @@ def test_prediction_formats_misconception_categories_with_tag():
         misconception="Adding_across"
     )
     
-    assert prediction.value == "True_Misconception:Adding_across"
+    assert str(prediction) == "True_Misconception:Adding_across"
     assert str(prediction) == "True_Misconception:Adding_across"
 
 
@@ -85,7 +113,7 @@ def test_prediction_formats_non_misconception_categories_with_na():
         misconception="SomeValue"  # Should be ignored
     )
     
-    assert prediction.value == "True_Correct:NA"
+    assert str(prediction) == "True_Correct:NA"
 
 
 def test_prediction_ignores_misconception_for_non_misconception_categories():
@@ -98,8 +126,8 @@ def test_prediction_ignores_misconception_for_non_misconception_categories():
         category=Category.FALSE_NEITHER
     )
     
-    assert pred_with_misconception.value == pred_without_misconception.value
-    assert pred_with_misconception.value == "False_Neither:NA"
+    assert str(pred_with_misconception) == str(pred_without_misconception)
+    assert str(pred_with_misconception) == "False_Neither:NA"
 
 
 def test_prediction_string_representation_matches_value_property():
@@ -109,7 +137,7 @@ def test_prediction_string_representation_matches_value_property():
         misconception="Denominator-only_change"
     )
     
-    assert str(prediction) == prediction.value
+    assert str(prediction) == str(prediction)  # This test is now redundant but shows __str__ works
     assert str(prediction) == "False_Misconception:Denominator-only_change"
 
 
@@ -285,7 +313,7 @@ def test_model_predict_applies_misconceptions_to_misconception_categories(temp_t
     )
     
     prediction = model.predict(test_row)
-    prediction_values = [pred.value for pred in prediction.predicted_categories]
+    prediction_values = [str(pred) for pred in prediction.predicted_categories]
     
     # Should contain misconception category with the actual misconception
     assert any("False_Misconception:Adding_across" in val for val in prediction_values)
@@ -464,7 +492,7 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     assert original_prediction.row_id == reconstructed_prediction.row_id
     assert len(original_prediction.predicted_categories) == len(reconstructed_prediction.predicted_categories)
     for o_pred, r_pred in zip(original_prediction.predicted_categories, reconstructed_prediction.predicted_categories):
-        assert o_pred.value == r_pred.value
+        assert str(o_pred) == str(r_pred)
 
 
 # =============================================================================

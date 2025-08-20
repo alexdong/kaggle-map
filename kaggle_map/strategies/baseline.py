@@ -40,26 +40,16 @@ class BaselineStrategy(Strategy):
 
     @property
     def name(self) -> str:
-        """Strategy name."""
         return "baseline"
 
     @property
     def description(self) -> str:
-        """Strategy description."""
         return "Frequency-based model using category patterns and common misconceptions"
 
     @classmethod
     def fit(
         cls, train_csv_path: Path = Path("datasets/train.csv")
     ) -> "BaselineStrategy":
-        """Build model from training data.
-
-        Args:
-            train_csv_path: Path to train.csv (default: dataset/train.csv)
-
-        Returns:
-            Trained BaselineStrategy
-        """
         logger.info(f"Fitting baseline strategy from {train_csv_path}")
         training_data = parse_training_data(train_csv_path)
         logger.debug(f"Parsed {len(training_data)} training rows")
@@ -79,14 +69,6 @@ class BaselineStrategy(Strategy):
         )
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
-        """Make predictions for a single evaluation row.
-
-        Args:
-            evaluation_row: Single evaluation row to predict on
-
-        Returns:
-            Submission row with prediction (up to 3 categories)
-        """
         logger.debug(f"Making baseline prediction for row {evaluation_row.row_id}")
         prediction_strings = self._predict_categories_for_row(evaluation_row)
         return SubmissionRow(
@@ -94,14 +76,12 @@ class BaselineStrategy(Strategy):
         )
 
     def save(self, filepath: Path) -> None:
-        """Save model as JSON file."""
         logger.info(f"Saving baseline model to {filepath}")
         with filepath.open("w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
     def load(cls, filepath: Path) -> "BaselineStrategy":
-        """Load model from JSON file."""
         logger.info(f"Loading baseline model from {filepath}")
         assert filepath.exists(), f"Model file not found: {filepath}"
 
@@ -112,7 +92,6 @@ class BaselineStrategy(Strategy):
     # Implementation methods
 
     def _predict_categories_for_row(self, row: EvaluationRow) -> list[Prediction]:
-        """Predict ordered categories for a single test row."""
         is_correct = self._is_answer_correct(row.question_id, row.mc_answer)
 
         # Get ordered categories based on correctness
@@ -129,13 +108,11 @@ class BaselineStrategy(Strategy):
     def _is_answer_correct(
         self, question_id: QuestionId, student_answer: Answer
     ) -> bool:
-        """Check if student answer matches the correct answer."""
         return is_answer_correct(question_id, student_answer, self.correct_answers)
 
     def _apply_misconception_suffix(
         self, categories: list[Category], misconception: Misconception | None
     ) -> list[Prediction]:
-        """Create predictions in 'Category:Misconception' format for submission."""
         result = []
         for category in categories:
             if category.is_misconception and misconception is not None:
@@ -149,7 +126,6 @@ class BaselineStrategy(Strategy):
         return result
 
     def to_dict(self) -> dict:
-        """Convert to JSON-serializable format."""
         return {
             "correct_answers": self.correct_answers,
             "category_frequencies": {
@@ -164,7 +140,6 @@ class BaselineStrategy(Strategy):
 
     @classmethod
     def from_dict(cls, data: dict) -> "BaselineStrategy":
-        """Load from JSON-serializable format."""
         # Convert category frequencies back
         category_frequencies = {}
         for qid_str, freq_map in data["category_frequencies"].items():

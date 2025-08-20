@@ -7,10 +7,6 @@ _NUM_RE = re.compile(r"\d{2,}")
 
 
 def normalize_latex_answer(s: str) -> str:
-    """Turn LaTeX like \\( \frac{3}{6} \\) into '3/6'.
-
-    Fallback: remove simple LaTeX commands and whitespace normalize.
-    """
     if not s:
         return ""
     s = s.replace(r"\(", "").replace(r"\)", "").strip()

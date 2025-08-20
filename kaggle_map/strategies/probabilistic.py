@@ -60,26 +60,16 @@ class ProbabilisticStrategy(Strategy):
 
     @property
     def name(self) -> str:
-        """Strategy name."""
         return "probabilistic"
 
     @property
     def description(self) -> str:
-        """Strategy description."""
         return "Two-stage probabilistic model: P(Category|Context) x P(Misconception|Category,Context)"
 
     @classmethod
     def fit(
         cls, train_csv_path: Path = Path("dataset/train.csv")
     ) -> "ProbabilisticStrategy":
-        """Build probabilistic model from training data.
-
-        Args:
-            train_csv_path: Path to train.csv (default: dataset/train.csv)
-
-        Returns:
-            Trained ProbabilisticStrategy
-        """
         logger.info(f"Fitting probabilistic strategy from {train_csv_path}")
         training_data = parse_training_data(train_csv_path)
         logger.debug(f"Parsed {len(training_data)} training rows")
@@ -116,17 +106,6 @@ class ProbabilisticStrategy(Strategy):
         )
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
-        """Make probabilistic predictions for a single evaluation row.
-
-        Computes P(Category, Misconception | Context)
-        and returns top 3 most likely predictions.
-
-        Args:
-            evaluation_row: Single evaluation row to predict on
-
-        Returns:
-            Submission row with up to 3 predictions, ordered by probability
-        """
         logger.debug(f"Making probabilistic prediction for row {evaluation_row.row_id}")
 
         # Create context key (we need to find correct answer)
@@ -146,7 +125,6 @@ class ProbabilisticStrategy(Strategy):
         )
 
     def save(self, filepath: Path) -> None:
-        """Save model as JSON file."""
         logger.info(f"Saving probabilistic model to {filepath}")
 
         # Convert ContextKey tuples and Category enums to strings for JSON serialization
@@ -178,7 +156,6 @@ class ProbabilisticStrategy(Strategy):
 
     @classmethod
     def load(cls, filepath: Path) -> "ProbabilisticStrategy":
-        """Load model from JSON file."""
         logger.info(f"Loading probabilistic model from {filepath}")
         assert filepath.exists(), f"Model file not found: {filepath}"
 
@@ -226,7 +203,6 @@ class ProbabilisticStrategy(Strategy):
     # Implementation methods
 
     def _create_context_key(self, test_row: EvaluationRow) -> ContextKey:
-        """Create context key for a test row by finding the correct answer."""
         # Find correct answer from our learned knowledge
         correct_answer = None
 
@@ -250,7 +226,6 @@ class ProbabilisticStrategy(Strategy):
     def _compute_prediction_probabilities(
         self, context_key: ContextKey
     ) -> dict[Prediction, float]:
-        """Compute P(Category, Misconception | Context) for all possible predictions."""
         # Stage 1: Get P(Category | Context) with fallbacks
         category_probs = self._get_category_probabilities(context_key)
 
@@ -279,7 +254,6 @@ class ProbabilisticStrategy(Strategy):
     def _get_category_probabilities(
         self, context_key: ContextKey
     ) -> CategoryDistribution:
-        """Get P(Category | Context) with graceful fallbacks."""
         # Try exact context match first
         if context_key in self.category_distributions:
             return self.category_distributions[context_key]
@@ -297,7 +271,6 @@ class ProbabilisticStrategy(Strategy):
     def _get_misconception_probabilities(
         self, context_key: ContextKey, category: Category
     ) -> MisconceptionDistribution:
-        """Get P(Misconception | Category, Context) with graceful fallbacks."""
         state_category = (context_key, category)
 
         # Try exact state match first
@@ -321,7 +294,6 @@ class ProbabilisticStrategy(Strategy):
     def _learn_category_distributions(
         training_data_with_answers: list[tuple[TrainingRow, Answer]],
     ) -> dict[ContextKey, CategoryDistribution]:
-        """Learn P(Category | ContextKey) from training data."""
         # Group by context key and count categories
         context_category_counts = defaultdict(lambda: defaultdict(int))
 
@@ -353,7 +325,6 @@ class ProbabilisticStrategy(Strategy):
     def _learn_misconception_distributions(
         training_data_with_answers: list[tuple[TrainingRow, Answer]],
     ) -> dict[StateCategory, MisconceptionDistribution]:
-        """Learn P(Misconception | Category, ContextKey) from training data."""
         # Group by (context_key, category) and count misconceptions
         state_misconception_counts = defaultdict(lambda: defaultdict(int))
 
@@ -389,7 +360,6 @@ class ProbabilisticStrategy(Strategy):
     def _compute_global_category_prior(
         training_data_with_answers: list[tuple[TrainingRow, Answer]],
     ) -> CategoryDistribution:
-        """Compute global prior P(Category) for fallback."""
         category_counts = defaultdict(int)
 
         for training_row, _ in training_data_with_answers:
@@ -402,7 +372,6 @@ class ProbabilisticStrategy(Strategy):
     def _compute_question_category_priors(
         training_data_with_answers: list[tuple[TrainingRow, Answer]],
     ) -> dict[QuestionId, CategoryDistribution]:
-        """Compute per-question priors P(Category | QuestionId) for fallback."""
         question_category_counts = defaultdict(lambda: defaultdict(int))
 
         for training_row, _ in training_data_with_answers:
@@ -421,7 +390,6 @@ class ProbabilisticStrategy(Strategy):
     def _compute_global_misconception_prior(
         training_data_with_answers: list[tuple[TrainingRow, Answer]],
     ) -> dict[Category, MisconceptionDistribution]:
-        """Compute global misconception priors P(Misconception | Category) for fallback."""
         category_misconception_counts = defaultdict(lambda: defaultdict(int))
 
         for training_row, _ in training_data_with_answers:

@@ -22,17 +22,6 @@ from kaggle_map.models import (
 
 
 def parse_training_data(csv_path: Path) -> list[TrainingRow]:
-    """Parse CSV into strongly-typed training rows.
-
-    Args:
-        csv_path: Path to the training CSV file
-
-    Returns:
-        List of strongly-typed TrainingRow objects
-
-    Raises:
-        AssertionError: If file doesn't exist or data is invalid
-    """
     assert csv_path.exists(), f"Training file not found: {csv_path}"
 
     try:
@@ -69,17 +58,6 @@ def parse_training_data(csv_path: Path) -> list[TrainingRow]:
 def extract_correct_answers(
     training_data: list[TrainingRow],
 ) -> dict[QuestionId, Answer]:
-    """Extract the correct answer for each question.
-
-    Args:
-        training_data: List of training rows
-
-    Returns:
-        Dictionary mapping question IDs to their correct answers
-
-    Raises:
-        AssertionError: If data is empty or contains conflicting answers
-    """
     assert training_data, "Training data cannot be empty"
 
     correct_answers = {}
@@ -106,16 +84,6 @@ def is_answer_correct(
     student_answer: Answer,
     correct_answers: dict[QuestionId, Answer],
 ) -> bool:
-    """Check if student answer matches the correct answer.
-
-    Args:
-        question_id: ID of the question
-        student_answer: Student's selected answer
-        correct_answers: Dictionary of correct answers per question
-
-    Returns:
-        True if student answer is correct, False otherwise
-    """
     correct_answer = correct_answers.get(question_id, "")
     return student_answer == correct_answer
 
@@ -123,19 +91,6 @@ def is_answer_correct(
 def build_category_frequencies(
     training_data: list[TrainingRow], correct_answers: dict[QuestionId, Answer]
 ) -> dict[QuestionId, dict[bool, list[Category]]]:
-    """Build frequency-ordered category lists for correct/incorrect answers.
-
-    Args:
-        training_data: List of training rows
-        correct_answers: Dictionary of correct answers per question
-
-    Returns:
-        Dictionary mapping question IDs to correctness patterns:
-        {question_id: {is_correct: [ordered_categories_by_frequency]}}
-
-    Raises:
-        AssertionError: If data is empty
-    """
     assert training_data, "Training data cannot be empty"
     assert correct_answers, "Correct answers cannot be empty"
 
@@ -171,18 +126,6 @@ def build_category_frequencies(
 def extract_most_common_misconceptions(
     training_data: list[TrainingRow],
 ) -> dict[QuestionId, Misconception | None]:
-    """Find most common misconception per question.
-
-    Args:
-        training_data: List of training rows
-
-    Returns:
-        Dictionary mapping question IDs to their most common misconception
-        (None if no misconceptions found for that question)
-
-    Raises:
-        AssertionError: If training data is empty
-    """
     assert training_data, "Training data cannot be empty"
 
     # Get all unique question IDs
@@ -211,16 +154,6 @@ def extract_most_common_misconceptions(
 def get_training_data_with_correct_answers(
     training_data: list[TrainingRow], correct_answers: dict[QuestionId, Answer]
 ) -> list[tuple[TrainingRow, Answer]]:
-    """Filter training data to only include rows where we know the correct answer.
-
-    Args:
-        training_data: List of training rows
-        correct_answers: Dictionary of correct answers per question
-
-    Returns:
-        List of tuples containing (TrainingRow, correct_answer)
-        for each training row where we know the correct answer
-    """
     filtered_data = []
 
     for row in training_data:

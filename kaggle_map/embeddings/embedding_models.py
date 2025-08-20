@@ -21,15 +21,6 @@ class EmbeddingSpec:
 
 
 class EmbeddingModel(Enum):
-    """Common sentence-embedding backbones with handy metadata.
-
-    - all-MiniLM-L6-v2: Fast, 384d, great on short texts; default to 256 tokens.
-    - all-mpnet-base-v2: Stronger on general STS/retrieval; 768d but slower/larger.
-    - gte-small: Modern small, 384d; quick like MiniLM.
-    - gte-base-en-v1.5: 768d; similar size/speed to MPNet.
-    - bge-small-en-v1.5: Strong small, 512d; still efficient.
-    """
-
     MINI_LM = "sentence-transformers/all-MiniLM-L6-v2"
     MP_NET = "sentence-transformers/all-mpnet-base-v2"
     GTE_SMALL = "thenlper/gte-small"
@@ -98,17 +89,6 @@ class EmbeddingModel(Enum):
 def get_tokenizer(
     model: EmbeddingModel = EmbeddingModel.MINI_LM,
 ) -> "SentenceTransformer":
-    """Initialize and return a SentenceTransformer model.
-
-    Args:
-        model: The embedding model to use (defaults to MiniLM for speed)
-
-    Returns:
-        An initialized SentenceTransformer instance
-
-    Raises:
-        ImportError: If sentence-transformers is not installed
-    """
     # Move the import here to avoid slowing pytest down by importing the heavy module
     from sentence_transformers import SentenceTransformer
 
