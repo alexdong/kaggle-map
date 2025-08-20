@@ -65,7 +65,7 @@ class SynthDataGenerator:
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
-        self.checkpoint_file = Path("synth_checkpoint.json")
+        self.checkpoint_file = Path("models/synth_checkpoint.json")
         self.progress_data = self.load_checkpoint()
 
     def load_checkpoint(self) -> dict[str, Any]:
@@ -299,7 +299,7 @@ def cleanup() -> None:
     """Clean up generated files and progress."""
     files_to_clean = [
         OUTPUT_FILE,
-        Path("synth_checkpoint.json"),
+        Path("models/synth_checkpoint.json"),
         Path("logs/synth_generation.log"),
     ]
 

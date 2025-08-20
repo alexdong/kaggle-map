@@ -12,7 +12,7 @@ from kaggle_map.strategies.baseline import BaselineStrategy
 
 def fit_model(
     train_csv_path: Path = Path("dataset/train.csv"),
-    model_output_path: Path = Path("baseline_model.json"),
+    model_output_path: Path = Path("models/baseline.json"),
 ) -> BaselineStrategy:
     """Fit a baseline model from training data and save it.
 
@@ -60,7 +60,7 @@ def fit_model(
     "--output-path",
     "-o",
     type=click.Path(path_type=Path),
-    default=Path("baseline_model.json"),
+    default=Path("models/baseline.json"),
     help="Path to save the fitted model",
 )
 def main(train_path: Path, output_path: Path) -> None:

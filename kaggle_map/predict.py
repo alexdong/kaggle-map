@@ -13,7 +13,7 @@ from kaggle_map.strategies.baseline import BaselineStrategy
 
 
 def make_predictions(
-    model_path: Path = Path("baseline_model.json"),
+    model_path: Path = Path("models/baseline.json"),
     test_csv_path: Path = Path("dataset/test.csv"),
     output_path: Path = Path("submission.csv"),
 ) -> int:
@@ -112,7 +112,7 @@ def load_and_preview_test_data(test_csv_path: Path, console: Console) -> pd.Data
     "--model-path",
     "-m",
     type=click.Path(exists=True, path_type=Path),
-    default=Path("baseline_model.json"),
+    default=Path("models/baseline.json"),
     help="Path to saved model JSON file",
 )
 @click.option(

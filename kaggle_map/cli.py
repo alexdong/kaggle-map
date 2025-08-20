@@ -319,7 +319,7 @@ def _handle_fit(
     )
 
     # Save model
-    model_path = Path(output_path) if output_path else Path(f"{strategy}_model.pkl")
+    model_path = Path(output_path) if output_path else Path(f"models/{strategy}.pkl")
     context_logger.info(
         "Saving model to path",
         model_path=str(model_path),
@@ -376,7 +376,7 @@ def _handle_eval(
     )
 
     # Determine model path
-    model_file = Path(model_path) if model_path else Path(f"{strategy}_model.pkl")
+    model_file = Path(model_path) if model_path else Path(f"models/{strategy}.pkl")
     context_logger.debug("Resolved model file path", model_file=str(model_file))
 
     if not model_file.exists():
@@ -517,7 +517,7 @@ def _handle_predict(
     )
 
     # Determine model path
-    model_file = Path(model_path) if model_path else Path(f"{strategy}_model.json")
+    model_file = Path(model_path) if model_path else Path(f"models/{strategy}.json")
     context_logger.debug("Resolved model file path", model_file=str(model_file))
 
     if not model_file.exists():
@@ -614,7 +614,7 @@ def _update_performance_history(
     context_logger: "Logger",
 ) -> None:
     """Update performance_history.json with evaluation results and timing information."""
-    performance_file = Path("performance_history.json")
+    performance_file = Path("models/performance_history.json")
     context_logger.debug(
         "Updating performance history file",
         performance_file=str(performance_file),

@@ -27,7 +27,7 @@ GOOD_THRESHOLD = 0.6
 MODERATE_THRESHOLD = 0.4
 
 # Model performance log path
-MODEL_PERFORMANCE_LOG = Path("performance_history.json")
+MODEL_PERFORMANCE_LOG = Path("models/performance_history.json")
 MAX_HISTORY_DISPLAY = 5
 
 
@@ -311,7 +311,7 @@ def _run_cross_validation(console: Console) -> None:
     """Run cross-validation using baseline model against train.csv."""
     start_time = time.time()
 
-    model_path = Path("baseline_model.json")
+    model_path = Path("models/baseline.json")
     train_csv_path = Path("dataset/train.csv")
 
     # Validate required files exist
