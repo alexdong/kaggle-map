@@ -50,6 +50,7 @@ dev-dependencies = [
 
 
 [tool.ruff]
+line-length = 120
 exclude = [".venv", "**/*_test.py"]
 
 [tool.ruff.lint]
