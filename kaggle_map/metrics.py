@@ -52,9 +52,6 @@ def calculate_map_at_3(ground_truth: Prediction, predictions: list[Prediction]) 
         >>> calculate_map_at_3(gt, [])
         0.0
     """
-    if not predictions:
-        return 0.0
-
     # Check each prediction position (1-indexed for precision calculation)
     for k, prediction in enumerate(predictions, 1):
         if str(ground_truth) == str(prediction):
