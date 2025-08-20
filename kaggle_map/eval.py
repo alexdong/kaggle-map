@@ -80,3 +80,14 @@ def _load_submissions(path: Path) -> dict[RowId, list[Prediction]]:
 
     logger.debug(f"Loaded {len(result)} submission rows")
     return result
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    # Define paths to the datasets
+    ground_truth_path = Path("datasets/train_original.csv")
+    submission_path = Path("datasets/sample_submission.csv")
+
+    score = evaluate(ground_truth_path, submission_path)
+    print(f"MAP@3 Score: {score:.4f}")
