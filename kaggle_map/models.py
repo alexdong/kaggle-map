@@ -124,7 +124,7 @@ class TrainingRow(EvaluationRow):
         prediction = Prediction.from_ground_truth_row(row)
 
         return cls(
-            row_id=RowId(row["row_id"]),
+            row_id=int(row["row_id"]),
             question_id=int(row["QuestionId"]),
             question_text=str(row["QuestionText"]),
             mc_answer=str(row["MC_Answer"]),
