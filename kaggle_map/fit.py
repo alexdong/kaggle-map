@@ -14,15 +14,6 @@ def fit_model(
     train_csv_path: Path = Path("dataset/train.csv"),
     model_output_path: Path = Path("models/baseline.json"),
 ) -> BaselineStrategy:
-    """Fit a baseline model from training data and save it.
-
-    Args:
-        train_csv_path: Path to the training CSV file
-        model_output_path: Path where to save the fitted model
-
-    Returns:
-        Fitted BaselineStrategy
-    """
     logger.info(f"Starting model fitting from {train_csv_path}")
 
     # Fit the model
@@ -64,7 +55,6 @@ def fit_model(
     help="Path to save the fitted model",
 )
 def main(train_path: Path, output_path: Path) -> None:
-    """Fit baseline model and save it for prediction use."""
     console = Console()
 
     console.print("[bold blue]🚀 Starting Model Fitting[/bold blue]")

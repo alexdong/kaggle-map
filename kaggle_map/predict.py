@@ -17,16 +17,6 @@ def make_predictions(
     test_csv_path: Path = Path("dataset/test.csv"),
     output_path: Path = Path("submission.csv"),
 ) -> int:
-    """Load model and make predictions on test data.
-
-    Args:
-        model_path: Path to the saved model JSON file
-        test_csv_path: Path to the test CSV file
-        output_path: Path where to save the submission CSV
-
-    Returns:
-        Number of predictions made
-    """
     logger.info(f"Loading model from {model_path}")
 
     # Load the trained model
@@ -74,15 +64,6 @@ def make_predictions(
 
 
 def load_and_preview_test_data(test_csv_path: Path, console: Console) -> pd.DataFrame:
-    """Load test data and show a preview.
-
-    Args:
-        test_csv_path: Path to test CSV file
-        console: Rich console for output
-
-    Returns:
-        Test data DataFrame
-    """
     logger.info(f"Loading test data from {test_csv_path}")
     test_df = pd.read_csv(test_csv_path)
 
@@ -130,7 +111,6 @@ def load_and_preview_test_data(test_csv_path: Path, console: Console) -> pd.Data
     help="Path to save submission CSV",
 )
 def main(model_path: Path, test_path: Path, output_path: Path) -> None:
-    """Load trained model and generate predictions for test data."""
     console = Console()
 
     console.print("[bold blue]🔮 Starting Prediction Generation[/bold blue]")
