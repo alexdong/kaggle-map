@@ -1,6 +1,5 @@
 """Core data structures for the Kaggle student misconception prediction competition."""
 
-from dataclasses import dataclass
 from enum import Enum
 from typing import NamedTuple
 
@@ -91,8 +90,7 @@ class Prediction(BaseModel):
         )
 
 
-@dataclass(frozen=True)
-class EvaluationRow:
+class EvaluationRow(BaseModel):
     """Single row from test.csv."""
 
     row_id: int
@@ -101,33 +99,32 @@ class EvaluationRow:
     mc_answer: Answer
     student_explanation: str
 
+    @field_validator("question_text", "student_explanation")
+    @classmethod
+    def normalize_text_fields(cls, v: str) -> str:
+        """Normalize text fields automatically."""
+        return normalize_text(v)
+
+    @field_validator("mc_answer")
+    @classmethod
+    def normalize_answer(cls, v: str) -> str:
+        """Normalize LaTeX answer automatically."""
+        return normalize_latex_answer(v)
+
     def __repr__(self) -> str:
         """Compose the canonical Q/A/E string used for embeddings.
 
         Example output:
             "Question: {question}, Answer: {normalized_answer}, Explanation: {explanation}"
         """
-        q = normalize_text(self.question_text)
-        a = normalize_latex_answer(self.mc_answer)
-        e = normalize_text(self.student_explanation)
-        return f"Question: {q}, Answer: {a}, Explanation: {e}"
+        return f"Question: {self.question_text}, Answer: {self.mc_answer}, Explanation: {self.student_explanation}"
 
 
-@dataclass(frozen=True)
 class TrainingRow(EvaluationRow):
     """Single row from train.csv, extends EvaluationRow with ground truth labels."""
 
     category: Category
     misconception: Misconception | None
-
-    def __post_init__(self) -> None:
-        """Normalize text fields using formula.py functions."""
-        # Use object.__setattr__ because the dataclass is frozen
-        object.__setattr__(self, "question_text", normalize_text(self.question_text))
-        object.__setattr__(self, "mc_answer", normalize_latex_answer(self.mc_answer))
-        object.__setattr__(
-            self, "student_explanation", normalize_text(self.student_explanation)
-        )
 
 
 class SubmissionRow(NamedTuple):

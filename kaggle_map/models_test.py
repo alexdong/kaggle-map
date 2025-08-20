@@ -564,3 +564,38 @@ def test_submission_row_limits_predictions_to_three_items():
     
     assert len(submission.predicted_categories) == 3
     assert all(isinstance(pred, Prediction) for pred in submission.predicted_categories)
+
+
+def test_evaluation_row_automatically_normalizes_text_fields():
+    """EvaluationRow automatically normalizes text fields using field validators."""
+    row = EvaluationRow(
+        row_id=1,
+        question_id=100,
+        question_text="  What is 2+2?  ",  # Extra whitespace
+        mc_answer="\\frac{3}{4}",  # LaTeX fraction
+        student_explanation="  I think it is four  "  # Extra whitespace
+    )
+    
+    # Text should be normalized automatically
+    assert row.question_text == "What is 2+2?"
+    assert row.mc_answer == "3/4"  # LaTeX fraction normalized
+    assert row.student_explanation == "I think it is four"
+
+
+def test_training_row_inherits_normalization_from_evaluation_row():
+    """TrainingRow inherits automatic normalization from EvaluationRow."""
+    row = TrainingRow(
+        row_id=1,
+        question_id=100,
+        question_text="  What is 2+2?  ",  # Extra whitespace
+        mc_answer="\\( \\frac{1}{2} \\)",  # LaTeX with parentheses
+        student_explanation="  I think it is four  ",  # Extra whitespace
+        category=Category.TRUE_CORRECT,
+        misconception=None
+    )
+    
+    # Text should be normalized automatically via inheritance
+    assert row.question_text == "What is 2+2?"
+    assert row.mc_answer == "1/2"  # LaTeX normalized to fraction
+    assert row.student_explanation == "I think it is four"
+    assert row.category == Category.TRUE_CORRECT
