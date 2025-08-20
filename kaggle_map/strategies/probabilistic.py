@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
 
 from kaggle_map.dataset import (
     create_response_contexts,
@@ -225,85 +223,6 @@ class ProbabilisticStrategy(Strategy):
             global_misconception_prior=global_misconception_prior,
             question_category_priors=question_category_priors,
         )
-
-    def display_stats(self, console: Console) -> None:
-        """Display probabilistic model statistics."""
-        stats_table = Table(title="Probabilistic Model Statistics")
-        stats_table.add_column("Metric", style="cyan")
-        stats_table.add_column("Count", style="magenta")
-
-        stats_table.add_row(
-            "Unique response contexts", str(len(self.category_distributions))
-        )
-        stats_table.add_row(
-            "State-category combinations", str(len(self.misconception_distributions))
-        )
-        stats_table.add_row(
-            "Questions with priors", str(len(self.question_category_priors))
-        )
-        stats_table.add_row("Global categories", str(len(self.global_category_prior)))
-
-        console.print(stats_table)
-
-    def display_detailed_info(self, console: Console) -> None:
-        """Display detailed probabilistic model contents."""
-        console.print("\\n[bold]Detailed Probabilistic Model Contents[/bold]")
-
-        # Show some example response contexts
-        console.print(
-            f"\\n[cyan]Sample response contexts ({min(_MAX_DISPLAY_CONTEXTS, len(self.category_distributions))}):[/cyan]"
-        )
-        for i, (context, category_dist) in enumerate(
-            self.category_distributions.items()
-        ):
-            if i >= _MAX_DISPLAY_CONTEXTS:  # Show only first few
-                break
-            console.print(
-                f"  Context: Q{context.question_id}, '{context.selected_answer}' (correct: '{context.correct_answer}')"
-            )
-
-            # Show top 2 categories for this context
-            sorted_cats = sorted(
-                category_dist.items(), key=lambda x: x[1], reverse=True
-            )[:2]
-            for category, prob in sorted_cats:
-                console.print(f"    {category.value}: {prob:.3f}")
-
-        # Show global priors
-        console.print("\\n[cyan]Global category priors:[/cyan]")
-        sorted_global = sorted(
-            self.global_category_prior.items(), key=lambda x: x[1], reverse=True
-        )
-        for category, prob in sorted_global:
-            console.print(f"  {category.value}: {prob:.3f}")
-
-    def demonstrate_predictions(self, console: Console) -> None:
-        """Show sample predictions."""
-        # Test prediction with a sample that should exist
-        sample_test_row = EvaluationRow(
-            row_id=99999,
-            question_id=31772,  # This should exist in our training data
-            question_text="Sample question",
-            mc_answer="\\\\( \\\\frac{1}{3} \\\\)",
-            student_explanation="Sample explanation",
-        )
-
-        try:
-            sample_predictions = self.predict([sample_test_row])
-
-            console.print("\\n[bold]Sample Probabilistic Prediction Test[/bold]")
-            console.print(f"Row ID: {sample_predictions[0].row_id}")
-            console.print("Top predictions with implicit probabilities:")
-            for pred in sample_predictions[0].predicted_categories:
-                console.print(f"  {pred}")
-
-            console.print(
-                "\\n[bold green]✅ Probabilistic prediction works![/bold green]"
-            )
-        except Exception as e:
-            console.print(
-                f"\\n[bold red]❌ Probabilistic prediction failed: {e}[/bold red]"
-            )
 
     # Implementation methods
 

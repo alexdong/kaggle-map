@@ -110,7 +110,7 @@ class BatchData(NamedTuple):
     indices: torch.Tensor  # Shape: (batch_size,) - sample indices
 
 
-def collate_multihead_batch(  # noqa: C901, PLR0912, PLR0915
+def collate_multihead_batch(  # noqa: PLR0912
     batch: list, device: torch.device | None = None
 ) -> BatchData:
     """Custom collate function for multi-head training with variable tensor shapes.

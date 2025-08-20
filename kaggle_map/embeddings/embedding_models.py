@@ -110,6 +110,6 @@ def get_tokenizer(
         ImportError: If sentence-transformers is not installed
     """
     # Move the import here to avoid slowing pytest down by importing the heavy module
-    from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+    from sentence_transformers import SentenceTransformer
 
     return SentenceTransformer(model.model_id)

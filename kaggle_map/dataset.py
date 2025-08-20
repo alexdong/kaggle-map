@@ -36,7 +36,12 @@ def parse_training_data(csv_path: Path) -> list[TrainingRow]:
     """
     assert csv_path.exists(), f"Training file not found: {csv_path}"
 
-    training_df = pd.read_csv(csv_path)
+    try:
+        training_df = pd.read_csv(csv_path)
+    except pd.errors.EmptyDataError as e:
+        msg = "Training CSV cannot be empty"
+        raise AssertionError(msg) from e
+
     logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
     assert not training_df.empty, "Training CSV cannot be empty"
 
@@ -181,6 +186,9 @@ def extract_most_common_misconceptions(
     """
     assert training_data, "Training data cannot be empty"
 
+    # Get all unique question IDs
+    all_questions = {row.question_id for row in training_data}
+
     question_misconceptions = defaultdict(list)
 
     for row in training_data:
@@ -188,7 +196,8 @@ def extract_most_common_misconceptions(
             question_misconceptions[row.question_id].append(row.misconception)
 
     result = {}
-    for question_id, misconceptions in question_misconceptions.items():
+    for question_id in all_questions:
+        misconceptions = question_misconceptions.get(question_id, [])
         if misconceptions:
             most_common = Counter(misconceptions).most_common(1)[0][0]
             result[question_id] = most_common

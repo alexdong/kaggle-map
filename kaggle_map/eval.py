@@ -420,19 +420,23 @@ def _convert_to_test_rows(train_df: pd.DataFrame) -> list[EvaluationRow]:
     failed_conversions = 0
 
     for idx, row in train_df.iterrows():
-        try:
-            test_row = EvaluationRow(
-                row_id=int(row["row_id"]),
-                question_id=int(row["QuestionId"]),
-                question_text=str(row["QuestionText"]),
-                mc_answer=str(row["MC_Answer"]),
-                student_explanation=str(row["StudentExplanation"]),
-            )
-            test_rows.append(test_row)
-        except (ValueError, TypeError) as e:
-            failed_conversions += 1
-            logger.warning(f"⚠️  Failed to convert row {idx} to EvaluationRow: {e}")
-            logger.debug(f"Problematic row data: {dict(row)}")
+        # Validate required fields before conversion
+        assert pd.notna(row["row_id"]), f"Row {idx}: row_id cannot be NaN"
+        assert pd.notna(row["QuestionId"]), f"Row {idx}: QuestionId cannot be NaN"
+        assert pd.notna(row["QuestionText"]), f"Row {idx}: QuestionText cannot be NaN"
+        assert pd.notna(row["MC_Answer"]), f"Row {idx}: MC_Answer cannot be NaN"
+        assert pd.notna(row["StudentExplanation"]), (
+            f"Row {idx}: StudentExplanation cannot be NaN"
+        )
+
+        test_row = EvaluationRow(
+            row_id=int(row["row_id"]),
+            question_id=int(row["QuestionId"]),
+            question_text=str(row["QuestionText"]),
+            mc_answer=str(row["MC_Answer"]),
+            student_explanation=str(row["StudentExplanation"]),
+        )
+        test_rows.append(test_row)
 
     if failed_conversions > 0:
         logger.warning(

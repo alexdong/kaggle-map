@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
 
 from kaggle_map.dataset import (
     build_category_frequencies,
@@ -115,102 +113,6 @@ class BaselineStrategy(Strategy):
         with filepath.open("r") as f:
             data = json.load(f)
         return cls.from_dict(data)
-
-    def display_stats(self, console: Console) -> None:
-        """Display model statistics."""
-        stats_table = Table(title="Baseline Model Statistics")
-        stats_table.add_column("Metric", style="cyan")
-        stats_table.add_column("Count", style="magenta")
-
-        stats_table.add_row(
-            "Questions with correct answers", str(len(self.correct_answers))
-        )
-        stats_table.add_row(
-            "Questions with category patterns", str(len(self.category_frequencies))
-        )
-        stats_table.add_row(
-            "Questions with misconception data", str(len(self.common_misconceptions))
-        )
-
-        console.print(stats_table)
-
-    def display_detailed_info(self, console: Console) -> None:
-        """Display detailed model info for verbose mode."""
-        console.print("\\n[bold]Detailed Baseline Model Contents[/bold]")
-        self._display_correct_answers(console)
-        self._display_category_patterns(console)
-        self._display_misconceptions_summary(console)
-
-    def _display_correct_answers(self, console: Console) -> None:
-        console.print("\\n[cyan]Questions with correct answers:[/cyan]")
-        for qid, answer in sorted(self.correct_answers.items()):
-            console.print(f"  Question {qid}: {answer}")
-
-    def _display_category_patterns(self, console: Console) -> None:
-        console.print(
-            f"\\n[cyan]Category patterns for {len(self.category_frequencies)} questions:[/cyan]"
-        )
-        for qid, patterns in sorted(self.category_frequencies.items()):
-            console.print(f"  Question {qid}:")
-            if True in patterns:
-                correct_cats = [cat.value for cat in patterns[True]]
-                console.print(f"    When correct: {correct_cats}", style="green")
-            if False in patterns:
-                incorrect_cats = [cat.value for cat in patterns[False]]
-                console.print(f"    When incorrect: {incorrect_cats}", style="red")
-
-    def _display_misconceptions_summary(self, console: Console) -> None:
-        console.print(
-            f"\\n[cyan]Most common misconceptions for {len(self.common_misconceptions)} questions:[/cyan]"
-        )
-        misconception_count = 0
-        for qid, misconception in sorted(self.common_misconceptions.items()):
-            if misconception is not None:
-                console.print(f"  Question {qid}: {misconception}")
-                misconception_count += 1
-
-        if misconception_count == 0:
-            console.print("  (No misconceptions found in the data)", style="dim")
-        else:
-            console.print(
-                f"  ({misconception_count} questions have misconceptions)",
-                style="green",
-            )
-
-    def demonstrate_predictions(self, console: Console) -> None:
-        """Show sample predictions."""
-        # Test prediction format with a sample
-        sample_test_row = EvaluationRow(
-            row_id=99999,
-            question_id=31772,
-            question_text="Sample question",
-            mc_answer="\\\\( \\\\frac{1}{3} \\\\)",
-            student_explanation="Sample explanation",
-        )
-        sample_predictions = self.predict([sample_test_row])
-
-        console.print("\\n[bold]Sample Baseline Prediction Test[/bold]")
-        console.print(f"Row ID: {sample_predictions[0].row_id}")
-        console.print(
-            f"Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
-        )
-
-        # Test prediction creation with type safety
-        test_pred1 = Prediction(category=Category.TRUE_CORRECT)
-        test_pred2 = Prediction(
-            category=Category.FALSE_MISCONCEPTION, misconception="TestError"
-        )
-        console.print("\\n[bold green]✅ Type-safe creation works:[/bold green]")
-        console.print(f"  {test_pred1} -> {test_pred1.value}")
-        console.print(f"  {test_pred2} -> {test_pred2.value}")
-
-        # Test that misconception is ignored for non-misconception categories
-        test_pred3 = Prediction(
-            category=Category.TRUE_CORRECT, misconception="ShouldBeIgnored"
-        )
-        console.print(
-            f"  {test_pred3} -> {test_pred3.value} (misconception ignored for non-misconception category)"
-        )
 
     # Implementation methods
 

@@ -3,8 +3,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from rich.console import Console
-
 from kaggle_map.models import EvaluationRow, SubmissionRow
 
 
@@ -66,28 +64,4 @@ class Strategy(ABC):
 
         Returns:
             Loaded strategy instance
-        """
-
-    @abstractmethod
-    def display_stats(self, console: Console) -> None:
-        """Display model statistics.
-
-        Args:
-            console: Rich console for formatted output
-        """
-
-    @abstractmethod
-    def display_detailed_info(self, console: Console) -> None:
-        """Display detailed model info for verbose mode.
-
-        Args:
-            console: Rich console for formatted output
-        """
-
-    @abstractmethod
-    def demonstrate_predictions(self, console: Console) -> None:
-        """Show sample predictions to validate the model works.
-
-        Args:
-            console: Rich console for formatted output
         """

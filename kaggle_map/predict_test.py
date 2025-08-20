@@ -113,10 +113,12 @@ def test_prediction_format(simple_model):
         category_part, misconception_part = pred_str.split(":", 1)
         
         # Category should be valid
+        # Using assert to validate category instead of try/except
         try:
-            Category(category_part)
-        except ValueError:
-            pytest.fail(f"Invalid category in prediction: {category_part}")
+            category = Category(category_part)
+            assert category is not None, f"Category validation failed for: {category_part}"
+        except ValueError as e:
+            pytest.fail(f"Invalid category in prediction: {category_part} - {e}")
 
 
 def test_correct_vs_incorrect_predictions(simple_model):

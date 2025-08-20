@@ -127,25 +127,35 @@ def _discover_strategies() -> dict[str, type[Strategy]]:
 
     logger.info(f"Starting strategy discovery in directory: {strategies_dir}")
 
-    # Find all Python files in the strategies directory
+    # Find all Python files and packages in the strategies directory
     py_files = list(strategies_dir.glob("*.py"))
+    packages = [
+        d
+        for d in strategies_dir.glob("*")
+        if d.is_dir() and (d / "__init__.py").exists()
+    ]
+
     logger.debug(f"Found {len(py_files)} Python files: {[f.name for f in py_files]}")
+    logger.debug(f"Found {len(packages)} packages: {[p.name for p in packages]}")
 
     processed_files = 0
     skipped_files = 0
     failed_imports = 0
     successful_strategies = 0
 
-    for py_file in py_files:
-        file_path = str(py_file)
-        logger.debug(f"Processing file: {py_file.name} (full path: {file_path})")
+    # Process both Python files and packages
+    all_modules = [(f, f.stem, str(f)) for f in py_files] + [
+        (p, p.name, str(p)) for p in packages
+    ]
 
-        if _should_skip_file(py_file.name):
+    for module_path, module_name, file_path in all_modules:
+        logger.debug(f"Processing module: {module_name} (path: {file_path})")
+
+        if _should_skip_file(module_path.name):
             skipped_files += 1
             continue
 
         processed_files += 1
-        module_name = py_file.stem
         logger.debug(f"Processing potential strategy module: {module_name}")
 
         module = _import_strategy_module(module_name)
