@@ -36,7 +36,7 @@ class BaselineStrategy(Strategy):
 
     correct_answers: dict[QuestionId, Answer]
     category_frequencies: dict[QuestionId, dict[bool, list[Category]]]
-    common_misconceptions: dict[QuestionId, Misconception | None]
+    common_misconceptions: dict[QuestionId, Misconception]
 
     @property
     def name(self) -> str:
@@ -111,11 +111,11 @@ class BaselineStrategy(Strategy):
         return is_answer_correct(question_id, student_answer, self.correct_answers)
 
     def _apply_misconception_suffix(
-        self, categories: list[Category], misconception: Misconception | None
+        self, categories: list[Category], misconception: Misconception
     ) -> list[Prediction]:
         result = []
         for category in categories:
-            if category.is_misconception and misconception is not None:
+            if category.is_misconception and misconception != "NA":
                 # Misconception categories get the actual misconception name
                 result.append(
                     Prediction(category=category, misconception=misconception)

@@ -121,7 +121,7 @@ def extract_most_common_misconceptions(
     question_misconceptions = defaultdict(list)
 
     for row in training_data:
-        if row.misconception is not None:
+        if row.misconception != "NA":
             question_misconceptions[row.question_id].append(row.misconception)
 
     result = {}
@@ -131,7 +131,7 @@ def extract_most_common_misconceptions(
             most_common = Counter(misconceptions).most_common(1)[0][0]
             result[question_id] = most_common
         else:
-            result[question_id] = None
+            result[question_id] = "NA"
 
     logger.debug(f"Extracted most common misconceptions for {len(result)} questions")
     assert isinstance(result, dict), "Result must be a dictionary"
@@ -173,7 +173,7 @@ def analyze_dataset(csv_path: Path) -> dict[str, Any]:
     # Basic statistics
     unique_questions = len({row.question_id for row in training_data})
     unique_misconceptions = len(
-        {row.misconception for row in training_data if row.misconception is not None}
+        {row.misconception for row in training_data if row.misconception != "NA"}
     )
 
     # Category distribution
@@ -181,7 +181,7 @@ def analyze_dataset(csv_path: Path) -> dict[str, Any]:
 
     # Misconception analysis
     misconception_counts = Counter(
-        row.misconception for row in training_data if row.misconception is not None
+        row.misconception for row in training_data if row.misconception != "NA"
     )
 
     # Question complexity (number of unique answers per question)

@@ -286,7 +286,7 @@ def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_c
     
     assert model.common_misconceptions[100] == "Adding_across"
     # Question 101 has no misconceptions, so it won't be in the dictionary
-    assert 101 not in model.common_misconceptions or model.common_misconceptions[101] is None
+    assert 101 not in model.common_misconceptions or model.common_misconceptions[101] == "NA"
 
 
 def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv, sample_test_data):
@@ -361,7 +361,7 @@ def test_model_fit_handles_training_data_without_misconceptions():
         try:
             model = BaselineStrategy.fit(temp_path)
             # No misconceptions means the question won't be in the dictionary
-            assert 100 not in model.common_misconceptions or model.common_misconceptions[100] is None
+            assert 100 not in model.common_misconceptions or model.common_misconceptions[100] == "NA"
         finally:
             temp_path.unlink()
 
@@ -543,25 +543,14 @@ def test_training_row_creation_with_valid_category_enum():
         mc_answer="A",
         student_explanation="Test explanation",
         category=Category.TRUE_CORRECT,
-        misconception=None
+        misconception="NA"
     )
-    
     assert row.category == Category.TRUE_CORRECT
-    assert row.misconception is None
+    assert row.misconception == "NA"
 
 
 def test_training_row_handles_none_misconceptions():
     """TrainingRow properly handles None misconceptions."""
-    row_with_none = TrainingRow(
-        row_id=1,
-        question_id=100,
-        question_text="Test",
-        mc_answer="A",
-        student_explanation="Test",
-        category=Category.FALSE_NEITHER,
-        misconception=None
-    )
-    
     row_with_misconception = TrainingRow(
         row_id=2,
         question_id=100,
@@ -571,8 +560,6 @@ def test_training_row_handles_none_misconceptions():
         category=Category.FALSE_MISCONCEPTION,
         misconception="SomeError"
     )
-    
-    assert row_with_none.misconception is None
     assert row_with_misconception.misconception == "SomeError"
 
 
@@ -618,7 +605,7 @@ def test_training_row_inherits_normalization_from_evaluation_row():
         mc_answer="\\( \\frac{1}{2} \\)",  # LaTeX with parentheses
         student_explanation="  I think it is four  ",  # Extra whitespace
         category=Category.TRUE_CORRECT,
-        misconception=None
+        misconception="NA"
     )
     
     # Text should be normalized automatically via inheritance

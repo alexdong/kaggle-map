@@ -34,7 +34,7 @@ def sample_training_data():
             mc_answer="4",
             student_explanation="I added them correctly",
             category=Category.TRUE_CORRECT,
-            misconception=None
+            misconception="NA"
         ),
         TrainingRow(
             row_id=2,
@@ -61,7 +61,7 @@ def sample_training_data():
             mc_answer="9",
             student_explanation="Correct multiplication",
             category=Category.TRUE_CORRECT,
-            misconception=None
+            misconception="NA"
         ),
         TrainingRow(
             row_id=5,
@@ -88,7 +88,7 @@ def sample_training_data():
             mc_answer="3",
             student_explanation="Correct subtraction",
             category=Category.TRUE_CORRECT,
-            misconception=None
+            misconception="NA"
         ),
         TrainingRow(
             row_id=8,
@@ -97,7 +97,7 @@ def sample_training_data():
             mc_answer="7",
             student_explanation="I don't know",
             category=Category.FALSE_NEITHER,
-            misconception=None
+            misconception="NA"
         ),
     ]
 
@@ -176,19 +176,19 @@ def test_parse_training_data_creates_strongly_typed_training_rows(temp_training_
     assert first_row.question_text == "What is 2+2?"
     assert first_row.mc_answer == "4"
     assert first_row.category == Category.TRUE_CORRECT
-    assert first_row.misconception is None
+    assert first_row.misconception == "NA"
 
 
 def test_parse_training_data_handles_nan_misconceptions(temp_training_csv):
     """parse_training_data properly converts pandas NaN to None for misconceptions."""
     training_rows = parse_training_data(temp_training_csv)
     
-    # Rows with None misconceptions should have misconception=None
-    rows_without_misconceptions = [row for row in training_rows if row.misconception is None]
+    # Rows with None misconceptions should have misconception="NA"
+    rows_without_misconceptions = [row for row in training_rows if row.misconception == "NA"]
     assert len(rows_without_misconceptions) == 4  # Rows 1, 4, 7, 8
     
     # Rows with actual misconceptions should preserve them
-    rows_with_misconceptions = [row for row in training_rows if row.misconception is not None]
+    rows_with_misconceptions = [row for row in training_rows if row.misconception != "NA"]
     assert len(rows_with_misconceptions) == 4  # Rows 2, 3, 5, 6
 
 
@@ -242,11 +242,11 @@ def test_extract_correct_answers_raises_error_for_conflicting_answers():
     conflicting_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception=None
+            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
         ),
         TrainingRow(
             row_id=2, question_id=100, question_text="Test", mc_answer="B",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception=None
+            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
         ),
     ]
     
@@ -265,7 +265,7 @@ def test_extract_correct_answers_raises_error_when_no_correct_answers_found():
     no_correct_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception=None
+            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
         ),
     ]
     
@@ -345,7 +345,7 @@ def test_build_category_frequencies_raises_error_for_empty_correct_answers():
     sample_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception=None
+            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
         )
     ]
     
@@ -372,7 +372,7 @@ def test_extract_most_common_misconceptions_finds_most_frequent(sample_training_
     
     # Question 102: no misconceptions -> None
     assert 102 in misconceptions
-    assert misconceptions[102] is None
+    assert misconceptions[102] == "NA"
 
 
 def test_extract_most_common_misconceptions_handles_no_misconceptions():
@@ -380,19 +380,19 @@ def test_extract_most_common_misconceptions_handles_no_misconceptions():
     data_without_misconceptions = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception=None
+            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
         ),
         TrainingRow(
             row_id=2, question_id=100, question_text="Test", mc_answer="B",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception=None
+            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
         ),
     ]
     
     misconceptions = extract_most_common_misconceptions(data_without_misconceptions)
     
-    # Should have entry for question 100 but with None value
+    # Should have entry for question 100 but with "NA" value
     assert 100 in misconceptions
-    assert misconceptions[100] is None
+    assert misconceptions[100] == "NA"
 
 
 def test_extract_most_common_misconceptions_raises_error_for_empty_data():
@@ -466,11 +466,11 @@ def test_get_training_data_skips_unknown_correct_answers():
     training_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Known", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception=None
+            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
         ),
         TrainingRow(
             row_id=2, question_id=999, question_text="Unknown", mc_answer="X",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception=None
+            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
         ),
     ]
     correct_answers = {100: "A"}  # Only know answer for question 100

@@ -31,18 +31,19 @@ MODEL_PERFORMANCE_LOG = Path("models/performance_history.json")
 MAX_HISTORY_DISPLAY = 5
 
 
-def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
-    logger.debug(f"Evaluating {submission_path} against {ground_truth_path}")
-
-    # Load and parse files
-    ground_truth = _load_ground_truth(ground_truth_path)
-    submissions = _load_submissions(submission_path)
-
-    # Log data loading results
-    logger.info(f"📊 Ground truth loaded: {len(ground_truth)} rows")
-    logger.info(f"📊 Submissions loaded: {len(submissions)} rows")
-
-    # Calculate MAP@3 over common row_ids
+def calculate_map_at_3(
+    ground_truth: dict[int, Prediction], 
+    submissions: dict[int, list[Prediction]]
+) -> EvaluationResult:
+    """Calculate Mean Average Precision at 3 (MAP@3) for given predictions.
+    
+    Args:
+        ground_truth: Dictionary mapping row_id to ground truth Prediction
+        submissions: Dictionary mapping row_id to list of predicted Prediction objects
+        
+    Returns:
+        EvaluationResult with map_score, total_observations, and perfect_predictions
+    """
     total_score = 0.0
     perfect_predictions = 0
 
@@ -85,6 +86,21 @@ def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult
         total_observations=total_observations,
         perfect_predictions=perfect_predictions,
     )
+
+
+def evaluate(ground_truth_path: Path, submission_path: Path) -> EvaluationResult:
+    logger.debug(f"Evaluating {submission_path} against {ground_truth_path}")
+
+    # Load and parse files
+    ground_truth = _load_ground_truth(ground_truth_path)
+    submissions = _load_submissions(submission_path)
+
+    # Log data loading results
+    logger.info(f"📊 Ground truth loaded: {len(ground_truth)} rows")
+    logger.info(f"📊 Submissions loaded: {len(submissions)} rows")
+
+    # Calculate MAP@3 using the extracted function
+    return calculate_map_at_3(ground_truth, submissions)
 
 
 def _get_git_commit_hash() -> str:

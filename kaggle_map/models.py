@@ -51,10 +51,10 @@ class Category(Enum):
 
 class Prediction(BaseModel):
     category: Category
-    misconception: Misconception | None = None
+    misconception: Misconception = "NA"
 
     def __str__(self) -> str:
-        if self.category.is_misconception and self.misconception is not None:
+        if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
 
@@ -79,29 +79,28 @@ class EvaluationRow(BaseModel):
     def __repr__(self) -> str:
         """Compose the canonical Q/A/E string used for embeddings.
 
+        Uses __repr__ (not __str__) because this is the exact format required by the
+        embedding system via repr(row) calls. This isn't just for debugging - it's
+        the data serialization format for ML processing.
+
         Example output:
-            "Question: {question}, Answer: {normalized_answer}, Explanation: {explanation}"
+            "Question: {Q}, Answer: {A}, Explanation: {E}"
+
         """
-        return f"Question: {self.question_text}, Answer: {self.mc_answer}, Explanation: {self.student_explanation}"
+        return (
+            f"Question: {self.question_text}, Answer: {self.mc_answer}, "
+            f"Explanation: {self.student_explanation}"
+        )
 
 
 class TrainingRow(EvaluationRow):
     category: Category
-    misconception: Misconception | None
+    misconception: Misconception
 
     @classmethod
     def from_dataframe_row(cls, row: pd.Series) -> "TrainingRow":
-        """Construct a TrainingRow from a pandas DataFrame row.
-        
-        Args:
-            row: A pandas Series representing a row from the training DataFrame
-            
-        Returns:
-            TrainingRow instance with normalized fields
-        """
         # Handle NaN misconceptions (pandas converts "NA" to NaN)
-        misconception = row["Misconception"] if pd.notna(row["Misconception"]) else None
-        
+        misconception = row["Misconception"] if pd.notna(row["Misconception"]) else "NA"
         return cls(
             row_id=int(row["row_id"]),
             question_id=int(row["QuestionId"]),
