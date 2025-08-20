@@ -153,7 +153,7 @@ def prepare_training_data(
 
     # Convert misconception labels to padded arrays
     max_misconception_size = max(
-        (len(misconceptions) for misconceptions in question_misconceptions.values()), 
+        (len(misconceptions) for misconceptions in question_misconceptions.values()),
         default=1
     )
 
