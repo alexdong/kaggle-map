@@ -4,12 +4,12 @@ from pathlib import Path
 
 import click
 import numpy as np
-import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
+from kaggle_map.dataset import parse_training_data
 from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.models import TrainingRow
 
@@ -61,7 +61,7 @@ def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str,
 
     # Load and parse training data
     with console.status("[bold green]Loading training data..."):
-        training_data = _load_training_rows_from_csv(input_csv)
+        training_data = parse_training_data(input_csv)
         logger.info(f"Loaded {len(training_data)} training rows")
 
     console.print(f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]")
@@ -95,34 +95,6 @@ def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str,
 
     # Display summary
     _display_summary(console, output_file, len(training_data), embeddings[0].shape[0])
-
-
-def _load_training_rows_from_csv(csv_path: Path) -> list[TrainingRow]:
-    """Load and parse training data from CSV."""
-    assert csv_path.exists(), f"Training file not found: {csv_path}"
-
-    training_df = pd.read_csv(csv_path)
-    logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
-    assert not training_df.empty, "Training CSV cannot be empty"
-
-    training_rows = []
-    for _, row in training_df.iterrows():
-        misconception = row["Misconception"] if pd.notna(row["Misconception"]) else None
-
-        training_rows.append(
-            TrainingRow(
-                row_id=int(row["row_id"]),
-                question_id=int(row["QuestionId"]),
-                question_text=str(row["QuestionText"]),
-                mc_answer=str(row["MC_Answer"]),
-                student_explanation=str(row["StudentExplanation"]),
-                category=row["Category"],  # Will be validated by TrainingRow
-                misconception=misconception,
-            )
-        )
-
-    logger.debug(f"Parsed {len(training_rows)} training rows")
-    return training_rows
 
 
 def _generate_embeddings_batch(

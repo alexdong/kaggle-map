@@ -14,6 +14,7 @@ from loguru import logger
 from platformdirs import PlatformDirs
 from sklearn.model_selection import train_test_split
 
+from kaggle_map.dataset import parse_training_data
 from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.models import (
     Answer,
@@ -29,7 +30,6 @@ from kaggle_map.strategies.mlp.prediction import MLPPredictor
 from kaggle_map.strategies.mlp.training import (
     extract_correct_answers,
     extract_question_misconceptions,
-    parse_training_data,
     prepare_training_data,
     set_random_seeds,
     train_model,

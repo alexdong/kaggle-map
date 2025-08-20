@@ -7,15 +7,13 @@ import pandas as pd
 import pytest
 
 from kaggle_map.dataset import (
-    analyze_dataset,
     build_category_frequencies,
-    get_training_data_with_correct_answers,
     extract_correct_answers,
     extract_most_common_misconceptions,
     is_answer_correct,
     parse_training_data,
 )
-from kaggle_map.models import Category, TrainingRow
+from kaggle_map.models import Category, Prediction, TrainingRow
 
 
 # =============================================================================
@@ -33,8 +31,7 @@ def sample_training_data():
             question_text="What is 2+2?",
             mc_answer="4",
             student_explanation="I added them correctly",
-            category=Category.TRUE_CORRECT,
-            misconception="NA"
+            prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=2,
@@ -42,8 +39,7 @@ def sample_training_data():
             question_text="What is 2+2?",
             mc_answer="5",
             student_explanation="I counted wrong",
-            category=Category.FALSE_MISCONCEPTION,
-            misconception="Adding_across"
+            prediction=Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Adding_across")
         ),
         TrainingRow(
             row_id=3,
@@ -51,8 +47,7 @@ def sample_training_data():
             question_text="What is 2+2?",
             mc_answer="3",
             student_explanation="I subtracted instead",
-            category=Category.FALSE_MISCONCEPTION,
-            misconception="Subtraction_error"
+            prediction=Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Subtraction_error")
         ),
         TrainingRow(
             row_id=4,
@@ -60,8 +55,7 @@ def sample_training_data():
             question_text="What is 3*3?",
             mc_answer="9",
             student_explanation="Correct multiplication",
-            category=Category.TRUE_CORRECT,
-            misconception="NA"
+            prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=5,
@@ -69,8 +63,7 @@ def sample_training_data():
             question_text="What is 3*3?",
             mc_answer="6",
             student_explanation="I added instead",
-            category=Category.FALSE_MISCONCEPTION,
-            misconception="Addition_instead_multiplication"
+            prediction=Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Addition_instead_multiplication")
         ),
         TrainingRow(
             row_id=6,
@@ -78,8 +71,7 @@ def sample_training_data():
             question_text="What is 3*3?",
             mc_answer="6",
             student_explanation="Same mistake again",
-            category=Category.FALSE_MISCONCEPTION,
-            misconception="Addition_instead_multiplication"
+            prediction=Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Addition_instead_multiplication")
         ),
         TrainingRow(
             row_id=7,
@@ -87,8 +79,7 @@ def sample_training_data():
             question_text="What is 5-2?",
             mc_answer="3",
             student_explanation="Correct subtraction",
-            category=Category.TRUE_CORRECT,
-            misconception="NA"
+            prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=8,
@@ -96,8 +87,7 @@ def sample_training_data():
             question_text="What is 5-2?",
             mc_answer="7",
             student_explanation="I don't know",
-            category=Category.FALSE_NEITHER,
-            misconception="NA"
+            prediction=Prediction(category=Category.FALSE_NEITHER, misconception="NA")
         ),
     ]
 
@@ -208,7 +198,7 @@ def test_parse_training_data_raises_error_for_empty_csv():
         temp_path = Path(f.name)
         
         try:
-            with pytest.raises(AssertionError, match="Training CSV cannot be empty"):
+            with pytest.raises(pd.errors.EmptyDataError):
                 parse_training_data(temp_path)
         finally:
             temp_path.unlink()
@@ -237,21 +227,22 @@ def test_extract_correct_answers_handles_single_correct_answer_per_question(samp
     assert all(isinstance(answer, str) for answer in correct_answers.values())
 
 
-def test_extract_correct_answers_raises_error_for_conflicting_answers():
-    """extract_correct_answers raises error when multiple correct answers exist for same question."""
+def test_extract_correct_answers_uses_first_correct_answer_when_multiple_exist():
+    """extract_correct_answers uses the first correct answer when multiple exist for same question."""
     conflicting_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=2, question_id=100, question_text="Test", mc_answer="B",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
     ]
     
-    with pytest.raises(AssertionError, match="Conflicting correct answers for question 100"):
-        extract_correct_answers(conflicting_data)
+    correct_answers = extract_correct_answers(conflicting_data)
+    # Should use the first correct answer found
+    assert correct_answers[100] == "A"
 
 
 def test_extract_correct_answers_raises_error_for_empty_data():
@@ -265,7 +256,7 @@ def test_extract_correct_answers_raises_error_when_no_correct_answers_found():
     no_correct_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.FALSE_NEITHER, misconception="NA")
         ),
     ]
     
@@ -345,7 +336,7 @@ def test_build_category_frequencies_raises_error_for_empty_correct_answers():
     sample_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         )
     ]
     
@@ -370,7 +361,7 @@ def test_extract_most_common_misconceptions_finds_most_frequent(sample_training_
     # Question 101: "Addition_instead_multiplication" appears twice -> most common
     assert misconceptions[101] == "Addition_instead_multiplication"
     
-    # Question 102: no misconceptions -> None
+    # Question 102: no misconceptions -> "NA"
     assert 102 in misconceptions
     assert misconceptions[102] == "NA"
 
@@ -380,11 +371,11 @@ def test_extract_most_common_misconceptions_handles_no_misconceptions():
     data_without_misconceptions = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Test", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=2, question_id=100, question_text="Test", mc_answer="B",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
+            student_explanation="Test", prediction=Prediction(category=Category.FALSE_NEITHER, misconception="NA")
         ),
     ]
     
@@ -399,153 +390,3 @@ def test_extract_most_common_misconceptions_raises_error_for_empty_data():
     """extract_most_common_misconceptions raises error for empty training data."""
     with pytest.raises(AssertionError, match="Training data cannot be empty"):
         extract_most_common_misconceptions([])
-
-
-# =============================================================================
-# create_response_contexts Function Tests
-# =============================================================================
-
-
-def test_get_training_data_with_correct_answers_filters_data(sample_training_data):
-    """get_training_data_with_correct_answers filters data to rows with known correct answers."""
-    correct_answers = extract_correct_answers(sample_training_data)
-    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
-    
-    # Should have 8 rows (one for each training row)
-    assert len(filtered_data) == 8
-    
-    # Each item should be a tuple of (TrainingRow, correct_answer)
-    for training_row, correct_answer in filtered_data:
-        assert isinstance(training_row, TrainingRow)
-        assert isinstance(correct_answer, str)
-        assert training_row.question_id in correct_answers
-        assert correct_answer == correct_answers[training_row.question_id]
-
-
-def test_get_training_data_with_correct_answers_includes_correct_answer(sample_training_data):
-    """get_training_data_with_correct_answers includes correct answer for each row."""
-    correct_answers = extract_correct_answers(sample_training_data)
-    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
-    
-    # Find data for question 100
-    q100_data = [(row, ans) for row, ans in filtered_data if row.question_id == 100]
-    
-    # All data for question 100 should have correct_answer="4"
-    for training_row, correct_answer in q100_data:
-        assert correct_answer == "4"
-        assert training_row.question_id == 100
-
-
-def test_get_training_data_identifies_correct_vs_incorrect_answers(sample_training_data):
-    """get_training_data_with_correct_answers allows identification of correct vs incorrect answers."""
-    correct_answers = extract_correct_answers(sample_training_data)
-    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
-    
-    # Find the rows where student answered correctly vs incorrectly for question 100
-    correct_row = None
-    incorrect_row = None
-    
-    for training_row, correct_answer in filtered_data:
-        if training_row.question_id == 100 and training_row.mc_answer == "4":
-            correct_row = (training_row, correct_answer)
-        elif training_row.question_id == 100 and training_row.mc_answer == "5":
-            incorrect_row = (training_row, correct_answer)
-    
-    assert correct_row is not None
-    assert incorrect_row is not None
-    # Both should have the same correct answer
-    assert correct_row[1] == "4"
-    assert incorrect_row[1] == "4"
-    # But different selected answers
-    assert correct_row[0].mc_answer == "4"  # Correct selection
-    assert incorrect_row[0].mc_answer == "5"  # Incorrect selection
-
-
-def test_get_training_data_skips_unknown_correct_answers():
-    """get_training_data_with_correct_answers skips rows where correct answer is unknown."""
-    training_data = [
-        TrainingRow(
-            row_id=1, question_id=100, question_text="Known", mc_answer="A",
-            student_explanation="Test", category=Category.TRUE_CORRECT, misconception="NA"
-        ),
-        TrainingRow(
-            row_id=2, question_id=999, question_text="Unknown", mc_answer="X",
-            student_explanation="Test", category=Category.FALSE_NEITHER, misconception="NA"
-        ),
-    ]
-    correct_answers = {100: "A"}  # Only know answer for question 100
-    
-    filtered_data = get_training_data_with_correct_answers(training_data, correct_answers)
-    
-    # Should only have 1 row (question 999 skipped)
-    assert len(filtered_data) == 1
-    assert filtered_data[0][0].question_id == 100
-
-
-# =============================================================================
-# analyze_dataset Function Tests
-# =============================================================================
-
-
-def test_analyze_dataset_returns_comprehensive_statistics(temp_training_csv):
-    """analyze_dataset returns comprehensive dataset analysis."""
-    analysis = analyze_dataset(temp_training_csv)
-    
-    # Check all expected keys are present
-    expected_keys = [
-        "total_rows",
-        "unique_questions",
-        "questions_with_correct_answers",
-        "unique_misconceptions",
-        "category_distribution",
-        "top_misconceptions",
-        "avg_answers_per_question",
-        "max_answers_per_question"
-    ]
-    
-    for key in expected_keys:
-        assert key in analysis
-    
-    # Check specific values
-    assert analysis["total_rows"] == 8
-    assert analysis["unique_questions"] == 3  # Questions 100, 101, 102
-    assert analysis["questions_with_correct_answers"] == 3
-    assert analysis["unique_misconceptions"] == 3  # Adding_across, Subtraction_error, Addition_instead_multiplication
-
-
-def test_analyze_dataset_counts_categories_correctly(temp_training_csv):
-    """analyze_dataset counts category distribution correctly."""
-    analysis = analyze_dataset(temp_training_csv)
-    
-    category_dist = analysis["category_distribution"]
-    
-    # Should have 3 True_Correct, 4 False_Misconception, 1 False_Neither
-    assert category_dist[Category.TRUE_CORRECT] == 3
-    assert category_dist[Category.FALSE_MISCONCEPTION] == 4
-    assert category_dist[Category.FALSE_NEITHER] == 1
-
-
-def test_analyze_dataset_identifies_top_misconceptions(temp_training_csv):
-    """analyze_dataset identifies most common misconceptions."""
-    analysis = analyze_dataset(temp_training_csv)
-    
-    top_misconceptions = analysis["top_misconceptions"]
-    
-    # "Addition_instead_multiplication" appears twice, others once
-    assert top_misconceptions["Addition_instead_multiplication"] == 2
-    assert top_misconceptions["Adding_across"] == 1
-    assert top_misconceptions["Subtraction_error"] == 1
-
-
-def test_analyze_dataset_calculates_answer_complexity_metrics(temp_training_csv):
-    """analyze_dataset calculates question complexity metrics correctly."""
-    analysis = analyze_dataset(temp_training_csv)
-    
-    # Question 100: answers ["4", "5", "3"] = 3 unique
-    # Question 101: answers ["9", "6", "6"] = 2 unique  
-    # Question 102: answers ["3", "7"] = 2 unique
-    # Average: (3 + 2 + 2) / 3 = 2.33
-    # Max: 3
-    
-    assert abs(analysis["avg_answers_per_question"] - 2.333333333333333) < 0.01
-    assert analysis["max_answers_per_question"] == 3

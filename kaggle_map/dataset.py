@@ -7,7 +7,6 @@ These utilities are used by multiple strategy implementations.
 
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 from loguru import logger
@@ -24,12 +23,7 @@ from kaggle_map.models import (
 def parse_training_data(csv_path: Path) -> list[TrainingRow]:
     assert csv_path.exists(), f"Training file not found: {csv_path}"
 
-    try:
-        training_df = pd.read_csv(csv_path)
-    except pd.errors.EmptyDataError as e:
-        msg = "Training CSV cannot be empty"
-        raise AssertionError(msg) from e
-
+    training_df = pd.read_csv(csv_path)
     logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
     assert not training_df.empty, "Training CSV cannot be empty"
 
@@ -46,17 +40,11 @@ def extract_correct_answers(
     training_data: list[TrainingRow],
 ) -> dict[QuestionId, Answer]:
     assert training_data, "Training data cannot be empty"
-
-    correct_answers = {}
+    correct_answers: dict[QuestionId, Answer] = {}
 
     for row in training_data:
-        if row.category == Category.TRUE_CORRECT:
-            if row.question_id in correct_answers:
-                assert correct_answers[row.question_id] == row.mc_answer, (
-                    f"Conflicting correct answers for question {row.question_id}"
-                )
-            else:
-                correct_answers[row.question_id] = row.mc_answer
+        if row.category == Category.TRUE_CORRECT and row.question_id not in correct_answers:
+            correct_answers[row.question_id] = row.mc_answer
 
     logger.debug(f"Extracted correct answers for {len(correct_answers)} questions")
     assert correct_answers, "Must find at least one correct answer"
@@ -101,88 +89,42 @@ def build_category_frequencies(
     return result
 
 
-def extract_most_common_misconceptions(
+def extract_misconceptions_by_popularity(
     training_data: list[TrainingRow],
-) -> dict[QuestionId, Misconception | None]:
+) -> dict[QuestionId, list[Misconception]]:
+    """Extract misconceptions per question ordered by popularity (most common first)."""
     assert training_data, "Training data cannot be empty"
 
     # Get all unique question IDs
     all_questions = {row.question_id for row in training_data}
 
     question_misconceptions = defaultdict(list)
-
     for row in training_data:
-        if row.misconception != "NA":
+        if row.misconception not in ("NA", None):
             question_misconceptions[row.question_id].append(row.misconception)
 
+    result = {
+        question_id: [m for m, _ in Counter(question_misconceptions.get(question_id, [])).most_common()]
+        for question_id in all_questions
+    }
+
+    logger.debug(f"Extracted misconceptions by popularity for {len(result)} questions")
+    return result
+
+
+def extract_most_common_misconceptions(
+    training_data: list[TrainingRow],
+) -> dict[QuestionId, Misconception]:
+    """Extract the most common misconception per question using popularity-ordered results."""
+    misconceptions_by_popularity = extract_misconceptions_by_popularity(training_data)
+
     result = {}
-    for question_id in all_questions:
-        misconceptions = question_misconceptions.get(question_id, [])
+    for question_id, misconceptions in misconceptions_by_popularity.items():
         if misconceptions:
-            most_common = Counter(misconceptions).most_common(1)[0][0]
-            result[question_id] = most_common
+            result[question_id] = misconceptions[0]  # Most popular is first
         else:
             result[question_id] = "NA"
 
     logger.debug(f"Extracted most common misconceptions for {len(result)} questions")
     assert isinstance(result, dict), "Result must be a dictionary"
     return result
-
-
-def get_training_data_with_correct_answers(
-    training_data: list[TrainingRow], correct_answers: dict[QuestionId, Answer]
-) -> list[tuple[TrainingRow, Answer]]:
-    filtered_data = []
-
-    for row in training_data:
-        # Skip if we don't know the correct answer
-        if row.question_id not in correct_answers:
-            continue
-
-        filtered_data.append((row, correct_answers[row.question_id]))
-
-    logger.debug(f"Filtered to {len(filtered_data)} training rows with correct answers")
-    return filtered_data
-
-
-def analyze_dataset(csv_path: Path) -> dict[str, Any]:
-    """Perform comprehensive dataset analysis.
-
-    Args:
-        csv_path: Path to the training CSV file
-
-    Returns:
-        Dictionary containing dataset analysis results including:
-        - Basic statistics (number of rows, questions, etc.)
-        - Category distribution
-        - Misconception patterns
-        - Question complexity metrics
-    """
-    training_data = parse_training_data(csv_path)
-    correct_answers = extract_correct_answers(training_data)
-
-    # Basic statistics
-    unique_questions = len({row.question_id for row in training_data})
-    unique_misconceptions = len({row.misconception for row in training_data if row.misconception != "NA"})
-
-    # Category distribution
-    category_counts = Counter(row.category for row in training_data)
-
-    # Misconception analysis
-    misconception_counts = Counter(row.misconception for row in training_data if row.misconception != "NA")
-
-    # Question complexity (number of unique answers per question)
-    question_answer_counts = defaultdict(set)
-    for row in training_data:
-        question_answer_counts[row.question_id].add(row.mc_answer)
-
-    return {
-        "total_rows": len(training_data),
-        "unique_questions": unique_questions,
-        "questions_with_correct_answers": len(correct_answers),
-        "unique_misconceptions": unique_misconceptions,
-        "category_distribution": dict(category_counts),
-        "top_misconceptions": dict(misconception_counts.most_common(10)),
-        "avg_answers_per_question": sum(len(answers) for answers in question_answer_counts.values()) / unique_questions,
-        "max_answers_per_question": max(len(answers) for answers in question_answer_counts.values()),
-    }

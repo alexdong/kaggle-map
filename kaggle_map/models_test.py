@@ -187,7 +187,7 @@ def test_prediction_from_string():
     assert pred1.misconception == "Adding_across"
     
     # Test without misconception
-    pred2 = Prediction.from_string("False_Neither")
+    pred2 = Prediction.from_string("False_Neither:NA")
     assert pred2.category == Category.FALSE_NEITHER
     assert pred2.misconception == "NA"
     
@@ -201,8 +201,8 @@ def test_prediction_from_string():
     assert pred4.category == Category.FALSE_MISCONCEPTION
     assert pred4.misconception == "Denominator_change"
     
-    # Test category without colon
-    pred5 = Prediction.from_string("True_Neither")
+    # Test category with explicit NA
+    pred5 = Prediction.from_string("True_Neither:NA")
     assert pred5.category == Category.TRUE_NEITHER
     assert pred5.misconception == "NA"
     
@@ -213,11 +213,11 @@ def test_prediction_from_string():
 
 
 def test_prediction_from_string_invalid_category():
-    """Test that Prediction.from_string raises ValueError for invalid categories."""
+    """Test that Prediction.from_string raises AssertionError for invalid format and ValueError for invalid categories."""
     with pytest.raises(ValueError):
         Prediction.from_string("Invalid_Category:Some_misconception")
     
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         Prediction.from_string("Not_A_Category")
 
 
@@ -410,13 +410,13 @@ def test_model_fit_handles_training_data_without_misconceptions():
             temp_path.unlink()
 
 
-def test_model_fit_raises_error_for_conflicting_correct_answers():
-    """Model raises clear error when multiple correct answers exist for same question."""
+def test_model_fit_uses_first_correct_answer_when_multiple_exist():
+    """Model uses the first correct answer when multiple exist for same question."""
     training_data = {
         "row_id": [1, 2],
         "QuestionId": [100, 100],
         "QuestionText": ["Test", "Test"],
-        "MC_Answer": ["A", "B"],  # Conflicting correct answers
+        "MC_Answer": ["A", "B"],  # Multiple correct answers - should use first
         "StudentExplanation": ["Exp1", "Exp2"],
         "Category": ["True_Correct", "True_Correct"],  # Both marked as correct
         "Misconception": [None, None]
@@ -427,8 +427,9 @@ def test_model_fit_raises_error_for_conflicting_correct_answers():
         temp_path = Path(f.name)
         
         try:
-            with pytest.raises(AssertionError, match="Conflicting correct answers"):
-                BaselineStrategy.fit(temp_path)
+            # Should not raise an error, just use the first correct answer
+            strategy = BaselineStrategy.fit(temp_path)
+            assert isinstance(strategy, BaselineStrategy), "Should return a BaselineStrategy instance"
         finally:
             temp_path.unlink()
 

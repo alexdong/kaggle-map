@@ -9,11 +9,9 @@ import random
 import time
 from collections import defaultdict
 from functools import partial
-from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
-import pandas as pd
 import torch
 from loguru import logger
 from torch import nn, optim
@@ -154,74 +152,6 @@ def set_random_seeds(seed: int) -> None:
         numpy_deterministic=True,
     )
 
-
-def parse_training_data(csv_path: Path) -> list[TrainingRow]:
-    """Parse CSV into strongly-typed training rows."""
-    logger.debug("Starting CSV parsing", file_path=str(csv_path))
-    assert csv_path.exists(), f"Training file not found: {csv_path}"
-
-    file_size = csv_path.stat().st_size
-    logger.debug(
-        "File validation passed",
-        file_exists=True,
-        file_size_bytes=file_size,
-        file_size_mb=f"{file_size / 1024 / 1024:.2f}",
-    )
-
-    csv_start = time.time()
-    training_df = pd.read_csv(csv_path)
-    csv_load_time = time.time() - csv_start
-
-    logger.debug(
-        "CSV loaded successfully",
-        columns=list(training_df.columns),
-        rows=len(training_df),
-        load_time_seconds=f"{csv_load_time:.3f}",
-    )
-    assert not training_df.empty, "Training CSV cannot be empty"
-
-    parse_start = time.time()
-    training_rows = []
-    misconceptions_found = 0
-    categories_found = set()
-
-    for idx, row in training_df.iterrows():
-        misconception = str(row["Misconception"]) if pd.notna(row["Misconception"]) else None
-        if misconception is not None:
-            misconceptions_found += 1
-
-        category = Category(row["Category"])
-        categories_found.add(category)
-
-        training_rows.append(
-            TrainingRow(
-                row_id=int(row["row_id"]),
-                question_id=int(row["QuestionId"]),
-                question_text=str(row["QuestionText"]),
-                mc_answer=str(row["MC_Answer"]),
-                student_explanation=str(row["StudentExplanation"]),
-                category=category,
-                misconception=misconception,
-            )
-        )
-
-        if int(idx) > 0 and int(idx) % 1000 == 0:  # type: ignore[operator]
-            logger.debug("Row parsing progress", processed_rows=int(idx) + 1)
-
-    parse_duration = time.time() - parse_start
-    unique_questions = len({row.question_id for row in training_rows})
-
-    logger.debug(
-        "Training data parsing completed",
-        total_rows=len(training_rows),
-        unique_questions=unique_questions,
-        rows_with_misconceptions=misconceptions_found,
-        unique_categories=len(categories_found),
-        categories=sorted([cat.value for cat in categories_found]),
-        parse_time_seconds=f"{parse_duration:.3f}",
-    )
-    assert training_rows, "Must parse at least one training row"
-    return training_rows
 
 
 def extract_correct_answers(
