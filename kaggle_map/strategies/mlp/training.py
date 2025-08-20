@@ -191,9 +191,7 @@ def parse_training_data(csv_path: Path) -> list[TrainingRow]:
 
     for idx, row in training_df.iterrows():
         misconception = (
-            Misconception(row["Misconception"])
-            if pd.notna(row["Misconception"])
-            else None
+            str(row["Misconception"]) if pd.notna(row["Misconception"]) else None
         )
         if misconception is not None:
             misconceptions_found += 1
@@ -290,7 +288,7 @@ def extract_question_misconceptions(
     for question_id, misconceptions in question_misconceptions_set.items():
         misconception_list = sorted(misconceptions)  # Sort for consistency
         total_unique_misconceptions += len(misconception_list)
-        misconception_list.append(Misconception("NA"))  # Add NA class
+        misconception_list.append("NA")  # Add NA class
         question_misconceptions[question_id] = misconception_list
 
     extract_duration = time.time() - extract_start

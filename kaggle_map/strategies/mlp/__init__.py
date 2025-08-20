@@ -17,7 +17,7 @@ The package is organized into focused modules:
 Example usage:
     >>> from kaggle_map.strategies.mlp import MLPStrategy
     >>> strategy = MLPStrategy.fit(Path("datasets/train.csv"))
-    >>> predictions = strategy.predict(test_data)
+    >>> predictions = [strategy.predict(row) for row in test_data]
 """
 
 # Import main strategy class and key components

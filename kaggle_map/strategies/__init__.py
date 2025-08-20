@@ -222,7 +222,8 @@ def get_strategy(name: str) -> type[Strategy]:
         logger.info(f"Did you mean one of these similar strategies? {suggestions}")
 
     available = ", ".join(available_names)
-    raise ValueError(f"Unknown strategy '{name}'. Available: {available}")
+    msg = f"Unknown strategy '{name}'. Available: {available}"
+    raise ValueError(msg)
 
 
 def list_strategies() -> list[str]:

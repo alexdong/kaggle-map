@@ -9,7 +9,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import torch
 from loguru import logger
 from platformdirs import PlatformDirs
@@ -234,57 +233,21 @@ class MLPStrategy(Strategy):
             embedding_model=embedding_model,
         )
 
-    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
-        """Make predictions for test data.
+    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
+        """Make predictions for a single evaluation row.
 
         Args:
-            test_data: List of test rows
+            evaluation_row: Single evaluation row to predict on
 
         Returns:
-            List of submission rows with predictions
+            Submission row with prediction
         """
-        prediction_start_time = time.time()
+        logger.debug(f"Making MLP prediction for row {evaluation_row.row_id}")
 
-        # Input validation with logging
-        assert test_data is not None, "Test data cannot be None"
-        logger.bind(operation="mlp_predict").info(
-            "Starting MLP prediction process",
-            test_samples=len(test_data),
-            max_predictions_per_sample=MAX_PREDICTIONS,
-        )
-
-        if not test_data:
-            logger.debug("Empty test data provided, returning empty predictions")
-            return []
-
-        # Device setup and model preparation
-        device_start = time.time()
+        # Setup model and device
         device = get_device()
-        logger.debug(
-            "Device selection completed",
-            selected_device=str(device),
-            device_type=device.type,
-            device_selection_time_ms=f"{(time.time() - device_start) * 1000:.2f}",
-        )
-
-        model_setup_start = time.time()
         self.model.to(device)
         self.model.eval()
-
-        # Verify model device consistency
-        model_device = next(self.model.parameters()).device
-        assert model_device == device, (
-            f"Model device mismatch: expected {device}, got {model_device}"
-        )
-        model_setup_time = time.time() - model_setup_start
-
-        logger.debug(
-            "Model setup completed",
-            model_device=str(model_device),
-            device_matches=True,
-            model_parameters=sum(p.numel() for p in self.model.parameters()),
-            model_setup_time_ms=f"{model_setup_time * 1000:.2f}",
-        )
 
         # Create predictor
         predictor = MLPPredictor(
@@ -292,210 +255,33 @@ class MLPStrategy(Strategy):
             self.question_misconceptions,
         )
 
-        # Embedding generation phase
-        embedding_start_time = time.time()
-        logger.debug(
-            "Starting embedding generation",
-            embedding_model=self.embedding_model.model_id,
-            test_samples=len(test_data),
-        )
-
-        tokenizer_start = time.time()
+        # Generate embedding
         tokenizer = get_tokenizer(self.embedding_model)
-        tokenizer_load_time = time.time() - tokenizer_start
+        text = repr(evaluation_row)
+        embedding = tokenizer.encode(text)
+        embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(device)
 
-        logger.debug(
-            "Tokenizer loaded",
-            tokenizer_type=type(tokenizer).__name__,
-            load_time_ms=f"{tokenizer_load_time * 1000:.2f}",
-        )
-
-        test_embeddings = []
-        text_lengths = []
-        embedding_times = []
-
-        for i, row in enumerate(test_data):
-            # Generate embedding with timing
-            single_embedding_start = time.time()
-            text = repr(row)  # Uses EvaluationRow.__repr__ format
-            text_lengths.append(len(text))
-
-            embedding = tokenizer.encode(text)
-            test_embeddings.append(embedding)
-
-            single_embedding_time = time.time() - single_embedding_start
-            embedding_times.append(single_embedding_time)
-
-            # Log progress for large datasets
-            if i > 0 and i % 100 == 0:
-                avg_embedding_time = sum(embedding_times[-100:]) / min(
-                    100, len(embedding_times)
-                )
-                logger.debug(
-                    "Embedding generation progress",
-                    processed_samples=i + 1,
-                    avg_embedding_time_ms=f"{avg_embedding_time * 1000:.2f}",
-                    avg_text_length=sum(text_lengths[-100:])
-                    // min(100, len(text_lengths)),
-                )
-
-        # Tensor creation and device movement
-        tensor_start = time.time()
-        embeddings = torch.FloatTensor(np.stack(test_embeddings)).to(device)
-        tensor_creation_time = time.time() - tensor_start
-
-        # Verify tensor device consistency
-        assert embeddings.device.type == device.type, (
-            f"Embeddings device type mismatch: expected {device.type}, got {embeddings.device.type}"
-        )
-
-        total_embedding_time = time.time() - embedding_start_time
-        logger.debug(
-            "Embedding generation completed",
-            total_embeddings=len(test_embeddings),
-            embeddings_shape=list(embeddings.shape),
-            embedding_dimension=embeddings.shape[1],
-            total_embedding_time_seconds=f"{total_embedding_time:.3f}",
-            tensor_creation_time_ms=f"{tensor_creation_time * 1000:.2f}",
-            avg_embedding_time_ms=f"{sum(embedding_times) / len(embedding_times) * 1000:.2f}",
-            avg_text_length=sum(text_lengths) // len(text_lengths),
-        )
-
-        # Prediction generation phase
-        prediction_loop_start = time.time()
-        predictions = []
-        unknown_questions = 0
-        known_questions = 0
-        inference_times = []
-
-        logger.debug(
-            "Starting prediction loop",
-            total_samples=len(test_data),
-            model_in_eval_mode=not self.model.training,
-            available_questions=len(self.question_misconceptions),
-        )
-
+        # Generate prediction
         with torch.no_grad():
-            for i, row in enumerate(test_data):
-                sample_start_time = time.time()
-
-                # Context binding for this sample
-                sample_logger = logger.bind(
-                    row_id=row.row_id, question_id=row.question_id, sample_index=i
+            if evaluation_row.question_id not in self.question_misconceptions:
+                logger.warning(
+                    f"Unknown question {evaluation_row.question_id} - using default prediction"
+                )
+                predicted_categories = predictor.create_default_prediction(
+                    evaluation_row
+                )
+            else:
+                # Model inference
+                outputs = self.model(embedding_tensor, evaluation_row.question_id)
+                predicted_categories = predictor.get_predictions_from_outputs(
+                    outputs,
+                    question_id=evaluation_row.question_id,
+                    row=evaluation_row,
                 )
 
-                embedding_features = embeddings[i].unsqueeze(
-                    0
-                )  # Shape: [1, embedding_dim]
-                sample_logger.debug(
-                    "Processing sample",
-                    embedding_shape=list(embedding_features.shape),
-                    question_text_length=len(row.question_text),
-                    answer_length=len(row.mc_answer),
-                    explanation_length=len(row.student_explanation),
-                )
-
-                # Check if question was in training data
-                if row.question_id not in self.question_misconceptions:
-                    unknown_questions += 1
-                    sample_logger.warning(
-                        "Unknown question - using default prediction",
-                        available_questions=len(self.question_misconceptions),
-                        prediction_strategy="default",
-                    )
-                    predicted_categories = predictor.create_default_prediction(row)
-                else:
-                    known_questions += 1
-
-                    # Model inference with detailed logging
-                    inference_start = time.time()
-                    outputs = self.model(embedding_features, row.question_id)
-                    inference_time = time.time() - inference_start
-                    inference_times.append(inference_time)
-
-                    sample_logger.debug(
-                        "Model inference completed",
-                        inference_time_ms=f"{inference_time * 1000:.2f}",
-                        output_heads=list(outputs.keys()),
-                        output_shapes={k: list(v.shape) for k, v in outputs.items()},
-                    )
-
-                    # Get predictions from model outputs
-                    predicted_categories = predictor.get_predictions_from_outputs(
-                        outputs,
-                        question_id=row.question_id,
-                        row=row,
-                    )
-
-                    sample_logger.debug(
-                        "Category prediction completed",
-                        predicted_categories_count=len(predicted_categories),
-                        categories=[
-                            str(cat.category) for cat in predicted_categories[:3]
-                        ],
-                        misconceptions=[
-                            str(cat.misconception)
-                            for cat in predicted_categories
-                            if cat.misconception
-                        ][:3],
-                    )
-
-                # Final prediction assembly
-                final_predictions = predicted_categories[:MAX_PREDICTIONS]
-                sample_time = time.time() - sample_start_time
-
-                sample_logger.debug(
-                    "Sample processing completed",
-                    final_prediction_count=len(final_predictions),
-                    truncated=len(predicted_categories) > MAX_PREDICTIONS,
-                    sample_processing_time_ms=f"{sample_time * 1000:.2f}",
-                )
-
-                predictions.append(
-                    SubmissionRow(
-                        row_id=row.row_id,
-                        predicted_categories=final_predictions,
-                    )
-                )
-
-                # Log progress for large datasets
-                if i > 0 and i % 50 == 0:
-                    avg_inference_time = (
-                        sum(inference_times[-50:]) / min(50, len(inference_times))
-                        if inference_times
-                        else 0
-                    )
-                    logger.debug(
-                        "Prediction progress",
-                        processed_samples=i + 1,
-                        known_questions_so_far=known_questions,
-                        unknown_questions_so_far=unknown_questions,
-                        avg_inference_time_ms=f"{avg_inference_time * 1000:.2f}",
-                    )
-
-        # Final performance summary
-        prediction_loop_time = time.time() - prediction_loop_start
-        total_prediction_time = time.time() - prediction_start_time
-
-        # Calculate statistics
-        avg_inference_time = (
-            sum(inference_times) / len(inference_times) if inference_times else 0
+        # Return final prediction (max 3 categories)
+        final_predictions = predicted_categories[:MAX_PREDICTIONS]
+        return SubmissionRow(
+            row_id=evaluation_row.row_id,
+            predicted_categories=final_predictions,
         )
-
-        logger.bind(operation="mlp_predict").info(
-            "MLP prediction process completed",
-            total_predictions=len(predictions),
-            known_questions=known_questions,
-            unknown_questions=unknown_questions,
-            question_coverage_pct=f"{(known_questions / len(test_data)) * 100:.1f}"
-            if test_data
-            else "0.0",
-            avg_inference_time_ms=f"{avg_inference_time * 1000:.2f}",
-            prediction_loop_time_seconds=f"{prediction_loop_time:.3f}",
-            total_time_seconds=f"{total_prediction_time:.3f}",
-            throughput_samples_per_second=f"{len(test_data) / total_prediction_time:.1f}"
-            if total_prediction_time > 0
-            else "inf",
-        )
-
-        return predictions

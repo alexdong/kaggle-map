@@ -136,12 +136,12 @@ class MLPEvaluator:
             student_explanation="Sample explanation",
         )
 
-        sample_predictions = self.strategy.predict([sample_test_row])
+        sample_prediction = self.strategy.predict(sample_test_row)
 
         console.print("\n[bold]Sample MLP Prediction Test[/bold]")
-        console.print(f"Row ID: {sample_predictions[0].row_id}")
+        console.print(f"Row ID: {sample_prediction.row_id}")
         console.print(
-            f"Predictions: {[str(pred) for pred in sample_predictions[0].predicted_categories]}"
+            f"Predictions: {[str(pred) for pred in sample_prediction.predicted_categories]}"
         )
 
     @staticmethod
@@ -182,7 +182,7 @@ class MLPEvaluator:
         ]
 
         # Make predictions
-        predictions = strategy.predict(eval_rows)
+        predictions = [strategy.predict(row) for row in eval_rows]
 
         # Use existing evaluation pipeline with temporary files
         with tempfile.TemporaryDirectory() as tmp_dir:

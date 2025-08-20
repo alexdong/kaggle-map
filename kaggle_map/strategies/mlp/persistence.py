@@ -124,7 +124,8 @@ class MLPPersistence:
         }
         missing_keys = required_keys - set(save_data.keys())
         if missing_keys:
-            raise ValueError(f"Model file missing required keys: {missing_keys}")
+            msg = f"Model file missing required keys: {missing_keys}"
+            raise ValueError(msg)
 
         logger.debug(
             "Save data loaded and validated",
@@ -245,6 +246,7 @@ class MLPPersistence:
             requested=model_id,
             available=available_models,
         )
-        raise ValueError(
+        msg = (
             f"Unknown embedding model: {model_id}. Available models: {available_models}"
         )
+        raise ValueError(msg)
