@@ -104,9 +104,7 @@ def generate_embeddings(
     console.print(f"✅ [bold green]Embeddings saved to {output_file}[/bold green]")
 
     # Display summary
-    _display_summary(
-        console, output_file, len(training_data), embeddings[0].shape[0]
-    )
+    _display_summary(console, output_file, len(training_data), embeddings[0].shape[0])
 
 
 def _load_training_rows_from_csv(csv_path: Path) -> list[TrainingRow]:

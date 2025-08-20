@@ -6,6 +6,7 @@ import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,11 @@ from kaggle_map.models import (
 
 from .base import Strategy
 from .utils import (
+    DatasetItem,
+    ProcessedRows,
+    TrainingData,
+    TrainingSetup,
+    collate_multihead_batch,
     get_device,
 )
 
@@ -102,16 +108,11 @@ class MLPDataset(Dataset):
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(
-        self, idx: int
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], int, int]:
+    def __getitem__(self, idx: int) -> DatasetItem:
         """Get training sample with multi-head labels.
 
         Returns:
-            features: Embedding tensor (384-dim) on CPU
-            labels: Dictionary with correctness, category, and misconception labels on CPU
-            question_id: Question ID
-            idx: Sample index
+            DatasetItem with structured access to features, labels, question_id, and index
         """
         assert 0 <= idx < len(self.embeddings), (
             f"Index {idx} out of range [0, {len(self.embeddings)})"
@@ -130,7 +131,12 @@ class MLPDataset(Dataset):
             "misconceptions": self.misconception_labels[idx],
         }
 
-        return features, labels, question_id, idx
+        return DatasetItem(
+            features=features,
+            labels=labels,
+            question_id=question_id,
+            sample_index=idx,
+        )
 
 
 class MLPNet(nn.Module):
@@ -247,7 +253,7 @@ class MLPStrategy(Strategy):
 
     model: MLPNet
     correct_answers: dict[QuestionId, Answer]
-    question_misconceptions: dict[QuestionId, list[Misconception]]
+    question_misconceptions: dict[QuestionId, list[str]]
     embedding_model: EmbeddingModel
 
     @property
@@ -371,12 +377,7 @@ class MLPStrategy(Strategy):
                 file_exists=True,
                 embedding_model=embedding_model.model_id,
             )
-            (
-                embeddings,
-                correctness,
-                misconception_labels,
-                question_ids,
-            ) = cls._load_precomputed_embeddings(
+            training_data_result = cls._load_precomputed_embeddings(
                 training_data,
                 correct_answers,
                 question_misconceptions,
@@ -388,12 +389,7 @@ class MLPStrategy(Strategy):
                 embedding_model=embedding_model.model_id,
                 training_samples=len(training_data),
             )
-            (
-                embeddings,
-                correctness,
-                misconception_labels,
-                question_ids,
-            ) = cls._prepare_training_data(
+            training_data_result = cls._prepare_training_data(
                 training_data,
                 correct_answers,
                 question_misconceptions,
@@ -403,9 +399,9 @@ class MLPStrategy(Strategy):
         embeddings_duration = time.time() - embeddings_start
         logger.debug(
             "Embeddings preparation completed",
-            embeddings_shape=embeddings.shape,
-            correctness_shape=correctness.shape,
-            question_ids_shape=question_ids.shape,
+            embeddings_shape=training_data_result.embeddings.shape,
+            correctness_shape=training_data_result.correctness.shape,
+            question_ids_shape=training_data_result.question_ids.shape,
             preparation_time_seconds=f"{embeddings_duration:.3f}",
         )
 
@@ -416,17 +412,18 @@ class MLPStrategy(Strategy):
             "Starting MLP training",
             device=str(device),
             device_type=device.type,
-            embeddings_shape=embeddings.shape,
+            embeddings_shape=training_data_result.embeddings.shape,
             training_samples=len(training_data),
         )
 
         model = cls._train_model(
-            embeddings,
-            correctness,
-            misconception_labels,
-            question_ids,
+            training_data_result.embeddings,
+            training_data_result.correctness,
+            training_data_result.misconception_labels,
+            training_data_result.question_ids,
             question_misconceptions,
             device,
+            embedding_model,
         )
 
         training_duration = time.time() - training_start
@@ -595,7 +592,9 @@ class MLPStrategy(Strategy):
                     row_id=row.row_id, question_id=row.question_id, sample_index=i
                 )
 
-                embedding_features = embeddings[i].unsqueeze(0)  # Shape: [1, 384]
+                embedding_features = embeddings[i].unsqueeze(
+                    0
+                )  # Shape: [1, embedding_dim]
                 sample_logger.debug(
                     "Processing sample",
                     embedding_shape=list(embedding_features.shape),
@@ -756,8 +755,6 @@ class MLPStrategy(Strategy):
 
         # Reconstruct multi-head model
         question_misconceptions = save_data["question_misconceptions"]
-        model = MLPNet(question_misconceptions)
-        model.load_state_dict(save_data["model_state_dict"])
 
         # Find embedding model
         embedding_model = None
@@ -768,6 +765,9 @@ class MLPStrategy(Strategy):
 
         if embedding_model is None:
             raise ValueError(f"Unknown embedding model: {save_data['embedding_model']}")
+
+        model = MLPNet(question_misconceptions, embedding_model)
+        model.load_state_dict(save_data["model_state_dict"])
 
         # Restore eval data if available
         if "eval_data" in save_data and save_data["eval_data"] is not None:
@@ -812,7 +812,9 @@ class MLPStrategy(Strategy):
     def _display_architecture(self, console: Console) -> None:
         console.print("\n[cyan]Model Architecture:[/cyan]")
         console.print(f"  Embedding model: {self.embedding_model.model_id}")
-        console.print("  Input dimensions: 385 (384 embedding + 1 correctness)")
+        console.print(
+            f"  Input dimensions: {self.embedding_model.dim} (embedding only)"
+        )
         console.print("  Shared trunk: 385 → 512 → 256 → 128")
         console.print(f"  Question-specific heads: {len(self.question_misconceptions)}")
 
@@ -1211,7 +1213,7 @@ class MLPStrategy(Strategy):
     @staticmethod
     def _extract_question_misconceptions(
         training_data: list[TrainingRow],
-    ) -> dict[QuestionId, list[Misconception]]:
+    ) -> dict[QuestionId, list[str]]:
         """Extract unique misconceptions per question, adding NA class."""
         logger.debug("Starting misconception extraction", total_rows=len(training_data))
         assert training_data, "Training data cannot be empty"
@@ -1256,14 +1258,9 @@ class MLPStrategy(Strategy):
     def _load_precomputed_embeddings(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
-        question_misconceptions: dict[QuestionId, list[Misconception]],
+        question_misconceptions: dict[QuestionId, list[str]],
         _embeddings_path: Path,
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        dict[QuestionId, np.ndarray],
-        np.ndarray,
-    ]:
+    ) -> TrainingData:
         """Load pre-computed embeddings and prepare for training."""
         # For now, fall back to generating embeddings from scratch
         # This could be optimized later to handle pre-computed embeddings
@@ -1283,14 +1280,9 @@ class MLPStrategy(Strategy):
     def _prepare_training_data(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
-        question_misconceptions: dict[QuestionId, list[Misconception]],
+        question_misconceptions: dict[QuestionId, list[str]],
         embedding_model: EmbeddingModel,
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        dict[QuestionId, np.ndarray],
-        np.ndarray,
-    ]:
+    ) -> TrainingData:
         """Prepare embeddings and labels for training."""
         logger.info(
             "Starting training data preparation",
@@ -1310,28 +1302,26 @@ class MLPStrategy(Strategy):
         )
 
         processing_start = time.time()
-        embeddings, correctness, question_ids, misconception_labels = (
-            MLPStrategy._process_training_rows(
-                training_data,
-                correct_answers,
-                question_misconceptions,
-                tokenizer,
-            )
+        processed_rows = MLPStrategy._process_training_rows(
+            training_data,
+            correct_answers,
+            question_misconceptions,
+            tokenizer,
         )
         processing_time = time.time() - processing_start
 
         logger.debug(
             "Training row processing completed",
-            embeddings_count=len(embeddings),
+            embeddings_count=len(processed_rows.embeddings),
             processing_time_seconds=f"{processing_time:.3f}",
         )
 
         conversion_start = time.time()
         result = MLPStrategy._convert_to_arrays(
-            embeddings,
-            correctness,
-            question_ids,
-            misconception_labels,
+            processed_rows.embeddings,
+            processed_rows.correctness,
+            processed_rows.question_ids,
+            processed_rows.misconception_labels,
             question_misconceptions,
         )
         conversion_time = time.time() - conversion_start
@@ -1347,9 +1337,9 @@ class MLPStrategy(Strategy):
     def _process_training_rows(
         training_data: list[TrainingRow],
         correct_answers: dict[QuestionId, Answer],
-        question_misconceptions: dict[QuestionId, list[Misconception]],
+        question_misconceptions: dict[QuestionId, list[str]],
         tokenizer: "SentenceTransformer",
-    ) -> tuple[list, list, list, dict]:
+    ) -> ProcessedRows:
         """Process training rows for training."""
         logger.debug(
             "Starting training row processing",
@@ -1411,16 +1401,16 @@ class MLPStrategy(Strategy):
             embedding_dimension=len(embeddings[0]) if embeddings else 0,
         )
 
-        return (
-            embeddings,
-            correctness,
-            question_ids,
-            misconception_labels,
+        return ProcessedRows(
+            embeddings=embeddings,
+            correctness=correctness,
+            question_ids=question_ids,
+            misconception_labels=misconception_labels,
         )
 
     @staticmethod
     def _create_misconception_label(
-        row: TrainingRow, question_misconceptions: dict[QuestionId, list[Misconception]]
+        row: TrainingRow, question_misconceptions: dict[QuestionId, list[str]]
     ) -> np.ndarray:
         """Create multi-hot encoding for misconception label."""
         misconceptions = question_misconceptions[row.question_id]
@@ -1439,13 +1429,8 @@ class MLPStrategy(Strategy):
         correctness: list,
         question_ids: list,
         misconception_labels: dict,
-        question_misconceptions: dict[QuestionId, list[Misconception]],
-    ) -> tuple[
-        np.ndarray,
-        np.ndarray,
-        dict[QuestionId, np.ndarray],
-        np.ndarray,
-    ]:
+        question_misconceptions: dict[QuestionId, list[str]],
+    ) -> TrainingData:
         """Convert lists to numpy arrays for training."""
         embeddings_array = np.stack(embeddings)
         correctness_array = np.array(correctness)
@@ -1473,21 +1458,23 @@ class MLPStrategy(Strategy):
                 misconception_labels[qid] = np.empty((0, max_misconception_size))
 
         logger.info(f"Generated {len(embeddings_array)} embeddings for training")
-        return (
-            embeddings_array,
-            correctness_array,
-            misconception_labels,
-            question_ids_array,
+
+        return TrainingData(
+            embeddings=embeddings_array,
+            correctness=correctness_array,
+            misconception_labels=misconception_labels,
+            question_ids=question_ids_array,
         )
 
     @staticmethod
-    def _train_model(  # noqa: C901, PLR0915
+    def _train_model(
         embeddings: np.ndarray,
         correctness: np.ndarray,
         misconception_labels: dict[QuestionId, np.ndarray],
         question_ids: np.ndarray,
-        question_misconceptions: dict[QuestionId, list[Misconception]],
+        question_misconceptions: dict[QuestionId, list[str]],
         device: torch.device,
+        embedding_model: EmbeddingModel,
     ) -> MLPNet:
         """Train the MLP model."""
         logger.info(
@@ -1500,16 +1487,18 @@ class MLPStrategy(Strategy):
         )
 
         setup_start = time.time()
-        model, criterions, optimizer = MLPStrategy._setup_training(
-            question_misconceptions, device
+        training_setup = MLPStrategy._setup_training(
+            question_misconceptions, device, embedding_model
         )
         setup_time = time.time() - setup_start
 
         logger.debug(
             "Model setup completed",
-            model_parameters=sum(p.numel() for p in model.parameters()),
-            criterion_types=[type(c).__name__ for c in criterions.values()],
-            optimizer_type=type(optimizer).__name__,
+            model_parameters=sum(p.numel() for p in training_setup.model.parameters()),
+            criterion_types=[
+                type(c).__name__ for c in training_setup.criterions.values()
+            ],
+            optimizer_type=type(training_setup.optimizer).__name__,
             setup_time_seconds=f"{setup_time:.3f}",
         )
 
@@ -1528,88 +1517,8 @@ class MLPStrategy(Strategy):
             dataset_time_seconds=f"{dataset_time:.3f}",
         )
 
-        # Custom collate function to handle variable tensor shapes
-        def collate_multihead_batch(  # noqa: C901, PLR0912
-            batch: list,
-        ) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
-            features = torch.stack([item[0] for item in batch])
-            question_ids = torch.tensor([item[2] for item in batch])
-            indices = torch.tensor([item[3] for item in batch])
-
-            # Handle multi-labels with different shapes per sample
-            multi_labels = {}
-
-            # Correctness labels (consistent shape)
-            multi_labels["correctness"] = torch.stack(
-                [item[1]["correctness"] for item in batch]
-            )
-
-            # Misconception labels (pad to max size in batch)
-            misc_labels = [item[1]["misconceptions"] for item in batch]
-            if misc_labels:
-                max_misc_size = max(label.size(0) for label in misc_labels)
-                padded_misc = []
-                for label in misc_labels:
-                    if label.size(0) < max_misc_size:
-                        padded = torch.zeros(max_misc_size, device=label.device)
-                        padded[: label.size(0)] = label
-                        padded_misc.append(padded)
-                    else:
-                        padded_misc.append(label)
-                multi_labels["misconceptions"] = torch.stack(padded_misc)
-
-            # Category labels (pad to max size in batch for each type)
-            correct_cat_labels = [
-                item[1].get("correct_categories")
-                for item in batch
-                if "correct_categories" in item[1]
-            ]
-            if correct_cat_labels:
-                max_correct_size = max(label.size(0) for label in correct_cat_labels)
-                padded_correct = []
-                for item in batch:
-                    if "correct_categories" in item[1]:
-                        label = item[1]["correct_categories"]
-                        if label.size(0) < max_correct_size:
-                            padded = torch.zeros(max_correct_size, device=label.device)
-                            padded[: label.size(0)] = label
-                            padded_correct.append(padded)
-                        else:
-                            padded_correct.append(label)
-                    else:
-                        padded_correct.append(
-                            torch.zeros(max_correct_size, device=features.device)
-                        )
-                multi_labels["correct_categories"] = torch.stack(padded_correct)
-
-            incorrect_cat_labels = [
-                item[1].get("incorrect_categories")
-                for item in batch
-                if "incorrect_categories" in item[1]
-            ]
-            if incorrect_cat_labels:
-                max_incorrect_size = max(
-                    label.size(0) for label in incorrect_cat_labels
-                )
-                padded_incorrect = []
-                for item in batch:
-                    if "incorrect_categories" in item[1]:
-                        label = item[1]["incorrect_categories"]
-                        if label.size(0) < max_incorrect_size:
-                            padded = torch.zeros(
-                                max_incorrect_size, device=label.device
-                            )
-                            padded[: label.size(0)] = label
-                            padded_incorrect.append(padded)
-                        else:
-                            padded_incorrect.append(label)
-                    else:
-                        padded_incorrect.append(
-                            torch.zeros(max_incorrect_size, device=features.device)
-                        )
-                multi_labels["incorrect_categories"] = torch.stack(padded_incorrect)
-
-            return features, multi_labels, question_ids, indices
+        # Create device-aware collate function for this training session
+        device_collate_fn = partial(collate_multihead_batch, device=device)
 
         batch_size = 32
         num_epochs = 100
@@ -1618,7 +1527,7 @@ class MLPStrategy(Strategy):
             dataset,
             batch_size=batch_size,
             shuffle=True,
-            collate_fn=collate_multihead_batch,
+            collate_fn=device_collate_fn,
         )
 
         logger.info(
@@ -1630,9 +1539,9 @@ class MLPStrategy(Strategy):
 
         training_start = time.time()
         MLPStrategy._train_multihead_epochs(
-            model,
-            criterions,
-            optimizer,
+            training_setup.model,
+            training_setup.criterions,
+            training_setup.optimizer,
             dataloader,
             num_epochs=num_epochs,
         )
@@ -1642,15 +1551,18 @@ class MLPStrategy(Strategy):
             "Multi-head MLP training completed",
             training_time_seconds=f"{training_duration:.3f}",
             epochs_completed=num_epochs,
-            final_model_parameters=sum(p.numel() for p in model.parameters()),
+            final_model_parameters=sum(
+                p.numel() for p in training_setup.model.parameters()
+            ),
         )
-        return model
+        return training_setup.model
 
     @staticmethod
     def _setup_training(
-        question_misconceptions: dict[QuestionId, list[Misconception]],
+        question_misconceptions: dict[QuestionId, list[str]],
         device: torch.device,
-    ) -> tuple[MLPNet, dict[str, nn.Module], optim.Adam]:
+        embedding_model: EmbeddingModel,
+    ) -> TrainingSetup:
         """Setup multi-head model, criterions, and optimizer."""
         logger.debug(
             "Setting up training components",
@@ -1659,7 +1571,8 @@ class MLPStrategy(Strategy):
         )
 
         model_create_start = time.time()
-        model = MLPNet(question_misconceptions).to(device)
+        # Use the embedding model passed as parameter
+        model = MLPNet(question_misconceptions, embedding_model).to(device)
         model_create_time = time.time() - model_create_start
 
         # Verify model is on correct device
@@ -1694,7 +1607,11 @@ class MLPStrategy(Strategy):
             optimizer_params=len(list(model.parameters())),
             device=str(device),
         )
-        return model, criterions, optimizer
+        return TrainingSetup(
+            model=model,
+            criterions=criterions,
+            optimizer=optimizer,
+        )
 
     @staticmethod
     def _train_multihead_epochs(
@@ -1731,7 +1648,10 @@ class MLPStrategy(Strategy):
         }
         num_batches = 0
 
-        for features, multi_labels, question_id_batch, _indices in dataloader:
+        for batch_data in dataloader:
+            features = batch_data.features
+            multi_labels = batch_data.multi_labels
+            question_id_batch = batch_data.question_ids
             optimizer.zero_grad()
             batch_losses = MLPStrategy._process_multihead_batch(
                 model, criterions, features, multi_labels, question_id_batch
@@ -1787,7 +1707,7 @@ class MLPStrategy(Strategy):
 
         for i in range(len(features)):
             qid = question_id_batch[i].item()
-            feature = features[i].unsqueeze(0)  # Shape: [1, 384]
+            feature = features[i].unsqueeze(0)  # Shape: [1, embedding_dim]
 
             # Get multi-head model outputs
             outputs = model(feature, qid)

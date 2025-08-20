@@ -5,13 +5,16 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
+from kaggle_map.dataset import (
+    create_response_contexts,
+    extract_correct_answers,
+    parse_training_data,
+)
 from kaggle_map.models import (
-    Answer,
     Category,
     EvaluationRow,
     Misconception,
@@ -19,7 +22,6 @@ from kaggle_map.models import (
     QuestionId,
     ResponseContext,
     SubmissionRow,
-    TrainingRow,
 )
 
 from .base import Strategy
@@ -78,17 +80,15 @@ class ProbabilisticStrategy(Strategy):
             Trained ProbabilisticStrategy
         """
         logger.info(f"Fitting probabilistic strategy from {train_csv_path}")
-        training_data = cls._parse_training_data(train_csv_path)
+        training_data = parse_training_data(train_csv_path)
         logger.debug(f"Parsed {len(training_data)} training rows")
 
         # Extract correct answers first
-        correct_answers = cls._extract_correct_answers(training_data)
+        correct_answers = extract_correct_answers(training_data)
         logger.debug(f"Found correct answers for {len(correct_answers)} questions")
 
         # Create ResponseContexts for all training data
-        contexts_with_labels = cls._create_response_contexts(
-            training_data, correct_answers
-        )
+        contexts_with_labels = create_response_contexts(training_data, correct_answers)
         logger.debug(f"Created {len(contexts_with_labels)} response contexts")
 
         # Learn stage 1: P(Category | ResponseContext)
@@ -396,82 +396,6 @@ class ProbabilisticStrategy(Strategy):
         return {"NA": 1.0}
 
     # Static methods for learning from data
-
-    @staticmethod
-    def _parse_training_data(csv_path: Path) -> list[TrainingRow]:
-        """Parse CSV into strongly-typed training rows."""
-        assert csv_path.exists(), f"Training file not found: {csv_path}"
-
-        training_df = pd.read_csv(csv_path)
-        logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
-        assert not training_df.empty, "Training CSV cannot be empty"
-
-        training_rows = []
-        for _, row in training_df.iterrows():
-            # Handle NaN misconceptions (pandas converts "NA" to NaN)
-            misconception = (
-                row["Misconception"] if pd.notna(row["Misconception"]) else None
-            )
-
-            training_rows.append(
-                TrainingRow(
-                    row_id=int(row["row_id"]),
-                    question_id=int(row["QuestionId"]),
-                    question_text=str(row["QuestionText"]),
-                    mc_answer=str(row["MC_Answer"]),
-                    student_explanation=str(row["StudentExplanation"]),
-                    category=Category(row["Category"]),
-                    misconception=misconception,
-                )
-            )
-
-        logger.debug(f"Parsed {len(training_rows)} training rows")
-        assert training_rows, "Must parse at least one training row"
-        return training_rows
-
-    @staticmethod
-    def _extract_correct_answers(
-        training_data: list[TrainingRow],
-    ) -> dict[QuestionId, Answer]:
-        """Extract the correct answer for each question."""
-        assert training_data, "Training data cannot be empty"
-
-        correct_answers = {}
-
-        for row in training_data:
-            if row.category == Category.TRUE_CORRECT:
-                if row.question_id in correct_answers:
-                    assert correct_answers[row.question_id] == row.mc_answer, (
-                        f"Conflicting correct answers for question {row.question_id}"
-                    )
-                else:
-                    correct_answers[row.question_id] = row.mc_answer
-
-        logger.debug(f"Extracted correct answers for {len(correct_answers)} questions")
-        assert correct_answers, "Must find at least one correct answer"
-        return correct_answers
-
-    @staticmethod
-    def _create_response_contexts(
-        training_data: list[TrainingRow], correct_answers: dict[QuestionId, Answer]
-    ) -> list[tuple[ResponseContext, Category, Misconception | None]]:
-        """Create ResponseContext objects for all training data."""
-        contexts_with_labels = []
-
-        for row in training_data:
-            # Skip if we don't know the correct answer
-            if row.question_id not in correct_answers:
-                continue
-
-            context = ResponseContext(
-                question_id=row.question_id,
-                selected_answer=row.mc_answer,
-                correct_answer=correct_answers[row.question_id],
-            )
-
-            contexts_with_labels.append((context, row.category, row.misconception))
-
-        return contexts_with_labels
 
     @staticmethod
     def _learn_category_distributions(

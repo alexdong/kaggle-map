@@ -10,7 +10,9 @@ from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
 # Domain-specific type aliases
 type QuestionId = int
 type Answer = str
-type Misconception = str
+type Misconception = (
+    str  # Specific misconception identifier (e.g., "AddInsteadOfMultiply")
+)
 
 
 class ResponseContext(NamedTuple):
