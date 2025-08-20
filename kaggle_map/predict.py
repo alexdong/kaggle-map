@@ -8,7 +8,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.models import EvaluationRow, RowId
+from kaggle_map.models import EvaluationRow
 from kaggle_map.strategies.baseline import BaselineStrategy
 
 
@@ -33,7 +33,7 @@ def make_predictions(
     for _, row in test_df.iterrows():
         test_rows.append(
             EvaluationRow(
-                row_id=RowId(row["row_id"]),
+                row_id=int(row["row_id"]),
                 question_id=int(row["QuestionId"]),
                 question_text=str(row["QuestionText"]),
                 mc_answer=str(row["MC_Answer"]),
