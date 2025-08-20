@@ -53,7 +53,7 @@ def make_predictions(
 
     # Make predictions
     logger.info("Making predictions...")
-    predictions = model.predict(test_rows)
+    predictions = [model.predict(row) for row in test_rows]
     logger.info(f"Generated predictions for {len(predictions)} rows")
 
     # Convert to submission format

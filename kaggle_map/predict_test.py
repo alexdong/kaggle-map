@@ -75,7 +75,7 @@ def test_model_prediction(test_case, simple_model, temp_test_csv):
         ))
     
     # Make predictions
-    predictions = simple_model.predict(test_rows)
+    predictions = [simple_model.predict(row) for row in test_rows]
     
     # Check basic structure
     assert len(predictions) == test_case["expected_rows"]
@@ -96,11 +96,9 @@ def test_prediction_format(simple_model):
         student_explanation="Test explanation"
     )
     
-    predictions = simple_model.predict([test_row])
+    prediction = simple_model.predict(test_row)
     
     # Check prediction format
-    assert len(predictions) == 1
-    prediction = predictions[0]
     
     assert prediction.row_id == 999
     assert isinstance(prediction.predicted_categories, list)
@@ -141,12 +139,12 @@ def test_correct_vs_incorrect_predictions(simple_model):
         student_explanation="Wrong"
     )
     
-    correct_predictions = simple_model.predict([correct_row])
-    incorrect_predictions = simple_model.predict([incorrect_row])
+    correct_prediction = simple_model.predict(correct_row)
+    incorrect_prediction = simple_model.predict(incorrect_row)
     
     # Should get different category patterns
-    correct_cats = [str(p) for p in correct_predictions[0].predicted_categories]
-    incorrect_cats = [str(p) for p in incorrect_predictions[0].predicted_categories]
+    correct_cats = [str(p) for p in correct_prediction.predicted_categories]
+    incorrect_cats = [str(p) for p in incorrect_prediction.predicted_categories]
     
     # Categories should be different (they follow different frequency patterns)
     assert correct_cats != incorrect_cats
@@ -162,8 +160,8 @@ def test_misconception_handling(simple_model):
         student_explanation="Wrong"
     )
     
-    predictions = simple_model.predict([test_row])
-    prediction_strings = [str(p) for p in predictions[0].predicted_categories]
+    prediction = simple_model.predict(test_row)
+    prediction_strings = [str(p) for p in prediction.predicted_categories]
     
     # Should have some predictions with misconceptions
     misconception_predictions = [p for p in prediction_strings if p.endswith("_Misconception:AdditionError")]

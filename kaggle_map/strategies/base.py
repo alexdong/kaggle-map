@@ -36,14 +36,14 @@ class Strategy(ABC):
         """
 
     @abstractmethod
-    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
-        """Make predictions on test data.
+    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
+        """Make predictions on a single evaluation row.
 
         Args:
-            test_data: List of test rows to predict on
+            evaluation_row: Single evaluation row to predict on
 
         Returns:
-            List of submission rows with predictions
+            Submission row with prediction
         """
 
     @abstractmethod

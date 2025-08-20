@@ -334,7 +334,7 @@ def _run_cross_validation(console: Console) -> None:
 
     with console.status("[bold green]Generating predictions..."):
         logger.info("Generating predictions using baseline model")
-        predictions = model.predict(test_rows)
+        predictions = [model.predict(row) for row in test_rows]
         logger.info(f"Generated predictions for {len(predictions)} rows")
 
     console.print(

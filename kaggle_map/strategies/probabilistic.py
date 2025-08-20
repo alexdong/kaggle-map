@@ -112,39 +112,35 @@ class ProbabilisticStrategy(Strategy):
             question_category_priors=question_category_priors,
         )
 
-    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
-        """Make probabilistic predictions for test data.
+    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
+        """Make probabilistic predictions for a single evaluation row.
 
-        For each test row, computes P(Category, Misconception | Context)
+        Computes P(Category, Misconception | Context)
         and returns top 3 most likely predictions.
 
         Args:
-            test_data: List of test rows
+            evaluation_row: Single evaluation row to predict on
 
         Returns:
-            List of predictions with up to 3 categories each, ordered by probability
+            Submission row with up to 3 predictions, ordered by probability
         """
-        logger.info(f"Making probabilistic predictions for {len(test_data)} test rows")
-        predictions = []
+        logger.debug(f"Making probabilistic prediction for row {evaluation_row.row_id}")
 
-        for row in test_data:
-            # Create context (we need to find correct answer)
-            context = self._create_test_context(row)
+        # Create context (we need to find correct answer)
+        context = self._create_test_context(evaluation_row)
 
-            # Get all possible category-misconception combinations with probabilities
-            prediction_probs = self._compute_prediction_probabilities(context)
+        # Get all possible category-misconception combinations with probabilities
+        prediction_probs = self._compute_prediction_probabilities(context)
 
-            # Sort by probability and take top 3
-            sorted_predictions = sorted(
-                prediction_probs.items(), key=lambda x: x[1], reverse=True
-            )
-            top_predictions = [pred for pred, _ in sorted_predictions[:3]]
+        # Sort by probability and take top 3
+        sorted_predictions = sorted(
+            prediction_probs.items(), key=lambda x: x[1], reverse=True
+        )
+        top_predictions = [pred for pred, _ in sorted_predictions[:3]]
 
-            predictions.append(
-                SubmissionRow(row_id=row.row_id, predicted_categories=top_predictions)
-            )
-
-        return predictions
+        return SubmissionRow(
+            row_id=evaluation_row.row_id, predicted_categories=top_predictions
+        )
 
     def save(self, filepath: Path) -> None:
         """Save model as JSON file."""

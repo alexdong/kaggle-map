@@ -78,25 +78,20 @@ class BaselineStrategy(Strategy):
             common_misconceptions=common_misconceptions,
         )
 
-    def predict(self, test_data: list[EvaluationRow]) -> list[SubmissionRow]:
-        """Make predictions for test data.
+    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
+        """Make predictions for a single evaluation row.
 
         Args:
-            test_data: List of test rows
+            evaluation_row: Single evaluation row to predict on
 
         Returns:
-            List of predictions with up to 3 categories each
+            Submission row with prediction (up to 3 categories)
         """
-        logger.info(f"Making baseline predictions for {len(test_data)} test rows")
-        predictions = []
-        for row in test_data:
-            prediction_strings = self._predict_categories_for_row(row)
-            predictions.append(
-                SubmissionRow(
-                    row_id=row.row_id, predicted_categories=prediction_strings[:3]
-                )
-            )
-        return predictions
+        logger.debug(f"Making baseline prediction for row {evaluation_row.row_id}")
+        prediction_strings = self._predict_categories_for_row(evaluation_row)
+        return SubmissionRow(
+            row_id=evaluation_row.row_id, predicted_categories=prediction_strings[:3]
+        )
 
     def save(self, filepath: Path) -> None:
         """Save model as JSON file."""

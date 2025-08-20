@@ -264,7 +264,7 @@ def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_c
 def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv, sample_test_data):
     """Model predictions contain at most 3 categories per test row."""
     model = BaselineStrategy.fit(temp_training_csv)
-    predictions = model.predict(sample_test_data)
+    predictions = [model.predict(row) for row in sample_test_data]
     
     for prediction in predictions:
         assert len(prediction.predicted_categories) <= 3
@@ -284,8 +284,8 @@ def test_model_predict_applies_misconceptions_to_misconception_categories(temp_t
         student_explanation="Wrong explanation"
     )
     
-    predictions = model.predict([test_row])
-    prediction_values = [pred.value for pred in predictions[0].predicted_categories]
+    prediction = model.predict(test_row)
+    prediction_values = [pred.value for pred in prediction.predicted_categories]
     
     # Should contain misconception category with the actual misconception
     assert any("False_Misconception:Adding_across" in val for val in prediction_values)
@@ -303,10 +303,10 @@ def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv)
         student_explanation="Right"
     )
     
-    predictions = model.predict([test_row])
+    prediction = model.predict(test_row)
     
     # First prediction should be the most frequent category for correct answers
-    assert predictions[0].predicted_categories[0].category == Category.TRUE_CORRECT
+    assert prediction.predicted_categories[0].category == Category.TRUE_CORRECT
 
 
 # =============================================================================
@@ -398,13 +398,14 @@ def test_model_predict_handles_questions_not_in_training_data(temp_training_csv)
     )
     
     with pytest.raises(AssertionError):
-        model.predict([test_row])
+        model.predict(test_row)
 
 
 def test_model_predict_handles_empty_test_data_gracefully(temp_training_csv):
-    """Model returns empty predictions for empty test data."""
+    """Model can be used with empty test data by not calling predict."""
     model = BaselineStrategy.fit(temp_training_csv)
-    predictions = model.predict([])
+    test_data = []
+    predictions = [model.predict(row) for row in test_data]
     
     assert predictions == []
 
@@ -452,20 +453,18 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     )
     
     # Get predictions from original
-    original_predictions = original_model.predict([test_row])
+    original_prediction = original_model.predict(test_row)
     
     # Recreate model and get predictions
     model_dict = original_model.to_dict()
     reconstructed_model = BaselineStrategy.from_dict(model_dict)
-    reconstructed_predictions = reconstructed_model.predict([test_row])
+    reconstructed_prediction = reconstructed_model.predict(test_row)
     
     # Predictions should be identical
-    assert len(original_predictions) == len(reconstructed_predictions)
-    for orig, recon in zip(original_predictions, reconstructed_predictions):
-        assert orig.row_id == recon.row_id
-        assert len(orig.predicted_categories) == len(recon.predicted_categories)
-        for o_pred, r_pred in zip(orig.predicted_categories, recon.predicted_categories):
-            assert o_pred.value == r_pred.value
+    assert original_prediction.row_id == reconstructed_prediction.row_id
+    assert len(original_prediction.predicted_categories) == len(reconstructed_prediction.predicted_categories)
+    for o_pred, r_pred in zip(original_prediction.predicted_categories, reconstructed_prediction.predicted_categories):
+        assert o_pred.value == r_pred.value
 
 
 # =============================================================================

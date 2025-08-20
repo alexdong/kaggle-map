@@ -106,14 +106,13 @@ def test_model_prediction_format(temp_train_csv):
         student_explanation="Test explanation"
     )
     
-    predictions = model.predict([test_row])
+    prediction = model.predict(test_row)
     
     # Check prediction structure
-    assert len(predictions) == 1
-    assert predictions[0].row_id == 999
-    assert len(predictions[0].predicted_categories) <= 3
+    assert prediction.row_id == 999
+    assert len(prediction.predicted_categories) <= 3
     
     # Check all predictions are valid Prediction objects
-    for pred in predictions[0].predicted_categories:
+    for pred in prediction.predicted_categories:
         assert isinstance(pred, Prediction)
         assert ":" in str(pred)  # Should be in Category:Misconception format
