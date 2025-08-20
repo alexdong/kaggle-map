@@ -51,7 +51,7 @@ def make_predictions(
     for pred in predictions:
         # Convert Prediction objects to space-separated string
         pred_strings = [str(p) for p in pred.predicted_categories]
-        submission_data.append({"row_id": pred.row_id, "predictions": " ".join(pred_strings)})
+        submission_data.append({"row_id": pred.row_id, "Category:Misconception": " ".join(pred_strings)})
 
     # Save submission file
     submission_df = pd.DataFrame(submission_data)
@@ -148,7 +148,7 @@ def main(model_path: Path, test_path: Path, output_path: Path) -> None:
         # Show sample predictions
         console.print("\n[bold]Sample Predictions[/bold]")
         for _i, (_, row) in enumerate(submission_df.head(3).iterrows()):
-            console.print(f"Row {row['row_id']}: {row['predictions']}")
+            console.print(f"Row {row['row_id']}: {row['Category:Misconception']}")
 
     else:
         results_table.add_row("Status", "[red]❌ File not created[/red]")

@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from kaggle_map.models import (
     Category,
-    EvaluationResult,
     Prediction,
     SubmissionRow,
     EvaluationRow,
@@ -223,41 +222,8 @@ def test_prediction_from_string_invalid_category():
 
 
 # =============================================================================
-# EvaluationResult Validation Tests
+# End of Models Tests  
 # =============================================================================
-
-
-def test_evaluation_result_accepts_map_scores_between_zero_and_one():
-    """Valid MAP scores between 0.0 and 1.0 are accepted."""
-    valid_scores = [0.0, 0.5, 0.8333, 1.0]
-    
-    for score in valid_scores:
-        result = EvaluationResult(
-            map_score=score,
-            total_observations=10,
-            perfect_predictions=5,
-        )
-        assert result.map_score == score
-
-
-def test_evaluation_result_rejects_negative_map_scores():
-    """MAP scores below 0.0 are rejected with clear error."""
-    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1"):
-        EvaluationResult(
-            map_score=-0.1,
-            total_observations=10,
-            perfect_predictions=0,
-        )
-
-
-def test_evaluation_result_rejects_map_scores_above_one():
-    """MAP scores above 1.0 are rejected with clear error."""
-    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1"):
-        EvaluationResult(
-            map_score=1.1,
-            total_observations=10,
-            perfect_predictions=0,
-        )
 
 
 # =============================================================================

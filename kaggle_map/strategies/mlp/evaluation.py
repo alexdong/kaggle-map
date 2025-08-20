@@ -188,7 +188,7 @@ class MLPEvaluator:
             submission_data = []
             for pred in predictions:
                 prediction_strs = [str(p) for p in pred.predicted_categories]
-                submission_data.append({"row_id": pred.row_id, "predictions": " ".join(prediction_strs)})
+                submission_data.append({"row_id": pred.row_id, "Category:Misconception": " ".join(prediction_strs)})
 
             submission_df = pd.DataFrame(submission_data)
             submission_path = tmp_path / "submission.csv"

@@ -35,14 +35,6 @@ class Category(Enum):
 
     @classmethod
     def by_truth_value(cls, *, is_true: bool) -> list["Category"]:
-        """Return all Category values corresponding to the given truth value.
-
-        Args:
-            is_true: True returns TRUE_* categories, False returns FALSE_* categories
-
-        Returns:
-            List of Category enum values matching the boolean prefix
-        """
         prefix = "True_" if is_true else "False_"
         return [category for category in cls if category.value.startswith(prefix)]
 
