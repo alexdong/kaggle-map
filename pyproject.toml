@@ -92,15 +92,6 @@ extend-select = [
 ]
 extend-ignore = [
     "COM812",   # flake8-commas - allow trailing commas in function calls
-    "EM102",    # flake8-errmsg - allow exception message in f-string
-    "E501",     # pycodestyle - ignore line too long (let formatter handle it)
-    "PLR0913",  # pylint - allow more than 5 function arguments
-    "PLR0915",  # pylint - allow functions with many statements
-    "TRY003",   # tryceratops - allow long exception messages
-    "W293",     # pycodestyle - allow blank line with whitespace
-    "C901",     # mccabe - ignore complex functions for existing code
-    "PLC0415",  # pylint - allow imports in functions to avoid circular imports
-    "ANN401",   # flake8-annotations - allow Any type annotations when needed
 ]
 
 [tool.ruff.lint.mccabe]
