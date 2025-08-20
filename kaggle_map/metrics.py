@@ -3,10 +3,7 @@
 from kaggle_map.models import Prediction
 
 
-def calculate_map_at_3(
-    ground_truth: Prediction,
-    predictions: list[Prediction]
-) -> float:
+def calculate_map_at_3(ground_truth: Prediction, predictions: list[Prediction]) -> float:
     """Calculate Mean Average Precision at 3 (MAP@3) for a single prediction.
 
     MAP@3 awards full credit (1.0) if the correct prediction is in position 1,
@@ -19,16 +16,16 @@ def calculate_map_at_3(
 
     Returns:
         Average precision score (0.0 to 1.0)
-        
+
     Examples:
         >>> from kaggle_map.models import Category, Prediction
         >>> gt = Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
-        
+
         >>> # Perfect prediction (position 1)
         >>> pred1 = [Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")]
         >>> calculate_map_at_3(gt, pred1)
         1.0
-        
+
         >>> # Correct in position 2
         >>> pred2 = [
         ...     Prediction(category=Category.FALSE_NEITHER, misconception="NA"),
@@ -36,7 +33,7 @@ def calculate_map_at_3(
         ... ]
         >>> calculate_map_at_3(gt, pred2)
         0.5
-        
+
         >>> # Correct in position 3
         >>> pred3 = [
         ...     Prediction(category=Category.FALSE_NEITHER, misconception="NA"),
@@ -45,12 +42,12 @@ def calculate_map_at_3(
         ... ]
         >>> calculate_map_at_3(gt, pred3)  # doctest: +ELLIPSIS
         0.333...
-        
+
         >>> # No match
         >>> pred4 = [Prediction(category=Category.FALSE_NEITHER, misconception="NA")]
         >>> calculate_map_at_3(gt, pred4)
         0.0
-        
+
         >>> # Empty predictions
         >>> calculate_map_at_3(gt, [])
         0.0

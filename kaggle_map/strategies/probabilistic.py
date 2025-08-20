@@ -67,9 +67,7 @@ class ProbabilisticStrategy(Strategy):
         return "Two-stage probabilistic model: P(Category|Context) x P(Misconception|Category,Context)"
 
     @classmethod
-    def fit(
-        cls, train_csv_path: Path = Path("dataset/train.csv")
-    ) -> "ProbabilisticStrategy":
+    def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "ProbabilisticStrategy":
         logger.info(f"Fitting probabilistic strategy from {train_csv_path}")
         training_data = parse_training_data(train_csv_path)
         logger.debug(f"Parsed {len(training_data)} training rows")
@@ -85,17 +83,11 @@ class ProbabilisticStrategy(Strategy):
         # Learn stage 1: P(Category | ContextKey)
         category_distributions = cls._learn_category_distributions(training_data_with_answers)
         global_category_prior = cls._compute_global_category_prior(training_data_with_answers)
-        question_category_priors = cls._compute_question_category_priors(
-            training_data_with_answers
-        )
+        question_category_priors = cls._compute_question_category_priors(training_data_with_answers)
 
         # Learn stage 2: P(Misconception | Category, ContextKey)
-        misconception_distributions = cls._learn_misconception_distributions(
-            training_data_with_answers
-        )
-        global_misconception_prior = cls._compute_global_misconception_prior(
-            training_data_with_answers
-        )
+        misconception_distributions = cls._learn_misconception_distributions(training_data_with_answers)
+        global_misconception_prior = cls._compute_global_misconception_prior(training_data_with_answers)
 
         return cls(
             category_distributions=category_distributions,
@@ -115,14 +107,10 @@ class ProbabilisticStrategy(Strategy):
         prediction_probs = self._compute_prediction_probabilities(context_key)
 
         # Sort by probability and take top 3
-        sorted_predictions = sorted(
-            prediction_probs.items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_predictions = sorted(prediction_probs.items(), key=lambda x: x[1], reverse=True)
         top_predictions = [pred for pred, _ in sorted_predictions[:3]]
 
-        return SubmissionRow(
-            row_id=evaluation_row.row_id, predicted_categories=top_predictions
-        )
+        return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=top_predictions)
 
     def save(self, filepath: Path) -> None:
         logger.info(f"Saving probabilistic model to {filepath}")
@@ -130,21 +118,18 @@ class ProbabilisticStrategy(Strategy):
         # Convert ContextKey tuples and Category enums to strings for JSON serialization
         serializable_data = {
             "category_distributions": {
-                f"{question_id}|{selected_answer}|{correct_answer}": {
-                    cat.value: prob for cat, prob in dist.items()
-                }
+                f"{question_id}|{selected_answer}|{correct_answer}": {cat.value: prob for cat, prob in dist.items()}
                 for (question_id, selected_answer, correct_answer), dist in self.category_distributions.items()
             },
             "misconception_distributions": {
                 f"{question_id}|{selected_answer}|{correct_answer}|{cat.value}": dist
-                for ((question_id, selected_answer, correct_answer), cat), dist in self.misconception_distributions.items()
+                for (
+                    (question_id, selected_answer, correct_answer),
+                    cat,
+                ), dist in self.misconception_distributions.items()
             },
-            "global_category_prior": {
-                cat.value: prob for cat, prob in self.global_category_prior.items()
-            },
-            "global_misconception_prior": {
-                cat.value: dist for cat, dist in self.global_misconception_prior.items()
-            },
+            "global_category_prior": {cat.value: prob for cat, prob in self.global_category_prior.items()},
+            "global_misconception_prior": {cat.value: dist for cat, dist in self.global_misconception_prior.items()},
             "question_category_priors": {
                 str(qid): {cat.value: prob for cat, prob in dist.items()}
                 for qid, dist in self.question_category_priors.items()
@@ -167,9 +152,7 @@ class ProbabilisticStrategy(Strategy):
         for key, dist in data["category_distributions"].items():
             parts = key.split("|")
             context_key = (int(parts[0]), parts[1], parts[2])
-            category_distributions[context_key] = {
-                Category(cat): prob for cat, prob in dist.items()
-            }
+            category_distributions[context_key] = {Category(cat): prob for cat, prob in dist.items()}
 
         misconception_distributions = {}
         for key, dist in data["misconception_distributions"].items():
@@ -178,14 +161,9 @@ class ProbabilisticStrategy(Strategy):
             cat = Category(parts[3])
             misconception_distributions[(context_key, cat)] = dist
 
-        global_category_prior = {
-            Category(cat): prob for cat, prob in data["global_category_prior"].items()
-        }
+        global_category_prior = {Category(cat): prob for cat, prob in data["global_category_prior"].items()}
 
-        global_misconception_prior = {
-            Category(cat): dist
-            for cat, dist in data["global_misconception_prior"].items()
-        }
+        global_misconception_prior = {Category(cat): dist for cat, dist in data["global_misconception_prior"].items()}
 
         question_category_priors = {
             int(qid): {Category(cat): prob for cat, prob in dist.items()}
@@ -213,9 +191,7 @@ class ProbabilisticStrategy(Strategy):
                 correct_answer = correct_ans
                 break
 
-        assert correct_answer is not None, (
-            f"No correct answer found for question {test_row.question_id}"
-        )
+        assert correct_answer is not None, f"No correct answer found for question {test_row.question_id}"
 
         return (
             test_row.question_id,
@@ -223,9 +199,7 @@ class ProbabilisticStrategy(Strategy):
             correct_answer,
         )
 
-    def _compute_prediction_probabilities(
-        self, context_key: ContextKey
-    ) -> dict[Prediction, float]:
+    def _compute_prediction_probabilities(self, context_key: ContextKey) -> dict[Prediction, float]:
         # Stage 1: Get P(Category | Context) with fallbacks
         category_probs = self._get_category_probabilities(context_key)
 
@@ -233,9 +207,7 @@ class ProbabilisticStrategy(Strategy):
         prediction_probs = {}
 
         for category, category_prob in category_probs.items():
-            misconception_probs = self._get_misconception_probabilities(
-                context_key, category
-            )
+            misconception_probs = self._get_misconception_probabilities(context_key, category)
 
             for misconception, misconception_prob in misconception_probs.items():
                 # Joint probability: P(Category, Misconception | Context)
@@ -251,9 +223,7 @@ class ProbabilisticStrategy(Strategy):
 
         return prediction_probs
 
-    def _get_category_probabilities(
-        self, context_key: ContextKey
-    ) -> CategoryDistribution:
+    def _get_category_probabilities(self, context_key: ContextKey) -> CategoryDistribution:
         # Try exact context match first
         if context_key in self.category_distributions:
             return self.category_distributions[context_key]
@@ -279,9 +249,7 @@ class ProbabilisticStrategy(Strategy):
 
         # Fallback to global misconception prior for this category
         if category in self.global_misconception_prior:
-            logger.debug(
-                f"Using global misconception prior for unseen state: {state_category}"
-            )
+            logger.debug(f"Using global misconception prior for unseen state: {state_category}")
             return self.global_misconception_prior[category]
 
         # Ultimate fallback: everything is "NA"
@@ -311,14 +279,10 @@ class ProbabilisticStrategy(Strategy):
             total = sum(category_counts.values())
             assert total > 0, f"No observations for context {context_key}"
 
-            distribution = {
-                category: count / total for category, count in category_counts.items()
-            }
+            distribution = {category: count / total for category, count in category_counts.items()}
             category_distributions[context_key] = distribution
 
-        logger.debug(
-            f"Learned category distributions for {len(category_distributions)} contexts"
-        )
+        logger.debug(f"Learned category distributions for {len(category_distributions)} contexts")
         return category_distributions
 
     @staticmethod
@@ -345,15 +309,10 @@ class ProbabilisticStrategy(Strategy):
             total = sum(misconception_counts.values())
             assert total > 0, f"No observations for state {state_category}"
 
-            distribution = {
-                misconception: count / total
-                for misconception, count in misconception_counts.items()
-            }
+            distribution = {misconception: count / total for misconception, count in misconception_counts.items()}
             misconception_distributions[state_category] = distribution
 
-        logger.debug(
-            f"Learned misconception distributions for {len(misconception_distributions)} state-categories"
-        )
+        logger.debug(f"Learned misconception distributions for {len(misconception_distributions)} state-categories")
         return misconception_distributions
 
     @staticmethod
@@ -380,9 +339,7 @@ class ProbabilisticStrategy(Strategy):
         question_priors = {}
         for question_id, category_counts in question_category_counts.items():
             total = sum(category_counts.values())
-            question_priors[question_id] = {
-                category: count / total for category, count in category_counts.items()
-            }
+            question_priors[question_id] = {category: count / total for category, count in category_counts.items()}
 
         return question_priors
 
@@ -400,8 +357,7 @@ class ProbabilisticStrategy(Strategy):
         for category, misconception_counts in category_misconception_counts.items():
             total = sum(misconception_counts.values())
             global_prior[category] = {
-                misconception: count / total
-                for misconception, count in misconception_counts.items()
+                misconception: count / total for misconception, count in misconception_counts.items()
             }
 
         return global_prior

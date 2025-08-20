@@ -47,9 +47,7 @@ class MLPEvaluator:
         stats_table.add_column("Metric", style="cyan")
         stats_table.add_column("Count", style="magenta")
 
-        stats_table.add_row(
-            "Questions with correct answers", str(len(self.strategy.correct_answers))
-        )
+        stats_table.add_row("Questions with correct answers", str(len(self.strategy.correct_answers)))
         stats_table.add_row(
             "Questions with misconceptions",
             str(len(self.strategy.question_misconceptions)),
@@ -64,9 +62,7 @@ class MLPEvaluator:
 
         # Embedding model info
         stats_table.add_row("Embedding model", self.strategy.embedding_model.model_id)
-        stats_table.add_row(
-            "Embedding dimension", str(self.strategy.embedding_model.dim)
-        )
+        stats_table.add_row("Embedding dimension", str(self.strategy.embedding_model.dim))
 
         console.print(stats_table)
 
@@ -88,18 +84,12 @@ class MLPEvaluator:
         """
         console.print("\n[cyan]Model Architecture:[/cyan]")
         console.print(f"  Embedding model: {self.strategy.embedding_model.model_id}")
-        console.print(
-            f"  Input dimensions: {self.strategy.embedding_model.dim} (dynamic from embedding model)"
-        )
+        console.print(f"  Input dimensions: {self.strategy.embedding_model.dim} (dynamic from embedding model)")
 
         # Get hidden dimensions from model
         hidden_dims_str = " → ".join(map(str, HIDDEN_DIMS))
-        console.print(
-            f"  Shared trunk: {self.strategy.embedding_model.dim} → {hidden_dims_str}"
-        )
-        console.print(
-            f"  Question-specific heads: {len(self.strategy.question_misconceptions)}"
-        )
+        console.print(f"  Shared trunk: {self.strategy.embedding_model.dim} → {hidden_dims_str}")
+        console.print(f"  Question-specific heads: {len(self.strategy.question_misconceptions)}")
 
         # Display misconception head info
         misconception_heads = len(self.strategy.model.misconception_heads)
@@ -112,9 +102,7 @@ class MLPEvaluator:
             console: Rich console for output
         """
         console.print("\n[cyan]Question-specific misconceptions:[/cyan]")
-        for qid, misconceptions in sorted(
-            self.strategy.question_misconceptions.items()
-        ):
+        for qid, misconceptions in sorted(self.strategy.question_misconceptions.items()):
             # Convert misconceptions to strings for display
             misconception_str = ", ".join([str(m) for m in misconceptions])
             console.print(f"  Q{qid}: [{misconception_str}]")
@@ -128,9 +116,7 @@ class MLPEvaluator:
         # Test prediction format with a sample
         sample_test_row = EvaluationRow(
             row_id=99999,
-            question_id=next(
-                iter(self.strategy.question_misconceptions.keys())
-            ),  # Use first available question
+            question_id=next(iter(self.strategy.question_misconceptions.keys())),  # Use first available question
             question_text="Sample question",
             mc_answer="Sample answer",
             student_explanation="Sample explanation",
@@ -140,14 +126,10 @@ class MLPEvaluator:
 
         console.print("\n[bold]Sample MLP Prediction Test[/bold]")
         console.print(f"Row ID: {sample_prediction.row_id}")
-        console.print(
-            f"Predictions: {[str(pred) for pred in sample_prediction.predicted_categories]}"
-        )
+        console.print(f"Predictions: {[str(pred) for pred in sample_prediction.predicted_categories]}")
 
     @staticmethod
-    def evaluate_on_split(
-        strategy: "MLPStrategy", eval_data: list[TrainingRow] | None = None
-    ) -> dict[str, float]:
+    def evaluate_on_split(strategy: "MLPStrategy", eval_data: list[TrainingRow] | None = None) -> dict[str, float]:
         """Evaluate model performance on eval split.
 
         Args:
@@ -193,9 +175,7 @@ class MLPEvaluator:
                 {
                     "row_id": row.row_id,
                     "Category": row.category.value,
-                    "Misconception": str(row.misconception)
-                    if row.misconception is not None
-                    else "NA",
+                    "Misconception": str(row.misconception) if row.misconception is not None else "NA",
                 }
                 for row in eval_data
             ]
@@ -208,9 +188,7 @@ class MLPEvaluator:
             submission_data = []
             for pred in predictions:
                 prediction_strs = [str(p) for p in pred.predicted_categories]
-                submission_data.append(
-                    {"row_id": pred.row_id, "predictions": " ".join(prediction_strs)}
-                )
+                submission_data.append({"row_id": pred.row_id, "predictions": " ".join(prediction_strs)})
 
             submission_df = pd.DataFrame(submission_data)
             submission_path = tmp_path / "submission.csv"
@@ -224,8 +202,7 @@ class MLPEvaluator:
                 map_score=eval_result.map_score,
                 total_observations=eval_result.total_observations,
                 perfect_predictions=eval_result.perfect_predictions,
-                accuracy=eval_result.perfect_predictions
-                / eval_result.total_observations
+                accuracy=eval_result.perfect_predictions / eval_result.total_observations
                 if eval_result.total_observations > 0
                 else 0.0,
             )
@@ -234,8 +211,7 @@ class MLPEvaluator:
                 "map_score": eval_result.map_score,
                 "total_observations": eval_result.total_observations,
                 "perfect_predictions": eval_result.perfect_predictions,
-                "accuracy": eval_result.perfect_predictions
-                / eval_result.total_observations
+                "accuracy": eval_result.perfect_predictions / eval_result.total_observations
                 if eval_result.total_observations > 0
                 else 0.0,
             }

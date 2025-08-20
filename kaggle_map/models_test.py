@@ -141,6 +141,87 @@ def test_prediction_string_representation_matches_value_property():
     assert str(prediction) == "False_Misconception:Denominator-only_change"
 
 
+def test_prediction_from_ground_truth_row():
+    """Test Prediction.from_ground_truth_row class method."""
+    import pandas as pd
+    import numpy as np
+    
+    # Test with regular misconception
+    row_data = pd.Series({
+        "row_id": 1,
+        "Category": "True_Misconception",
+        "Misconception": "Adding_across"
+    })
+    
+    pred = Prediction.from_ground_truth_row(row_data)
+    assert pred.category == Category.TRUE_MISCONCEPTION
+    assert pred.misconception == "Adding_across"
+    
+    # Test with NA misconception
+    row_data_na = pd.Series({
+        "row_id": 2,
+        "Category": "True_Neither",
+        "Misconception": "NA"
+    })
+    
+    pred_na = Prediction.from_ground_truth_row(row_data_na)
+    assert pred_na.category == Category.TRUE_NEITHER
+    assert pred_na.misconception == "NA"
+    
+    # Test with NaN misconception (pandas converts "NA" strings to NaN sometimes)
+    row_data_nan = pd.Series({
+        "row_id": 3,
+        "Category": "False_Correct",
+        "Misconception": np.nan
+    })
+    
+    pred_nan = Prediction.from_ground_truth_row(row_data_nan)
+    assert pred_nan.category == Category.FALSE_CORRECT
+    assert pred_nan.misconception == "NA"
+
+
+def test_prediction_from_string():
+    """Test Prediction.from_string class method for parsing prediction strings."""
+    # Test with misconception
+    pred1 = Prediction.from_string("True_Misconception:Adding_across")
+    assert pred1.category == Category.TRUE_MISCONCEPTION
+    assert pred1.misconception == "Adding_across"
+    
+    # Test without misconception
+    pred2 = Prediction.from_string("False_Neither")
+    assert pred2.category == Category.FALSE_NEITHER
+    assert pred2.misconception == "NA"
+    
+    # Test with empty misconception (colon but no text after)
+    pred3 = Prediction.from_string("True_Correct:")
+    assert pred3.category == Category.TRUE_CORRECT
+    assert pred3.misconception == "NA"
+    
+    # Test with whitespace handling
+    pred4 = Prediction.from_string("  False_Misconception : Denominator_change  ")
+    assert pred4.category == Category.FALSE_MISCONCEPTION
+    assert pred4.misconception == "Denominator_change"
+    
+    # Test category without colon
+    pred5 = Prediction.from_string("True_Neither")
+    assert pred5.category == Category.TRUE_NEITHER
+    assert pred5.misconception == "NA"
+    
+    # Test with NA misconception
+    pred6 = Prediction.from_string("False_Correct:NA")
+    assert pred6.category == Category.FALSE_CORRECT
+    assert pred6.misconception == "NA"
+
+
+def test_prediction_from_string_invalid_category():
+    """Test that Prediction.from_string raises ValueError for invalid categories."""
+    with pytest.raises(ValueError):
+        Prediction.from_string("Invalid_Category:Some_misconception")
+    
+    with pytest.raises(ValueError):
+        Prediction.from_string("Not_A_Category")
+
+
 # =============================================================================
 # EvaluationResult Validation Tests
 # =============================================================================
@@ -194,8 +275,7 @@ def sample_training_data():
             question_text="What is 2+2?",
             mc_answer="4",
             student_explanation="I added them",
-            category=Category.TRUE_CORRECT,
-            misconception=None
+            prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         ),
         TrainingRow(
             row_id=2,
@@ -203,8 +283,7 @@ def sample_training_data():
             question_text="What is 2+2?",
             mc_answer="5",
             student_explanation="I counted wrong",
-            category=Category.FALSE_MISCONCEPTION,
-            misconception="Adding_across"
+            prediction=Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Adding_across")
         ),
         TrainingRow(
             row_id=3,
@@ -212,8 +291,7 @@ def sample_training_data():
             question_text="What is 3+3?",
             mc_answer="6",
             student_explanation="Correct answer",
-            category=Category.TRUE_CORRECT,
-            misconception=None
+            prediction=Prediction(category=Category.TRUE_CORRECT, misconception="NA")
         )
     ]
 
@@ -536,14 +614,14 @@ def test_load_model_raises_clear_error_for_missing_file():
 
 def test_training_row_creation_with_valid_category_enum():
     """TrainingRow accepts valid Category enum values."""
+    prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
     row = TrainingRow(
         row_id=1,
         question_id=100,
         question_text="Test question",
         mc_answer="A",
         student_explanation="Test explanation",
-        category=Category.TRUE_CORRECT,
-        misconception="NA"
+        prediction=prediction
     )
     assert row.category == Category.TRUE_CORRECT
     assert row.misconception == "NA"
@@ -551,14 +629,14 @@ def test_training_row_creation_with_valid_category_enum():
 
 def test_training_row_handles_none_misconceptions():
     """TrainingRow properly handles None misconceptions."""
+    prediction = Prediction(category=Category.FALSE_MISCONCEPTION, misconception="SomeError")
     row_with_misconception = TrainingRow(
         row_id=2,
         question_id=100,
         question_text="Test",
         mc_answer="B",
         student_explanation="Test",
-        category=Category.FALSE_MISCONCEPTION,
-        misconception="SomeError"
+        prediction=prediction
     )
     assert row_with_misconception.misconception == "SomeError"
 
@@ -598,14 +676,14 @@ def test_evaluation_row_automatically_normalizes_text_fields():
 
 def test_training_row_inherits_normalization_from_evaluation_row():
     """TrainingRow inherits automatic normalization from EvaluationRow."""
+    prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
     row = TrainingRow(
         row_id=1,
         question_id=100,
         question_text="  What is 2+2?  ",  # Extra whitespace
         mc_answer="\\( \\frac{1}{2} \\)",  # LaTeX with parentheses
         student_explanation="  I think it is four  ",  # Extra whitespace
-        category=Category.TRUE_CORRECT,
-        misconception="NA"
+        prediction=prediction
     )
     
     # Text should be normalized automatically via inheritance
@@ -613,3 +691,48 @@ def test_training_row_inherits_normalization_from_evaluation_row():
     assert row.mc_answer == "1/2"  # LaTeX normalized to fraction
     assert row.student_explanation == "I think it is four"
     assert row.category == Category.TRUE_CORRECT
+
+
+def test_training_row_prediction_property():
+    """Test that TrainingRow.prediction creates correct Prediction object."""
+    prediction = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Adding_across")
+    row = TrainingRow(
+        row_id=1,
+        question_id=101,
+        question_text="What is 2+2?",
+        mc_answer="4",
+        student_explanation="I think it's four",
+        prediction=prediction
+    )
+    
+    # Should contain the embedded prediction
+    assert isinstance(row.prediction, Prediction)
+    assert row.prediction.category == Category.TRUE_MISCONCEPTION
+    assert row.prediction.misconception == "Adding_across"
+    assert str(row.prediction) == "True_Misconception:Adding_across"
+    
+    # Should expose category and misconception as properties for backward compatibility
+    assert row.category == Category.TRUE_MISCONCEPTION
+    assert row.misconception == "Adding_across"
+
+
+def test_training_row_prediction_property_with_na_misconception():
+    """Test that TrainingRow.prediction works with NA misconceptions."""
+    prediction = Prediction(category=Category.TRUE_NEITHER, misconception="NA")
+    row = TrainingRow(
+        row_id=1,
+        question_id=101,
+        question_text="What is 2+2?",
+        mc_answer="4",
+        student_explanation="I think it's four",
+        prediction=prediction
+    )
+    
+    assert isinstance(row.prediction, Prediction)
+    assert row.prediction.category == Category.TRUE_NEITHER
+    assert row.prediction.misconception == "NA"
+    assert str(row.prediction) == "True_Neither:NA"
+    
+    # Test backward compatibility properties
+    assert row.category == Category.TRUE_NEITHER
+    assert row.misconception == "NA"

@@ -74,9 +74,7 @@ class SynthDataGenerator:
             try:
                 with self.checkpoint_file.open() as f:
                     data = json.load(f)
-                logger.info(
-                    f"Resuming from checkpoint: processed {data.get('processed_rows', 0)} rows"
-                )
+                logger.info(f"Resuming from checkpoint: processed {data.get('processed_rows', 0)} rows")
                 return data
             except Exception as e:
                 logger.warning(f"Failed to load checkpoint: {e}")
@@ -131,13 +129,9 @@ class SynthDataGenerator:
         char_limit = max(char_limit, 20)
 
         # Random style factors
-        writing_style = random.choice(
-            ["casual", "formal", "hesitant", "confident", "conversational"]
-        )
+        writing_style = random.choice(["casual", "formal", "hesitant", "confident", "conversational"])
 
-        explanation_focus = random.choice(
-            ["process", "visual", "reasoning", "comparison"]
-        )
+        explanation_focus = random.choice(["process", "visual", "reasoning", "comparison"])
 
         detail_level = random.choice(["brief", "verbose", "rambling"])
 
@@ -184,18 +178,12 @@ class SynthDataGenerator:
         """Check if row should be skipped based on checkpoint."""
         return current_row <= self.progress_data["processed_rows"]
 
-    def _log_debug_info(
-        self, current_row: int, orig_row: dict[str, str], expansion_idx: int
-    ) -> None:
+    def _log_debug_info(self, current_row: int, orig_row: dict[str, str], expansion_idx: int) -> None:
         """Log debug information for early rows."""
         if current_row <= DEBUG_ROW_LIMIT:
-            logger.info(
-                f"Processing row {current_row}: {orig_row['row_id']}_{expansion_idx}"
-            )
+            logger.info(f"Processing row {current_row}: {orig_row['row_id']}_{expansion_idx}")
 
-    def _create_synthetic_row(
-        self, orig_row: dict[str, str], expansion_idx: int
-    ) -> dict[str, str]:
+    def _create_synthetic_row(self, orig_row: dict[str, str], expansion_idx: int) -> dict[str, str]:
         """Create a new synthetic row from original."""
         new_row = orig_row.copy()
         new_row["row_id"] = f"{orig_row['row_id']}_{expansion_idx}"
@@ -250,9 +238,7 @@ class SynthDataGenerator:
 
     def generate_synthetic_data(self) -> None:
         """Main generation function."""
-        logger.info(
-            f"Starting synthetic data generation: {EXPANSIONS_PER_ROW}x expansion"
-        )
+        logger.info(f"Starting synthetic data generation: {EXPANSIONS_PER_ROW}x expansion")
 
         # Read input data
         original_rows = self._load_input_data()
@@ -279,14 +265,10 @@ class SynthDataGenerator:
                 TimeRemainingColumn(),
                 console=console,
             ) as progress:
-                task = progress.add_task(
-                    "Generating synthetic data", total=total_output_rows
-                )
+                task = progress.add_task("Generating synthetic data", total=total_output_rows)
                 progress.update(task, advance=self.progress_data["processed_rows"])
 
-                self._process_rows(
-                    original_rows, writer, progress, task, total_output_rows, f
-                )
+                self._process_rows(original_rows, writer, progress, task, total_output_rows, f)
 
         # Final cleanup
         self.checkpoint_file.unlink(missing_ok=True)
@@ -333,9 +315,7 @@ def main() -> None:
         generator.generate_synthetic_data()
     except KeyboardInterrupt:
         logger.info("Generation interrupted by user")
-        console.print(
-            "[yellow]Generation stopped. Run again to resume from checkpoint.[/yellow]"
-        )
+        console.print("[yellow]Generation stopped. Run again to resume from checkpoint.[/yellow]")
     except Exception as e:
         logger.error(f"Generation failed: {e}")
         console.print(f"[red]Error: {e}[/red]")

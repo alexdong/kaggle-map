@@ -75,9 +75,7 @@ class MLPNet(nn.Module):
         self.misconception_heads = nn.ModuleDict()
         for question_id in question_misconceptions:
             qid_str = str(question_id)
-            self.misconception_heads[qid_str] = nn.Linear(
-                HIDDEN_DIMS[2], MAX_MISCONCEPTIONS_PER_QUESTION
-            )
+            self.misconception_heads[qid_str] = nn.Linear(HIDDEN_DIMS[2], MAX_MISCONCEPTIONS_PER_QUESTION)
 
         logger.info(
             "MLPNet initialized successfully",
@@ -123,9 +121,7 @@ class MLPNet(nn.Module):
 
         # Misconception predictions (if question has misconceptions)
         if qid_str in self.misconception_heads:
-            outputs["misconceptions"] = self.misconception_heads[qid_str](
-                shared_features
-            )
+            outputs["misconceptions"] = self.misconception_heads[qid_str](shared_features)
 
         # Ensure all outputs are on correct device
         for key, tensor in outputs.items():

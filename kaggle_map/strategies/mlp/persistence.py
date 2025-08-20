@@ -37,9 +37,7 @@ class MLPPersistence:
             "question_misconceptions": strategy.question_misconceptions,
             "embedding_model": strategy.embedding_model.model_id,
             "embedding_dim": strategy.embedding_model.dim,  # Store for validation
-            "eval_data": getattr(
-                strategy.__class__, "_eval_data", None
-            ),  # Save eval data if available
+            "eval_data": getattr(strategy.__class__, "_eval_data", None),  # Save eval data if available
             # Metadata for validation
             "model_metadata": {
                 "total_parameters": sum(p.numel() for p in strategy.model.parameters()),
@@ -111,9 +109,7 @@ class MLPPersistence:
             save_data = pickle.load(f)
 
         assert save_data is not None, f"Failed to load data from model file: {filepath}"
-        assert isinstance(save_data, dict), (
-            f"Model file contains invalid data format: {filepath}"
-        )
+        assert isinstance(save_data, dict), f"Model file contains invalid data format: {filepath}"
 
         # Validate save data structure
         required_keys = {
@@ -136,9 +132,7 @@ class MLPPersistence:
         )
 
         # Find embedding model
-        embedding_model = MLPPersistence._find_embedding_model(
-            save_data["embedding_model"]
-        )
+        embedding_model = MLPPersistence._find_embedding_model(save_data["embedding_model"])
 
         # Validate embedding dimension if available
         if "embedding_dim" in save_data:
@@ -156,9 +150,7 @@ class MLPPersistence:
         return MLPPersistence._reconstruct_strategy(save_data, embedding_model)
 
     @staticmethod
-    def _reconstruct_strategy(
-        save_data: dict, embedding_model: EmbeddingModel
-    ) -> "MLPStrategy":
+    def _reconstruct_strategy(save_data: dict, embedding_model: EmbeddingModel) -> "MLPStrategy":
         """Reconstruct MLPStrategy from save data."""
         # Import here to avoid circular imports
         from kaggle_map.strategies.mlp.model import MLPNet
@@ -246,7 +238,5 @@ class MLPPersistence:
             requested=model_id,
             available=available_models,
         )
-        msg = (
-            f"Unknown embedding model: {model_id}. Available models: {available_models}"
-        )
+        msg = f"Unknown embedding model: {model_id}. Available models: {available_models}"
         raise ValueError(msg)

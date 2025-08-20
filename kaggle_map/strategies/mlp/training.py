@@ -70,9 +70,7 @@ class BatchData(NamedTuple):
     indices: torch.Tensor  # Sample indices
 
 
-def collate_multihead_batch(
-    batch: list[DatasetItem], device: torch.device | None = None
-) -> BatchData:
+def collate_multihead_batch(batch: list[DatasetItem], device: torch.device | None = None) -> BatchData:
     """Custom collate function for multi-head training with variable tensor shapes.
 
     Handles padding of misconception and category labels to max batch size,
@@ -97,9 +95,7 @@ def collate_multihead_batch(
     multi_labels = {}
 
     # Correctness labels (consistent shape)
-    multi_labels["correctness"] = torch.stack(
-        [item.labels["correctness"] for item in batch]
-    ).to(device)
+    multi_labels["correctness"] = torch.stack([item.labels["correctness"] for item in batch]).to(device)
 
     # Misconception labels (pad to max size in batch)
     misc_labels = [item.labels["misconceptions"] for item in batch]
@@ -190,9 +186,7 @@ def parse_training_data(csv_path: Path) -> list[TrainingRow]:
     categories_found = set()
 
     for idx, row in training_df.iterrows():
-        misconception = (
-            str(row["Misconception"]) if pd.notna(row["Misconception"]) else None
-        )
+        misconception = str(row["Misconception"]) if pd.notna(row["Misconception"]) else None
         if misconception is not None:
             misconceptions_found += 1
 
@@ -293,9 +287,7 @@ def extract_question_misconceptions(
 
     extract_duration = time.time() - extract_start
     avg_misconceptions_per_question = (
-        total_unique_misconceptions / len(question_misconceptions)
-        if question_misconceptions
-        else 0
+        total_unique_misconceptions / len(question_misconceptions) if question_misconceptions else 0
     )
 
     logger.debug(
@@ -396,10 +388,7 @@ def process_training_rows(
         processed_embeddings += 1
 
         # Determine correctness
-        is_correct = (
-            row.question_id in correct_answers
-            and row.mc_answer == correct_answers[row.question_id]
-        )
+        is_correct = row.question_id in correct_answers and row.mc_answer == correct_answers[row.question_id]
         correctness.append(float(is_correct))
         question_ids.append(row.question_id)
 
@@ -414,9 +403,7 @@ def process_training_rows(
 
         # Create misconception label (when applicable)
         if row.question_id in question_misconceptions:
-            misconception_label = create_misconception_label(
-                row, question_misconceptions
-            )
+            misconception_label = create_misconception_label(row, question_misconceptions)
             misconception_labels[row.question_id].append(misconception_label)
 
     process_duration = time.time() - process_start
@@ -621,9 +608,7 @@ def train_model(
         "Multi-head MLP training completed",
         training_time_seconds=f"{training_duration:.3f}",
         epochs_completed=DEFAULT_NUM_EPOCHS,
-        final_model_parameters=sum(
-            p.numel() for p in training_setup.model.parameters()
-        ),
+        final_model_parameters=sum(p.numel() for p in training_setup.model.parameters()),
     )
     return training_setup.model
 
@@ -638,9 +623,7 @@ def train_multihead_epochs(
     """Train multi-head model for specified number of epochs."""
     model.train()
     for epoch in range(num_epochs):
-        total_losses = train_multihead_single_epoch(
-            model, criterions, optimizer, dataloader
-        )
+        total_losses = train_multihead_single_epoch(model, criterions, optimizer, dataloader)
 
         if epoch % 20 == 0:
             loss_str = ", ".join([f"{k}: {v:.4f}" for k, v in total_losses.items()])
@@ -722,22 +705,14 @@ def process_multihead_batch(
         # Correctness loss (always present)
         if "correctness" in outputs and "correctness" in batch_data.multi_labels:
             correctness_target = batch_data.multi_labels["correctness"][i].unsqueeze(0)
-            correctness_loss = criterions["correctness"](
-                outputs["correctness"], correctness_target
-            )
+            correctness_loss = criterions["correctness"](outputs["correctness"], correctness_target)
             batch_losses["correctness"] += correctness_loss
 
         # Misconception loss (when applicable)
         if "misconceptions" in outputs and "misconceptions" in batch_data.multi_labels:
-            misconception_target = batch_data.multi_labels["misconceptions"][
-                i
-            ].unsqueeze(0)
-            if (
-                misconception_target.sum() > 0
-            ):  # Only if there are actual misconceptions
-                misconception_loss = criterions["misconceptions"](
-                    outputs["misconceptions"], misconception_target
-                )
+            misconception_target = batch_data.multi_labels["misconceptions"][i].unsqueeze(0)
+            if misconception_target.sum() > 0:  # Only if there are actual misconceptions
+                misconception_loss = criterions["misconceptions"](outputs["misconceptions"], misconception_target)
                 batch_losses["misconceptions"] += misconception_loss
 
         valid_samples += 1

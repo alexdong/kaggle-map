@@ -3,24 +3,15 @@
 from pathlib import Path
 import pytest
 import pandas as pd
-import tempfile
-from unittest.mock import patch, MagicMock
 from kaggle_map.eval import (
     evaluate, 
     _load_ground_truth, 
-    _load_submissions, 
-    _parse_prediction_string,
-    _calculate_average_precision,
-    _predictions_match,
-    _prepare_cross_validation_data,
-    _save_submission_csv
+    _load_submissions
 )
+from kaggle_map.metrics import calculate_map_at_3
 from kaggle_map.models import (
-    EvaluationResult, 
     Prediction, 
-    Category, 
-    EvaluationRow,
-    SubmissionRow
+    Category
 )
 
 
@@ -149,9 +140,7 @@ def test_map_calculation(test_case, expected_map, expected_perfect, temp_csv_fil
     
     result = evaluate(gt_path, sub_path)
     
-    assert result.map_score == pytest.approx(expected_map)
-    assert result.perfect_predictions == expected_perfect
-    assert result.total_observations == len(test_case["ground_truth"]["row_id"])
+    assert result == pytest.approx(expected_map)
 
 
 def test_load_ground_truth(temp_csv_files):
@@ -169,7 +158,7 @@ def test_load_ground_truth(temp_csv_files):
     assert len(result) == 3
     assert result[1] == Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
     assert result[2] == Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Denominator-only_change")
-    assert result[3] == Prediction(category=Category.TRUE_NEITHER, misconception=None)
+    assert result[3] == Prediction(category=Category.TRUE_NEITHER, misconception="NA")
 
 
 def test_load_submissions(temp_csv_files):
@@ -194,150 +183,27 @@ def test_load_submissions(temp_csv_files):
     assert len(result[2]) == 1
     assert result[2][0] == Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Denominator-only_change")
     assert len(result[3]) == 2
-    assert result[3][0] == Prediction(category=Category.TRUE_NEITHER, misconception=None)
-    assert result[3][1] == Prediction(category=Category.FALSE_CORRECT, misconception=None)
+    assert result[3][0] == Prediction(category=Category.TRUE_NEITHER, misconception="NA")
+    assert result[3][1] == Prediction(category=Category.FALSE_CORRECT, misconception="NA")
 
 
 def test_parse_prediction_string():
-    """Test parsing prediction strings into Prediction objects."""
+    """Test parsing prediction strings into Prediction objects using Prediction.from_string."""
     # Test with misconception
-    pred1 = _parse_prediction_string("True_Correct:Adding_across")
+    pred1 = Prediction.from_string("True_Correct:Adding_across")
     assert pred1 == Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
     
     # Test without misconception
-    pred2 = _parse_prediction_string("False_Neither")
-    assert pred2 == Prediction(category=Category.FALSE_NEITHER, misconception=None)
+    pred2 = Prediction.from_string("False_Neither")
+    assert pred2 == Prediction(category=Category.FALSE_NEITHER, misconception="NA")
     
     # Test with empty misconception
-    pred3 = _parse_prediction_string("True_Misconception:")
-    assert pred3 == Prediction(category=Category.TRUE_MISCONCEPTION, misconception=None)
+    pred3 = Prediction.from_string("True_Misconception:")
+    assert pred3 == Prediction(category=Category.TRUE_MISCONCEPTION, misconception="NA")
     
     # Test with whitespace
-    pred4 = _parse_prediction_string(" False_Correct : Some_tag ")
+    pred4 = Prediction.from_string(" False_Correct : Some_tag ")
     assert pred4 == Prediction(category=Category.FALSE_CORRECT, misconception="Some_tag")
-
-
-def test_calculate_average_precision():
-    """Test average precision calculation for single observations."""
-    ground_truth = Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
-    
-    # First position match
-    predictions1 = [
-        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across"),
-        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag")
-    ]
-    assert _calculate_average_precision(ground_truth, predictions1) == 1.0
-    
-    # Second position match
-    predictions2 = [
-        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
-        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
-    ]
-    assert _calculate_average_precision(ground_truth, predictions2) == 0.5
-    
-    # Third position match
-    predictions3 = [
-        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
-        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_tag"),
-        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
-    ]
-    assert _calculate_average_precision(ground_truth, predictions3) == pytest.approx(1/3)
-    
-    # No match
-    predictions4 = [
-        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
-        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_tag")
-    ]
-    assert _calculate_average_precision(ground_truth, predictions4) == 0.0
-    
-    # Empty predictions
-    assert _calculate_average_precision(ground_truth, []) == 0.0
-
-
-def test_predictions_match():
-    """Test prediction matching logic."""
-    pred1 = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Adding_across")
-    pred2 = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Adding_across")
-    pred3 = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Different_tag")
-    pred4 = Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Adding_across")
-    pred5 = Prediction(category=Category.TRUE_NEITHER, misconception=None)
-    pred6 = Prediction(category=Category.TRUE_NEITHER, misconception=None)
-    
-    # Exact matches
-    assert _predictions_match(pred1, pred2) is True
-    assert _predictions_match(pred5, pred6) is True
-    
-    # Different misconceptions
-    assert _predictions_match(pred1, pred3) is False
-    
-    # Different categories
-    assert _predictions_match(pred1, pred4) is False
-
-
-def test_prepare_cross_validation_data(tmp_path):
-    """Test preparation of cross-validation data from train.csv."""
-    # Create sample train.csv
-    train_data = {
-        "row_id": [1, 2, 3],
-        "QuestionId": [101, 102, 103],
-        "QuestionText": ["What is 2+2?", "What is 3+3?", "What is 4+4?"],
-        "MC_Answer": ["A", "B", "C"],
-        "StudentExplanation": ["I think it's 4", "I think it's 6", "I think it's 8"],
-        "Category": ["True_Correct", "False_Misconception", "True_Neither"],
-        "Misconception": ["Adding_across", "Denominator-only_change", "NA"]
-    }
-    
-    train_csv_path = tmp_path / "train.csv"
-    pd.DataFrame(train_data).to_csv(train_csv_path, index=False)
-    
-    test_rows, ground_truth_data = _prepare_cross_validation_data(train_csv_path)
-    
-    # Check test rows
-    assert len(test_rows) == 3
-    assert test_rows[0].row_id == 1
-    assert test_rows[0].question_id == 101
-    assert test_rows[0].question_text == "What is 2+2?"
-    assert test_rows[0].mc_answer == "A"
-    assert test_rows[0].student_explanation == "I think it's 4"
-    
-    # Check ground truth data
-    assert len(ground_truth_data) == 3
-    assert list(ground_truth_data.columns) == ["row_id", "Category", "Misconception"]
-    assert ground_truth_data.iloc[0]["row_id"] == 1
-    assert ground_truth_data.iloc[0]["Category"] == "True_Correct"
-    assert ground_truth_data.iloc[0]["Misconception"] == "Adding_across"
-
-
-def test_save_submission_csv(tmp_path):
-    """Test saving predictions in submission CSV format."""
-    # Create sample submission rows
-    predictions = [
-        SubmissionRow(
-            row_id=1,
-            predicted_categories=[
-                Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Adding_across"),
-                Prediction(category=Category.FALSE_NEITHER, misconception=None)
-            ]
-        ),
-        SubmissionRow(
-            row_id=2,
-            predicted_categories=[
-                Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Denominator-only_change")
-            ]
-        )
-    ]
-    
-    submission_path = tmp_path / "submission.csv"
-    _save_submission_csv(predictions, submission_path)
-    
-    # Read back and verify
-    result_df = pd.read_csv(submission_path)
-    
-    assert len(result_df) == 2
-    assert result_df.iloc[0]["row_id"] == 1
-    assert result_df.iloc[0]["predictions"] == "True_Misconception:Adding_across False_Neither:NA"
-    assert result_df.iloc[1]["row_id"] == 2
-    assert result_df.iloc[1]["predictions"] == "False_Misconception:Denominator-only_change"
 
 
 def test_load_ground_truth_file_assertions(tmp_path):
@@ -390,14 +256,58 @@ def test_load_submissions_with_invalid_predictions(temp_csv_files):
     assert len(result[3]) == 0
 
 
-def test_prepare_cross_validation_data_assertions(tmp_path):
-    """Test that _prepare_cross_validation_data validates input properly."""
-    # Test empty train.csv - create CSV with headers but no data
-    empty_path = tmp_path / "empty_train.csv"
-    with open(empty_path, 'w') as f:
-        f.write("row_id,QuestionId,QuestionText,MC_Answer,StudentExplanation,Category,Misconception\n")
+def test_evaluate_with_custom_metric_function(temp_csv_files):
+    """Test that evaluate function works with custom metric functions."""
+    ground_truth_data = {
+        "row_id": [1, 2],
+        "Category": ["True_Correct", "False_Misconception"],
+        "Misconception": ["Adding_across", "Denominator-only_change"]
+    }
     
-    with pytest.raises(AssertionError, match="Training CSV cannot be empty"):
-        _prepare_cross_validation_data(empty_path)
+    submission_data = {
+        "row_id": [1, 2],
+        "predictions": [
+            "True_Correct:Adding_across False_Neither:Other_tag",
+            "False_Neither:Other_tag False_Misconception:Denominator-only_change"
+        ]
+    }
+    
+    gt_path, sub_path = temp_csv_files(ground_truth_data, submission_data)
+    
+    # Custom metric that always returns 0.8
+    def custom_metric(ground_truth, predictions):
+        return 0.8
+    
+    result = evaluate(gt_path, sub_path, metric_fn=custom_metric)
+    
+    # Should use custom metric, not MAP@3
+    assert result == 0.8
 
 
+def test_evaluate_with_default_map_at_3_metric(temp_csv_files):
+    """Test that evaluate function uses MAP@3 by default."""
+    ground_truth_data = {
+        "row_id": [1, 2],
+        "Category": ["True_Correct", "False_Misconception"],
+        "Misconception": ["Adding_across", "Denominator-only_change"]
+    }
+    
+    submission_data = {
+        "row_id": [1, 2],
+        "predictions": [
+            "True_Correct:Adding_across False_Neither:Other_tag",  # 1st position: 1.0
+            "False_Neither:Other_tag False_Misconception:Denominator-only_change"  # 2nd position: 0.5
+        ]
+    }
+    
+    gt_path, sub_path = temp_csv_files(ground_truth_data, submission_data)
+    
+    # Test with default metric (should be MAP@3)
+    result_default = evaluate(gt_path, sub_path)
+    
+    # Test with explicit MAP@3 metric
+    result_explicit = evaluate(gt_path, sub_path, metric_fn=calculate_map_at_3)
+    
+    # Both should give the same result
+    assert result_default == result_explicit
+    assert result_default == pytest.approx((1.0 + 0.5) / 2)

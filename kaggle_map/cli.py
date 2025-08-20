@@ -26,9 +26,7 @@ def cli() -> None:
 
 @click.command()
 @click.argument("strategy", type=click.Choice(list_strategies(), case_sensitive=False))
-@click.argument(
-    "action", type=click.Choice(["fit", "eval", "predict"], case_sensitive=False)
-)
+@click.argument("action", type=click.Choice(["fit", "eval", "predict"], case_sensitive=False))
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed model information")
 @click.option("--model-path", type=click.Path(), help="Path to saved model file")
 @click.option("--output-path", type=click.Path(), help="Path for output files")
@@ -74,9 +72,7 @@ def run(
         embeddings_path=str(embeddings_path) if embeddings_path else None,
     )
 
-    context_logger.info(
-        "Starting CLI run command", extra={"command": "run", "status": "started"}
-    )
+    context_logger.info("Starting CLI run command", extra={"command": "run", "status": "started"})
     context_logger.debug("Run parameters validated and parsed")
 
     console = Console()
@@ -132,9 +128,7 @@ def run(
         context_logger.info(
             "CLI run completed successfully",
             execution_time_seconds=execution_time,
-            action_timing_info=action_result
-            if isinstance(action_result, dict)
-            else None,
+            action_timing_info=action_result if isinstance(action_result, dict) else None,
             extra={"command": "run", "status": "completed"},
         )
 
@@ -188,9 +182,7 @@ def list_strategies_cmd() -> None:
         # Create instance to get description (strategies might need to be instantiated)
         try:
             # Try to get description from class if available
-            if hasattr(strategy_class, "description") and isinstance(
-                strategy_class.description, str
-            ):
+            if hasattr(strategy_class, "description") and isinstance(strategy_class.description, str):
                 description = strategy_class.description
             else:
                 # Try to create a temporary instance to get description
@@ -245,10 +237,7 @@ def _handle_fit(
         context_logger.debug("Analyzing strategy fit method capabilities")
         fit_method = strategy_class.fit
 
-        supports_enhanced_params = (
-            hasattr(fit_method, "__code__")
-            and "train_split" in fit_method.__code__.co_varnames
-        )
+        supports_enhanced_params = hasattr(fit_method, "__code__") and "train_split" in fit_method.__code__.co_varnames
         context_logger.debug(
             "Strategy parameter support analyzed",
             supports_enhanced_params=supports_enhanced_params,
@@ -258,10 +247,7 @@ def _handle_fit(
             # Build kwargs based on what the strategy supports
             fit_kwargs = {"train_split": train_split, "random_seed": random_seed}
 
-            supports_embeddings = (
-                "embeddings_path" in fit_method.__code__.co_varnames
-                and embeddings_path is not None
-            )
+            supports_embeddings = "embeddings_path" in fit_method.__code__.co_varnames and embeddings_path is not None
             context_logger.debug(
                 "Strategy embedding support analyzed",
                 supports_embeddings=supports_embeddings,
@@ -273,9 +259,7 @@ def _handle_fit(
                     "Using pre-computed embeddings",
                     embeddings_path=str(embeddings_path),
                 )
-                console.print(
-                    f"[dim]Using pre-computed embeddings from {embeddings_path}[/dim]"
-                )
+                console.print(f"[dim]Using pre-computed embeddings from {embeddings_path}[/dim]")
 
             context_logger.debug(
                 "Calling strategy fit method with enhanced parameters",
@@ -301,15 +285,11 @@ def _handle_fit(
                 extra={"phase": "model_trained"},
             )
 
-    console.print(
-        f"✅ [bold green]{strategy.title()} strategy completed successfully![/bold green]"
-    )
+    console.print(f"✅ [bold green]{strategy.title()} strategy completed successfully![/bold green]")
 
     # Display results
     context_logger.info("Model training completed successfully")
-    console.print(
-        f"[bold green]✅ {strategy.title()} model trained successfully![/bold green]"
-    )
+    console.print(f"[bold green]✅ {strategy.title()} model trained successfully![/bold green]")
 
     # Save model
     model_path = Path(output_path) if output_path else Path(f"models/{strategy}.pkl")
@@ -396,23 +376,17 @@ def _handle_eval(
             extra={"phase": "model_loaded"},
         )
 
-    console.print(
-        f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]"
-    )
+    console.print(f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]")
 
     # Run evaluation if the strategy supports it
     supports_evaluation = hasattr(strategy_class, "evaluate_on_split")
-    context_logger.debug(
-        "Strategy evaluation support analyzed", supports_evaluation=supports_evaluation
-    )
+    context_logger.debug("Strategy evaluation support analyzed", supports_evaluation=supports_evaluation)
 
     if supports_evaluation:
         try:
             with console.status(f"[bold blue]Evaluating {strategy} model..."):
                 eval_compute_start = time.time()
-                context_logger.info(
-                    "Starting model evaluation", extra={"phase": "evaluation_start"}
-                )
+                context_logger.info("Starting model evaluation", extra={"phase": "evaluation_start"})
                 eval_results = strategy_class.evaluate_on_split(model)  # type: ignore[misc]
                 eval_compute_time = time.time() - eval_compute_start
                 context_logger.info(
@@ -437,12 +411,8 @@ def _handle_eval(
             }
 
             # Update performance history with timing information
-            context_logger.debug(
-                "Updating performance history with timing", timing_info=timing_info
-            )
-            _update_performance_history(
-                strategy, eval_results, timing_info, context_logger
-            )
+            context_logger.debug("Updating performance history with timing", timing_info=timing_info)
+            _update_performance_history(strategy, eval_results, timing_info, context_logger)
 
             context_logger.info(
                 "Eval operation completed successfully",
@@ -467,9 +437,7 @@ def _handle_eval(
                 },
             )
             console.print(f"[bold red]Evaluation error:[/bold red] {e}")
-            console.print(
-                f"[yellow]Hint: Train with --train-split {train_split} to create validation split[/yellow]"
-            )
+            console.print(f"[yellow]Hint: Train with --train-split {train_split} to create validation split[/yellow]")
             return None
     else:
         total_eval_time = time.time() - eval_start_time
@@ -480,9 +448,7 @@ def _handle_eval(
             extra={"action": "eval", "phase": "skipped", "reason": "not_supported"},
         )
         console.print("[yellow]Strategy does not support evaluation[/yellow]")
-        console.print(
-            "[dim]Only available for strategies with evaluate_on_split method[/dim]"
-        )
+        console.print("[dim]Only available for strategies with evaluate_on_split method[/dim]")
         return None
 
 
@@ -519,9 +485,7 @@ def _handle_predict(
             extra={"action": "predict", "phase": "failed", "error": "model_not_found"},
         )
         console.print(f"[bold red]Model file not found: {model_file}[/bold red]")
-        console.print(
-            f"[yellow]Hint: Run '{strategy} fit' first, or specify --model-path[/yellow]"
-        )
+        console.print(f"[yellow]Hint: Run '{strategy} fit' first, or specify --model-path[/yellow]")
         raise click.Abort()
 
     with console.status(f"[bold blue]Loading {strategy} model..."):
@@ -535,9 +499,7 @@ def _handle_predict(
             extra={"phase": "model_loaded"},
         )
 
-    console.print(
-        f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]"
-    )
+    console.print(f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]")
 
     # TODO: Implement prediction logic for test data
     # Suppress unused-arg warning until implemented
@@ -557,9 +519,7 @@ def _display_eval_results(console: Console, eval_results: dict[str, float]) -> N
     eval_table.add_column("Value", style="magenta")
     eval_table.add_column("Description", style="dim")
 
-    eval_table.add_row(
-        "MAP@3 Score", f"{eval_results['map_score']:.4f}", "Mean Average Precision at 3"
-    )
+    eval_table.add_row("MAP@3 Score", f"{eval_results['map_score']:.4f}", "Mean Average Precision at 3")
     eval_table.add_row(
         "Total Observations",
         str(eval_results["total_observations"]),
@@ -580,21 +540,13 @@ def _display_eval_results(console: Console, eval_results: dict[str, float]) -> N
 
     map_score = eval_results["map_score"]
     if map_score >= excellent_threshold:
-        console.print(
-            "\n🎉 [bold green]Excellent performance![/bold green] Model shows strong validation results."
-        )
+        console.print("\n🎉 [bold green]Excellent performance![/bold green] Model shows strong validation results.")
     elif map_score >= good_threshold:
-        console.print(
-            "\n✅ [bold blue]Good performance.[/bold blue] Model shows reasonable validation results."
-        )
+        console.print("\n✅ [bold blue]Good performance.[/bold blue] Model shows reasonable validation results.")
     elif map_score >= moderate_threshold:
-        console.print(
-            "\n⚠️  [bold yellow]Moderate performance.[/bold yellow] Model has room for improvement."
-        )
+        console.print("\n⚠️  [bold yellow]Moderate performance.[/bold yellow] Model has room for improvement.")
     else:
-        console.print(
-            "\n⚠️  [bold red]Poor performance.[/bold red] Model needs significant improvement."
-        )
+        console.print("\n⚠️  [bold red]Poor performance.[/bold red] Model needs significant improvement.")
 
 
 def _update_performance_history(
@@ -616,20 +568,14 @@ def _update_performance_history(
         context_logger.debug("Loading existing performance history")
         with performance_file.open() as f:
             performance_history = json.load(f)
-        context_logger.debug(
-            "Loaded existing performance entries", entry_count=len(performance_history)
-        )
+        context_logger.debug("Loaded existing performance entries", entry_count=len(performance_history))
     else:
-        context_logger.debug(
-            "No existing performance history file found, creating new one"
-        )
+        context_logger.debug("No existing performance history file found, creating new one")
 
     # Get current git commit hash
     try:
         context_logger.debug("Retrieving git commit hash")
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
         commit_hash = result.stdout.strip()
         context_logger.debug(
             "Retrieved git commit hash",
@@ -674,9 +620,7 @@ def _update_performance_history(
     performance_history.append(new_entry)
     performance_history.sort(key=lambda x: x["map_score"], reverse=True)
 
-    context_logger.debug(
-        "Performance history updated", total_entries=len(performance_history)
-    )
+    context_logger.debug("Performance history updated", total_entries=len(performance_history))
 
     # Save updated history
     try:

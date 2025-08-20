@@ -33,9 +33,7 @@ class TrainingData(NamedTuple):
 
     embeddings: np.ndarray  # Shape: (n_samples, embedding_dim) - text embeddings
     correctness: np.ndarray  # Shape: (n_samples,) - binary correctness labels
-    misconception_labels: dict[
-        QuestionId, np.ndarray
-    ]  # Question-specific misconception labels
+    misconception_labels: dict[QuestionId, np.ndarray]  # Question-specific misconception labels
     question_ids: np.ndarray  # Shape: (n_samples,) - question ID for each sample
 
 
@@ -51,9 +49,7 @@ class ProcessedRows(NamedTuple):
     embeddings: list[np.ndarray]  # List of embedding arrays
     correctness: list[float]  # List of correctness values
     question_ids: list[QuestionId]  # List of question IDs
-    misconception_labels: dict[
-        QuestionId, list[np.ndarray]
-    ]  # Per-question misconception labels
+    misconception_labels: dict[QuestionId, list[np.ndarray]]  # Per-question misconception labels
 
 
 @dataclass(frozen=True)
@@ -69,9 +65,7 @@ class DatasetItem:
     """
 
     features: torch.Tensor  # Shape: (embedding_dim,) - input features
-    labels: dict[
-        str, torch.Tensor
-    ]  # Multi-head labels (correctness, misconceptions, etc.)
+    labels: dict[str, torch.Tensor]  # Multi-head labels (correctness, misconceptions, etc.)
     question_id: QuestionId  # Question identifier
     sample_index: int  # Index in dataset
 
@@ -134,9 +128,7 @@ def collate_multihead_batch(  # noqa: PLR0912
     multi_labels = {}
 
     # Correctness labels (consistent shape across samples)
-    multi_labels["correctness"] = torch.stack(
-        [item[1]["correctness"] for item in batch]
-    )
+    multi_labels["correctness"] = torch.stack([item[1]["correctness"] for item in batch])
 
     # Misconception labels - pad to max size in batch
     misc_labels = [item[1]["misconceptions"] for item in batch]
@@ -153,11 +145,7 @@ def collate_multihead_batch(  # noqa: PLR0912
         multi_labels["misconceptions"] = torch.stack(padded_misc)
 
     # Correct category labels - pad to max size in batch
-    correct_cat_labels = [
-        item[1].get("correct_categories")
-        for item in batch
-        if "correct_categories" in item[1]
-    ]
+    correct_cat_labels = [item[1].get("correct_categories") for item in batch if "correct_categories" in item[1]]
     if correct_cat_labels:
         max_correct_size = max(label.size(0) for label in correct_cat_labels)
         padded_correct = []
@@ -171,17 +159,11 @@ def collate_multihead_batch(  # noqa: PLR0912
                 else:
                     padded_correct.append(label)
             else:
-                padded_correct.append(
-                    torch.zeros(max_correct_size, device=features.device)
-                )
+                padded_correct.append(torch.zeros(max_correct_size, device=features.device))
         multi_labels["correct_categories"] = torch.stack(padded_correct)
 
     # Incorrect category labels - pad to max size in batch
-    incorrect_cat_labels = [
-        item[1].get("incorrect_categories")
-        for item in batch
-        if "incorrect_categories" in item[1]
-    ]
+    incorrect_cat_labels = [item[1].get("incorrect_categories") for item in batch if "incorrect_categories" in item[1]]
     if incorrect_cat_labels:
         max_incorrect_size = max(label.size(0) for label in incorrect_cat_labels)
         padded_incorrect = []
@@ -195,9 +177,7 @@ def collate_multihead_batch(  # noqa: PLR0912
                 else:
                     padded_incorrect.append(label)
             else:
-                padded_incorrect.append(
-                    torch.zeros(max_incorrect_size, device=features.device)
-                )
+                padded_incorrect.append(torch.zeros(max_incorrect_size, device=features.device))
         multi_labels["incorrect_categories"] = torch.stack(padded_incorrect)
 
     # Move all tensors to target device if specified

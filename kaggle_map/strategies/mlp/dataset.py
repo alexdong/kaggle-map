@@ -81,9 +81,7 @@ class MLPDataset(Dataset):
         # Build labels in same order as global dataset
         for _global_idx, qid in enumerate(question_ids):
             local_idx = question_local_indices[qid]
-            if qid in misconception_labels and local_idx < len(
-                misconception_labels[qid]
-            ):
+            if qid in misconception_labels and local_idx < len(misconception_labels[qid]):
                 misc_label = misconception_labels[qid][local_idx]
                 self.misconception_labels.append(torch.FloatTensor(misc_label))
             else:
@@ -105,9 +103,7 @@ class MLPDataset(Dataset):
         Returns:
             DatasetItem with structured fields instead of tuple
         """
-        assert 0 <= idx < len(self.embeddings), (
-            f"Index {idx} out of range [0, {len(self.embeddings)})"
-        )
+        assert 0 <= idx < len(self.embeddings), f"Index {idx} out of range [0, {len(self.embeddings)})"
         question_id = self.question_ids[idx]
 
         # Features: embedding only (no ground truth correctness)
@@ -115,9 +111,7 @@ class MLPDataset(Dataset):
 
         # Multi-head labels
         labels = {
-            "correctness": self.correctness[
-                idx
-            ],  # Ground truth correctness for training
+            "correctness": self.correctness[idx],  # Ground truth correctness for training
             "misconceptions": self.misconception_labels[idx],
         }
 

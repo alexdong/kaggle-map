@@ -43,10 +43,7 @@ class EmbeddingModel(Enum):
                 model_id="sentence-transformers/all-mpnet-base-v2",
                 dim=768,
                 recommended_max_seq=512,
-                notes=(
-                    "Runner-up; often a bit stronger on general retrieval. "
-                    "~2-3x slower, 2x vector size vs MiniLM."
-                ),
+                notes=("Runner-up; often a bit stronger on general retrieval. ~2-3x slower, 2x vector size vs MiniLM."),
             ),
             EmbeddingModel.GTE_SMALL: EmbeddingSpec(
                 model_id="thenlper/gte-small",

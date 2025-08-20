@@ -23,13 +23,9 @@ def fit_model(
     # Display model statistics
     logger.info(f"Model trained on {len(model.correct_answers)} questions")
     logger.info(f"Found correct answers for {len(model.correct_answers)} questions")
-    logger.info(
-        f"Built category patterns for {len(model.category_frequencies)} questions"
-    )
+    logger.info(f"Built category patterns for {len(model.category_frequencies)} questions")
 
-    misconception_count = sum(
-        1 for m in model.common_misconceptions.values() if m is not None
-    )
+    misconception_count = sum(1 for m in model.common_misconceptions.values() if m is not None)
     logger.info(f"Extracted misconceptions for {misconception_count} questions")
 
     # Save the model

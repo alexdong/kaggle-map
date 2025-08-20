@@ -8,7 +8,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.models import EvaluationRow
+from kaggle_map.models import EvaluationRow, RowId
 from kaggle_map.strategies.baseline import BaselineStrategy
 
 
@@ -33,7 +33,7 @@ def make_predictions(
     for _, row in test_df.iterrows():
         test_rows.append(
             EvaluationRow(
-                row_id=int(row["row_id"]),
+                row_id=RowId(row["row_id"]),
                 question_id=int(row["QuestionId"]),
                 question_text=str(row["QuestionText"]),
                 mc_answer=str(row["MC_Answer"]),
@@ -51,9 +51,7 @@ def make_predictions(
     for pred in predictions:
         # Convert Prediction objects to space-separated string
         pred_strings = [str(p) for p in pred.predicted_categories]
-        submission_data.append(
-            {"row_id": pred.row_id, "predictions": " ".join(pred_strings)}
-        )
+        submission_data.append({"row_id": pred.row_id, "predictions": " ".join(pred_strings)})
 
     # Save submission file
     submission_df = pd.DataFrame(submission_data)
@@ -81,9 +79,7 @@ def load_and_preview_test_data(test_csv_path: Path, console: Console) -> pd.Data
     # Show sample rows
     console.print("\n[bold]Sample Test Rows[/bold]")
     for i, (_, row) in enumerate(test_df.head(3).iterrows()):
-        console.print(
-            f"Row {i + 1}: Question {row['QuestionId']} - {row['QuestionText'][:50]}..."
-        )
+        console.print(f"Row {i + 1}: Question {row['QuestionId']} - {row['QuestionText'][:50]}...")
 
     return test_df
 

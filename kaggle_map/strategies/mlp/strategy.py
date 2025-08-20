@@ -94,9 +94,7 @@ class MLPStrategy(Strategy):
         ).info("Starting MLP strategy fit")
 
         # Set random seeds for deterministic training
-        logger.debug(
-            "Setting random seeds for deterministic training", seed=random_seed
-        )
+        logger.debug("Setting random seeds for deterministic training", seed=random_seed)
         set_random_seeds(random_seed)
 
         # Parse training data
@@ -166,9 +164,7 @@ class MLPStrategy(Strategy):
                 embedding_model=embedding_model.model_id,
             )
             # For now, fall back to generating embeddings from scratch
-            logger.warning(
-                "Pre-computed embeddings not yet supported, generating from scratch"
-            )
+            logger.warning("Pre-computed embeddings not yet supported, generating from scratch")
             training_data_prepared = prepare_training_data(
                 training_data,
                 correct_answers,
@@ -264,12 +260,8 @@ class MLPStrategy(Strategy):
         # Generate prediction
         with torch.no_grad():
             if evaluation_row.question_id not in self.question_misconceptions:
-                logger.warning(
-                    f"Unknown question {evaluation_row.question_id} - using default prediction"
-                )
-                predicted_categories = predictor.create_default_prediction(
-                    evaluation_row
-                )
+                logger.warning(f"Unknown question {evaluation_row.question_id} - using default prediction")
+                predicted_categories = predictor.create_default_prediction(evaluation_row)
             else:
                 # Model inference
                 outputs = self.model(embedding_tensor, evaluation_row.question_id)

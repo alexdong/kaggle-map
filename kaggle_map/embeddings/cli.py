@@ -39,9 +39,7 @@ from kaggle_map.models import TrainingRow
     default=100,
     help="Batch size for processing embeddings (default: 100)",
 )
-def generate_embeddings(
-    input_csv: Path, output_dir: Path, embedding_model: str, batch_size: int
-) -> None:
+def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str, batch_size: int) -> None:
     """Generate embeddings for training data and save to numpy format.
 
     This tool reads the training CSV, generates embeddings for each row,
@@ -66,9 +64,7 @@ def generate_embeddings(
         training_data = _load_training_rows_from_csv(input_csv)
         logger.info(f"Loaded {len(training_data)} training rows")
 
-    console.print(
-        f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]"
-    )
+    console.print(f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]")
 
     # Initialize embedding model
     with console.status("[bold green]Initializing embedding model..."):
@@ -76,15 +72,11 @@ def generate_embeddings(
         tokenizer = get_tokenizer(embedding_model_obj)
         logger.info(f"Initialized embedding model: {embedding_model_obj.model_id}")
 
-    console.print(
-        f"✅ [bold green]Initialized {embedding_model_obj.model_id}[/bold green]"
-    )
+    console.print(f"✅ [bold green]Initialized {embedding_model_obj.model_id}[/bold green]")
 
     # Generate embeddings
     console.print("[bold blue]Generating embeddings...[/bold blue]")
-    row_ids, misconceptions, embeddings = _generate_embeddings_batch(
-        training_data, tokenizer, batch_size, console
-    )
+    row_ids, misconceptions, embeddings = _generate_embeddings_batch(training_data, tokenizer, batch_size, console)
 
     # Save to numpy format
     output_dir.mkdir(exist_ok=True)
@@ -94,9 +86,7 @@ def generate_embeddings(
         np.savez_compressed(
             output_file,
             row_ids=np.array(row_ids),
-            misconceptions=np.array(
-                misconceptions
-            ),  # String array, no object dtype needed
+            misconceptions=np.array(misconceptions),  # String array, no object dtype needed
             embeddings=np.array(embeddings),
         )
         logger.info(f"Saved embeddings to {output_file}")
@@ -164,9 +154,7 @@ def _generate_embeddings_batch(
             batch_row_ids.append(row.row_id)
 
             # Use "NA" for empty misconceptions as requested
-            misconception_str = (
-                row.misconception if row.misconception is not None else "NA"
-            )
+            misconception_str = row.misconception if row.misconception is not None else "NA"
             batch_misconceptions.append(misconception_str)
 
         # Generate embeddings for batch
@@ -181,9 +169,7 @@ def _generate_embeddings_batch(
     return row_ids, misconceptions, embeddings
 
 
-def _display_summary(
-    console: Console, output_file: Path, num_rows: int, embedding_dim: int
-) -> None:
+def _display_summary(console: Console, output_file: Path, num_rows: int, embedding_dim: int) -> None:
     """Display summary of embedding generation."""
     file_size_mb = output_file.stat().st_size / (1024 * 1024)
 

@@ -14,12 +14,8 @@ def normalize_latex_answer(s: str) -> str:
     if m:
         num, den = m.group(1), m.group(2)
         # Validate that numerator and denominator are valid integers
-        assert num.isdigit() or (num.startswith("-") and num[1:].isdigit()), (
-            f"Invalid numerator in fraction: {num}"
-        )
-        assert den.isdigit() or (den.startswith("-") and den[1:].isdigit()), (
-            f"Invalid denominator in fraction: {den}"
-        )
+        assert num.isdigit() or (num.startswith("-") and num[1:].isdigit()), f"Invalid numerator in fraction: {num}"
+        assert den.isdigit() or (den.startswith("-") and den[1:].isdigit()), f"Invalid denominator in fraction: {den}"
 
         n, d = int(num), int(den)
         assert d != 0, f"Denominator cannot be zero in fraction: {num}/{den}"

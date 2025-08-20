@@ -183,16 +183,12 @@ class MLPPredictor:
             misconception_probs = sigmoid(misconception_logits)
 
             # Get the best misconception using proper types
-            best_misconception = get_best_misconception(
-                misconception_probs, question_id, self.question_misconceptions
-            )
+            best_misconception = get_best_misconception(misconception_probs, question_id, self.question_misconceptions)
 
             if best_misconception:
                 # Create prediction with misconception
                 fallback_category = Category(f"{prefix}Neither")
-                misconception_prediction = Prediction(
-                    category=fallback_category, misconception=best_misconception
-                )
+                misconception_prediction = Prediction(category=fallback_category, misconception=best_misconception)
                 predictions.append(misconception_prediction)
 
         # Always add a fallback prediction based on correctness
@@ -229,9 +225,7 @@ class MLPPredictor:
 
         return [default_prediction]
 
-    def is_answer_correct(
-        self, question_id: QuestionId, student_answer: Answer
-    ) -> bool:
+    def is_answer_correct(self, question_id: QuestionId, student_answer: Answer) -> bool:
         """Check if student answer matches the correct answer.
 
         Args:

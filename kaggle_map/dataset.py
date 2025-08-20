@@ -60,9 +60,7 @@ def extract_correct_answers(
 
     logger.debug(f"Extracted correct answers for {len(correct_answers)} questions")
     assert correct_answers, "Must find at least one correct answer"
-    assert all(isinstance(qid, int) for qid in correct_answers), (
-        "Question IDs must be integers"
-    )
+    assert all(isinstance(qid, int) for qid in correct_answers), "Question IDs must be integers"
     return correct_answers
 
 
@@ -85,13 +83,8 @@ def build_category_frequencies(
     question_correctness_categories = defaultdict(lambda: defaultdict(list))
 
     for row in training_data:
-        is_correct = (
-            row.question_id in correct_answers
-            and row.mc_answer == correct_answers[row.question_id]
-        )
-        question_correctness_categories[row.question_id][is_correct].append(
-            row.category
-        )
+        is_correct = row.question_id in correct_answers and row.mc_answer == correct_answers[row.question_id]
+        question_correctness_categories[row.question_id][is_correct].append(row.category)
 
     # Build frequency-ordered lists
     result = {}
@@ -100,9 +93,7 @@ def build_category_frequencies(
         for is_correct, categories in correctness_map.items():
             # Count frequencies and sort by most common
             category_counts = Counter(categories)
-            ordered_categories = [
-                category for category, _ in category_counts.most_common()
-            ]
+            ordered_categories = [category for category, _ in category_counts.most_common()]
             result[question_id][is_correct] = ordered_categories
 
     logger.debug(f"Built category frequencies for {len(result)} questions")
@@ -172,17 +163,13 @@ def analyze_dataset(csv_path: Path) -> dict[str, Any]:
 
     # Basic statistics
     unique_questions = len({row.question_id for row in training_data})
-    unique_misconceptions = len(
-        {row.misconception for row in training_data if row.misconception != "NA"}
-    )
+    unique_misconceptions = len({row.misconception for row in training_data if row.misconception != "NA"})
 
     # Category distribution
     category_counts = Counter(row.category for row in training_data)
 
     # Misconception analysis
-    misconception_counts = Counter(
-        row.misconception for row in training_data if row.misconception != "NA"
-    )
+    misconception_counts = Counter(row.misconception for row in training_data if row.misconception != "NA")
 
     # Question complexity (number of unique answers per question)
     question_answer_counts = defaultdict(set)
@@ -196,11 +183,6 @@ def analyze_dataset(csv_path: Path) -> dict[str, Any]:
         "unique_misconceptions": unique_misconceptions,
         "category_distribution": dict(category_counts),
         "top_misconceptions": dict(misconception_counts.most_common(10)),
-        "avg_answers_per_question": sum(
-            len(answers) for answers in question_answer_counts.values()
-        )
-        / unique_questions,
-        "max_answers_per_question": max(
-            len(answers) for answers in question_answer_counts.values()
-        ),
+        "avg_answers_per_question": sum(len(answers) for answers in question_answer_counts.values()) / unique_questions,
+        "max_answers_per_question": max(len(answers) for answers in question_answer_counts.values()),
     }
