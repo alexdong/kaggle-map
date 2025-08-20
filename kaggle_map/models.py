@@ -3,6 +3,7 @@
 from enum import Enum
 from typing import NamedTuple
 
+import pandas as pd
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
@@ -10,6 +11,8 @@ from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
 # Domain-specific type aliases
 type QuestionId = int
 type Answer = str
+type Question = str  # Question text from math problems
+type Explanation = str  # Student's explanation of their reasoning
 type Misconception = (
     str  # Specific misconception identifier (e.g., "AddInsteadOfMultiply")
 )
@@ -59,9 +62,9 @@ class Prediction(BaseModel):
 class EvaluationRow(BaseModel):
     row_id: int
     question_id: QuestionId
-    question_text: str
+    question_text: Question
     mc_answer: Answer
-    student_explanation: str
+    student_explanation: Explanation
 
     @field_validator("question_text", "student_explanation")
     @classmethod
@@ -85,6 +88,29 @@ class EvaluationRow(BaseModel):
 class TrainingRow(EvaluationRow):
     category: Category
     misconception: Misconception | None
+
+    @classmethod
+    def from_dataframe_row(cls, row: pd.Series) -> "TrainingRow":
+        """Construct a TrainingRow from a pandas DataFrame row.
+        
+        Args:
+            row: A pandas Series representing a row from the training DataFrame
+            
+        Returns:
+            TrainingRow instance with normalized fields
+        """
+        # Handle NaN misconceptions (pandas converts "NA" to NaN)
+        misconception = row["Misconception"] if pd.notna(row["Misconception"]) else None
+        
+        return cls(
+            row_id=int(row["row_id"]),
+            question_id=int(row["QuestionId"]),
+            question_text=str(row["QuestionText"]),
+            mc_answer=str(row["MC_Answer"]),
+            student_explanation=str(row["StudentExplanation"]),
+            category=Category(row["Category"]),
+            misconception=misconception,
+        )
 
 
 class SubmissionRow(NamedTuple):

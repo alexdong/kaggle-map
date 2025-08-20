@@ -35,20 +35,7 @@ def parse_training_data(csv_path: Path) -> list[TrainingRow]:
 
     training_rows = []
     for _, row in training_df.iterrows():
-        # Handle NaN misconceptions (pandas converts "NA" to NaN)
-        misconception = row["Misconception"] if pd.notna(row["Misconception"]) else None
-
-        training_rows.append(
-            TrainingRow(
-                row_id=int(row["row_id"]),
-                question_id=int(row["QuestionId"]),
-                question_text=str(row["QuestionText"]),
-                mc_answer=str(row["MC_Answer"]),
-                student_explanation=str(row["StudentExplanation"]),
-                category=Category(row["Category"]),
-                misconception=misconception,
-            )
-        )
+        training_rows.append(TrainingRow.from_dataframe_row(row))
 
     logger.debug(f"Parsed {len(training_rows)} training rows")
     assert training_rows, "Must parse at least one training row"
