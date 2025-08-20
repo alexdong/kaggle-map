@@ -17,7 +17,6 @@ from kaggle_map.models import (
     Category,
     Misconception,
     QuestionId,
-    ResponseContext,
     TrainingRow,
 )
 
@@ -209,36 +208,30 @@ def extract_most_common_misconceptions(
     return result
 
 
-def create_response_contexts(
+def get_training_data_with_correct_answers(
     training_data: list[TrainingRow], correct_answers: dict[QuestionId, Answer]
-) -> list[tuple[ResponseContext, Category, Misconception | None]]:
-    """Create ResponseContext objects for all training data.
+) -> list[tuple[TrainingRow, Answer]]:
+    """Filter training data to only include rows where we know the correct answer.
 
     Args:
         training_data: List of training rows
         correct_answers: Dictionary of correct answers per question
 
     Returns:
-        List of tuples containing (ResponseContext, Category, Misconception)
+        List of tuples containing (TrainingRow, correct_answer)
         for each training row where we know the correct answer
     """
-    contexts_with_labels = []
+    filtered_data = []
 
     for row in training_data:
         # Skip if we don't know the correct answer
         if row.question_id not in correct_answers:
             continue
 
-        context = ResponseContext(
-            question_id=row.question_id,
-            selected_answer=row.mc_answer,
-            correct_answer=correct_answers[row.question_id],
-        )
+        filtered_data.append((row, correct_answers[row.question_id]))
 
-        contexts_with_labels.append((context, row.category, row.misconception))
-
-    logger.debug(f"Created {len(contexts_with_labels)} response contexts")
-    return contexts_with_labels
+    logger.debug(f"Filtered to {len(filtered_data)} training rows with correct answers")
+    return filtered_data
 
 
 def analyze_dataset(csv_path: Path) -> dict[str, Any]:

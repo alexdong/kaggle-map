@@ -15,26 +15,6 @@ type Misconception = (
 )
 
 
-class ResponseContext(NamedTuple):
-    """The fundamental unit for probability modeling.
-
-    Represents the context in which a student response occurs:
-    - What question they were answering
-    - What they selected as their answer
-    - What the correct answer actually is
-
-    This triple uniquely defines the "response state" for probability calculations.
-    """
-
-    question_id: QuestionId
-    selected_answer: Answer
-    correct_answer: Answer
-
-    @property
-    def is_correct_selection(self) -> bool:
-        """True if the student selected the correct answer."""
-        return self.selected_answer == self.correct_answer
-
 
 class Category(Enum):
     """All possible categories in the competition."""

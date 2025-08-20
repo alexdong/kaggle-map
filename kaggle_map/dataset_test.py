@@ -9,13 +9,13 @@ import pytest
 from kaggle_map.dataset import (
     analyze_dataset,
     build_category_frequencies,
-    create_response_contexts,
+    get_training_data_with_correct_answers,
     extract_correct_answers,
     extract_most_common_misconceptions,
     is_answer_correct,
     parse_training_data,
 )
-from kaggle_map.models import Category, ResponseContext, TrainingRow
+from kaggle_map.models import Category, TrainingRow
 
 
 # =============================================================================
@@ -406,58 +406,63 @@ def test_extract_most_common_misconceptions_raises_error_for_empty_data():
 # =============================================================================
 
 
-def test_create_response_contexts_creates_context_tuples(sample_training_data):
-    """create_response_contexts creates ResponseContext tuples with labels."""
+def test_get_training_data_with_correct_answers_filters_data(sample_training_data):
+    """get_training_data_with_correct_answers filters data to rows with known correct answers."""
     correct_answers = extract_correct_answers(sample_training_data)
-    contexts = create_response_contexts(sample_training_data, correct_answers)
+    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
     
-    # Should have 8 contexts (one for each training row)
-    assert len(contexts) == 8
+    # Should have 8 rows (one for each training row)
+    assert len(filtered_data) == 8
     
-    # Each context should be a tuple of (ResponseContext, Category, Misconception|None)
-    for context, category, misconception in contexts:
-        assert isinstance(context, ResponseContext)
-        assert isinstance(category, Category)
-        assert misconception is None or isinstance(misconception, str)
+    # Each item should be a tuple of (TrainingRow, correct_answer)
+    for training_row, correct_answer in filtered_data:
+        assert isinstance(training_row, TrainingRow)
+        assert isinstance(correct_answer, str)
+        assert training_row.question_id in correct_answers
+        assert correct_answer == correct_answers[training_row.question_id]
 
 
-def test_create_response_contexts_includes_correct_answer_in_context(sample_training_data):
-    """create_response_contexts includes correct answer in each ResponseContext."""
+def test_get_training_data_with_correct_answers_includes_correct_answer(sample_training_data):
+    """get_training_data_with_correct_answers includes correct answer for each row."""
     correct_answers = extract_correct_answers(sample_training_data)
-    contexts = create_response_contexts(sample_training_data, correct_answers)
+    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
     
-    # Find context for question 100
-    q100_contexts = [(ctx, cat, misc) for ctx, cat, misc in contexts if ctx.question_id == 100]
+    # Find data for question 100
+    q100_data = [(row, ans) for row, ans in filtered_data if row.question_id == 100]
     
-    # All contexts for question 100 should have correct_answer="4"
-    for context, _, _ in q100_contexts:
-        assert context.correct_answer == "4"
-        assert context.question_id == 100
+    # All data for question 100 should have correct_answer="4"
+    for training_row, correct_answer in q100_data:
+        assert correct_answer == "4"
+        assert training_row.question_id == 100
 
 
-def test_create_response_contexts_sets_correctness_property(sample_training_data):
-    """create_response_contexts sets is_correct_selection property correctly."""
+def test_get_training_data_identifies_correct_vs_incorrect_answers(sample_training_data):
+    """get_training_data_with_correct_answers allows identification of correct vs incorrect answers."""
     correct_answers = extract_correct_answers(sample_training_data)
-    contexts = create_response_contexts(sample_training_data, correct_answers)
+    filtered_data = get_training_data_with_correct_answers(sample_training_data, correct_answers)
     
-    # Find the context where student answered correctly
-    correct_context = None
-    incorrect_context = None
+    # Find the rows where student answered correctly vs incorrectly for question 100
+    correct_row = None
+    incorrect_row = None
     
-    for context, category, _ in contexts:
-        if context.question_id == 100 and context.selected_answer == "4":
-            correct_context = context
-        elif context.question_id == 100 and context.selected_answer == "5":
-            incorrect_context = context
+    for training_row, correct_answer in filtered_data:
+        if training_row.question_id == 100 and training_row.mc_answer == "4":
+            correct_row = (training_row, correct_answer)
+        elif training_row.question_id == 100 and training_row.mc_answer == "5":
+            incorrect_row = (training_row, correct_answer)
     
-    assert correct_context is not None
-    assert incorrect_context is not None
-    assert correct_context.is_correct_selection is True
-    assert incorrect_context.is_correct_selection is False
+    assert correct_row is not None
+    assert incorrect_row is not None
+    # Both should have the same correct answer
+    assert correct_row[1] == "4"
+    assert incorrect_row[1] == "4"
+    # But different selected answers
+    assert correct_row[0].mc_answer == "4"  # Correct selection
+    assert incorrect_row[0].mc_answer == "5"  # Incorrect selection
 
 
-def test_create_response_contexts_skips_unknown_correct_answers():
-    """create_response_contexts skips rows where correct answer is unknown."""
+def test_get_training_data_skips_unknown_correct_answers():
+    """get_training_data_with_correct_answers skips rows where correct answer is unknown."""
     training_data = [
         TrainingRow(
             row_id=1, question_id=100, question_text="Known", mc_answer="A",
@@ -470,11 +475,11 @@ def test_create_response_contexts_skips_unknown_correct_answers():
     ]
     correct_answers = {100: "A"}  # Only know answer for question 100
     
-    contexts = create_response_contexts(training_data, correct_answers)
+    filtered_data = get_training_data_with_correct_answers(training_data, correct_answers)
     
-    # Should only have 1 context (question 999 skipped)
-    assert len(contexts) == 1
-    assert contexts[0][0].question_id == 100
+    # Should only have 1 row (question 999 skipped)
+    assert len(filtered_data) == 1
+    assert filtered_data[0][0].question_id == 100
 
 
 # =============================================================================
