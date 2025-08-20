@@ -313,15 +313,10 @@ def _handle_fit(
     )
 
     # Display results
-    context_logger.debug("Displaying model statistics")
-    model.display_stats(console)
-
-    if verbose:
-        context_logger.debug("Displaying detailed model information (verbose mode)")
-        model.display_detailed_info(console)
-
-    context_logger.debug("Demonstrating model predictions")
-    model.demonstrate_predictions(console)
+    context_logger.info("Model training completed successfully")
+    console.print(
+        f"[bold green]✅ {strategy.title()} model trained successfully![/bold green]"
+    )
 
     # Save model
     model_path = Path(output_path) if output_path else Path(f"{strategy}_model.pkl")
