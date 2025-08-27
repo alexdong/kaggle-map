@@ -101,10 +101,12 @@ class EvaluationRow(BaseModel):
             f"Student's Answer: {self.mc_answer}; Student's Explanation: {self.student_explanation}"
         )
 
+
 class TrainingInput(NamedTuple):
     question_id: QuestionId
     embeddings: np.ndarray
     misconception: Misconception
+
 
 class TrainingRow(EvaluationRow):
     """Training data row: EvaluationRow + Prediction.
@@ -156,6 +158,7 @@ class TrainingRow(EvaluationRow):
             embeddings=embeddings,
             misconception=self.misconception,
         )
+
 
 class SubmissionRow(NamedTuple):
     row_id: RowId

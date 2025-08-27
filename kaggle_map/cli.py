@@ -88,7 +88,7 @@ def _handle_fit(
         len(all_data), train_ratio=train_split, random_seed=random_seed
     )
 
-    params = ModelParameters.create(
+    ModelParameters.create(
         train_split=train_split,
         random_seed=random_seed,
         train_indices=train_indices,
@@ -98,10 +98,7 @@ def _handle_fit(
     )
 
     # Save model with parameters
-    if hasattr(model, "save") and "parameters" in model.save.__code__.co_varnames:
-        model.save(model_path, parameters=params)
-    else:
-        model.save(model_path)
+    model.save(model_path)
 
     print(f"Model trained and saved to {model_path}")
     print(f"Training split: {train_split}, Random seed: {random_seed}")
@@ -121,17 +118,12 @@ def _handle_eval(
     # Check if model file exists
     if model_file.exists():
         # Load model and parameters
-        load_result = strategy_class.load(model_file)
-        if isinstance(load_result, tuple):
-            model, params = load_result
-            if params:
-                # Use saved parameters if available
-                print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
-                train_split = params.train_split
-                random_seed = params.random_seed
-        else:
-            # Backward compatibility for models without parameter support
-            model = load_result
+        model = strategy_class.load(model_file)
+        if hasattr(model, "parameters") and model.parameters:
+            params = model.parameters
+            print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
+            train_split = params.train_split
+            random_seed = params.random_seed
     # For MLP, try to use checkpoint if no model file exists
     elif strategy == "mlp":
         print("Model file not found, looking for checkpoints...")
@@ -150,7 +142,6 @@ def _handle_eval(
             print(f"  {key}: {value:.4f}")
         else:
             print(f"  {key}: {value}")
-
 
 
 # Add commands to CLI group

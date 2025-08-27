@@ -67,9 +67,7 @@ class BaselineStrategy(Strategy):
         train_data, val_data, test_data = split_training_data(
             all_training_data, train_ratio=train_split, random_seed=random_seed
         )
-        logger.info(
-            f"Data split: train={len(train_data)}, val={len(val_data)}, test={len(test_data)}"
-        )
+        logger.info(f"Data split: train={len(train_data)}, val={len(val_data)}, test={len(test_data)}")
 
         # Train only on the training split
         correct_answers = extract_correct_answers(train_data)
