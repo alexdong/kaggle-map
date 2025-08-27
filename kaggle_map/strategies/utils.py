@@ -170,9 +170,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-import wandb
 from torch import nn
 from torch.utils.data import DataLoader
+
+import wandb
 
 
 @dataclass
@@ -488,16 +489,19 @@ def train_epoch(
             loss = criterion(outputs, targets)
             n_samples = inputs.size(0)
 
-        if loss is not None and loss.requires_grad:
-            loss.backward()
-            optimizer.step()
-
-            # Step scheduler if it's OneCycle (per-batch stepping)
-            if scheduler and hasattr(scheduler, "__class__") and scheduler.__class__.__name__ == "OneCycleLR":
-                scheduler.step()
-
+        if loss is not None:
+            # Accumulate loss for reporting
             total_loss += loss.item() * n_samples
             total_samples += n_samples
+
+            # Backward pass only if gradient required
+            if loss.requires_grad:
+                loss.backward()
+                optimizer.step()
+
+                # Step scheduler if it's OneCycle (per-batch stepping)
+                if scheduler and hasattr(scheduler, "__class__") and scheduler.__class__.__name__ == "OneCycleLR":
+                    scheduler.step()
 
     return total_loss / total_samples if total_samples > 0 else 0.0
 

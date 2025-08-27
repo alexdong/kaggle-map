@@ -42,13 +42,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
@@ -203,13 +203,19 @@ class QuestionSpecificMLP(nn.Module):
                 question_features = shared_features[mask]
                 question_correctness = is_correct[mask]
 
-                # Use different heads based on correctness
-                # We'll return a tuple (qid, is_correct) as key
-                if question_correctness[0].item() > 0:  # Answer is correct (index 1)
-                    if str(qid_int) in self.true_heads:
-                        outputs[(qid_int, True)] = self.true_heads[str(qid_int)](question_features)
-                elif str(qid_int) in self.false_heads:
-                    outputs[(qid_int, False)] = self.false_heads[str(qid_int)](question_features)
+                # Separate features by correctness
+                correct_mask = question_correctness > 0
+                incorrect_mask = ~correct_mask
+
+                # Process correct answers through true_heads
+                if correct_mask.any() and str(qid_int) in self.true_heads:
+                    correct_features = question_features[correct_mask]
+                    outputs[(qid_int, True)] = self.true_heads[str(qid_int)](correct_features)
+
+                # Process incorrect answers through false_heads
+                if incorrect_mask.any() and str(qid_int) in self.false_heads:
+                    incorrect_features = question_features[incorrect_mask]
+                    outputs[(qid_int, False)] = self.false_heads[str(qid_int)](incorrect_features)
 
         return outputs
 
@@ -281,13 +287,13 @@ class MLPStrategy(Strategy):
         return "MLP with shared trunk and question-specific heads for full prediction (Category:Misconception)"
 
     @staticmethod
-    def process_mlp_batch(
+    def process_mlp_batch_train(
         model: QuestionSpecificMLP,
         batch: tuple,
         criterion: nn.Module,
         device: torch.device,
     ) -> tuple[torch.Tensor | None, int]:
-        """Process a batch for MLP's multi-head architecture.
+        """Process a batch for MLP's multi-head architecture during training.
 
         Args:
             model: The MLP model with question-specific heads
@@ -320,17 +326,71 @@ class MLPStrategy(Strategy):
                     total_samples += logits.size(0)
 
         if total_samples > 0:
-            loss = torch.tensor(total_loss / total_samples)
+            # Keep gradients for training
+            loss = total_loss / total_samples
+            return loss, int(batch_embeddings.size(0))
+        return None, 0
+
+    @staticmethod
+    def process_mlp_batch_val(
+        model: QuestionSpecificMLP,
+        batch: tuple,
+        criterion: nn.Module,
+        device: torch.device,
+    ) -> tuple[torch.Tensor | None, int]:
+        """Process a batch for MLP's multi-head architecture during validation.
+
+        Args:
+            model: The MLP model with question-specific heads
+            batch: Tuple of (embeddings, question_ids, labels, is_correct)
+            criterion: Loss function (ListMLELoss or CrossEntropyLoss)
+            device: Device to run computations on
+
+        Returns:
+            Tuple of (loss, batch_size) or (None, 0) if no valid samples
+        """
+        batch_embeds, batch_quests, batch_lbls, batch_correct = batch
+        batch_embeddings = batch_embeds.to(device)
+        batch_questions = batch_quests.to(device)
+        batch_labels = batch_lbls.to(device)
+        batch_correctness = batch_correct.to(device)
+
+        outputs = model(batch_embeddings, batch_questions, batch_correctness)
+
+        total_loss = 0.0
+        total_samples = 0
+        for (qid, is_correct), logits in outputs.items():
+            correctness_mask = batch_correctness > 0 if is_correct else batch_correctness == 0
+            question_mask = batch_questions == qid
+            combined_mask = question_mask & correctness_mask
+
+            if combined_mask.any():
+                question_labels = batch_labels[combined_mask]
+                if logits.size(0) == question_labels.size(0):
+                    total_loss += criterion(logits, question_labels) * logits.size(0)
+                    total_samples += logits.size(0)
+
+        if total_samples > 0:
+            # Detach for validation to save memory
+            loss = (total_loss / total_samples).detach()
             return loss, int(batch_embeddings.size(0))
         return None, 0
 
     @classmethod
     def fit(cls, **kwargs) -> "MLPStrategy":
         """Fit the MLP strategy on training data."""
+        # Get device early to adjust batch size
+        device = get_device()
+
+        # Suggest larger batch size for GPU if not explicitly set
+        if "batch_size" not in kwargs and str(device) != "cpu":
+            kwargs["batch_size"] = 256  # Larger batch for GPU
+            logger.info(f"Using batch_size=256 for {device} (override with batch_size parameter)")
+
         config = TorchConfig(
             wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
         )
-        logger.info(f"Fitting MLP strategy from {config.train_csv_path}")
+        logger.info(f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}")
 
         extra_config = {
             "architecture": "improved_mlp_with_correctness",
@@ -345,7 +405,7 @@ class MLPStrategy(Strategy):
 
         torch.manual_seed(config.random_seed)
 
-        device = get_device()
+        # Device was already obtained above for batch size adjustment
         logger.info(f"Using device: {device}")
         wandb.config.update({"device": str(device)})
 
@@ -356,32 +416,39 @@ class MLPStrategy(Strategy):
         question_predictions = extract_question_predictions(training_data)
 
         def compute_embeddings(data):
-            logger.info("Computing separate question and answer embeddings")
-            tokenizer = get_tokenizer()
+            logger.info(f"Computing separate question and answer embeddings on device: {device}")
+            tokenizer = get_tokenizer(device=str(device))
 
-            embeddings_list = []
+            # Prepare texts for batch encoding
+            question_texts = []
+            answer_texts = []
             question_ids_list = []
             predictions_list = []
             mc_answers_list = []
 
             for row in data:
-                # Compute question embedding
-                question_emb = tokenizer.encode(row.question_text)
-
-                # Compute answer + explanation embedding
-                answer_text = f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}"
-                answer_emb = tokenizer.encode(answer_text)
-
-                # Concatenate question and answer embeddings (768 dims total)
-                combined_emb = np.concatenate([question_emb, answer_emb])
-
-                embeddings_list.append(combined_emb)
+                question_texts.append(row.question_text)
+                answer_texts.append(f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}")
                 question_ids_list.append(row.question_id)
                 predictions_list.append(str(row.prediction))
                 mc_answers_list.append(row.mc_answer)
 
+            # Batch encode all texts at once for better GPU utilization
+            logger.info(f"Batch encoding {len(question_texts)} questions and answers...")
+            batch_size = 64 if str(device) != "cpu" else 32
+
+            # Encode questions in batches
+            question_embeddings = tokenizer.encode(question_texts, batch_size=batch_size, show_progress_bar=True)
+
+            # Encode answers in batches
+            answer_embeddings = tokenizer.encode(answer_texts, batch_size=batch_size, show_progress_bar=True)
+
+            # Concatenate question and answer embeddings
+            combined_embeddings = np.concatenate([question_embeddings, answer_embeddings], axis=1)
+            logger.info(f"Computed embeddings with shape: {combined_embeddings.shape}")
+
             return (
-                np.array(embeddings_list),
+                combined_embeddings,
                 np.array(question_ids_list),
                 {"predictions": np.array(predictions_list), "mc_answers": np.array(mc_answers_list)},
             )
@@ -440,9 +507,26 @@ class MLPStrategy(Strategy):
             model.false_label_encoders,
         )
 
-        # Create data loaders
-        train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
+        # Create data loaders with optimizations for GPU
+        # Use larger batch size for GPU, multiple workers, and pin memory for faster transfers
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config.batch_size,
+            shuffle=True,
+            num_workers=4 if str(device) != "cpu" else 0,  # Multiple workers for GPU
+            pin_memory=str(device) != "cpu",  # Pin memory for faster GPU transfers
+            persistent_workers=bool(str(device) != "cpu" and config.epochs > 1),
+            prefetch_factor=2 if str(device) != "cpu" else None,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=config.batch_size * 2,  # Larger batch for validation (no gradients)
+            shuffle=False,
+            num_workers=4 if str(device) != "cpu" else 0,
+            pin_memory=str(device) != "cpu",
+            persistent_workers=bool(str(device) != "cpu" and config.epochs > 1),
+            prefetch_factor=2 if str(device) != "cpu" else None,
+        )
 
         # Train the model using the generic training function with ListMLE loss
         model, history = train_torch_model(
@@ -452,8 +536,8 @@ class MLPStrategy(Strategy):
             config=config,
             device=device,
             criterion=ListMLELoss(),  # Use ranking loss instead of CrossEntropyLoss
-            train_batch_fn=cls.process_mlp_batch,
-            val_batch_fn=cls.process_mlp_batch,  # Same logic for validation
+            train_batch_fn=cls.process_mlp_batch_train,  # Training version keeps gradients
+            val_batch_fn=cls.process_mlp_batch_val,  # Validation version detaches gradients
         )
 
         # Get tokenizer for predictions

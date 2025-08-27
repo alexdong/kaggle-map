@@ -85,8 +85,15 @@ class EmbeddingModel(Enum):
 
 def get_tokenizer(
     model: EmbeddingModel = EmbeddingModel.MINI_LM,
+    device: str | None = None,
 ) -> "SentenceTransformer":
     # Move the import here to avoid slowing pytest down by importing the heavy module
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model.model_id)
+    # If device not specified, use the get_device utility
+    if device is None:
+        from kaggle_map.strategies.utils import get_device
+        device = str(get_device())
+
+    # Create model and move to device
+    return SentenceTransformer(model.model_id, device=device)
