@@ -25,6 +25,7 @@ dependencies = [
     "sentence-transformers>=5.1.0",
     "torch>=2.8.0",
     "platformdirs>=4.0.0",
+    "wandb>=0.21.1",
 ]
 
 [project.scripts]
