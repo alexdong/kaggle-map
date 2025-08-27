@@ -97,7 +97,7 @@ class Strategy(ABC):
         """
 
     @classmethod
-    def get_hyperparameter_search_space(cls, trial: "Trial") -> dict[str, Any]:
+    def get_hyperparameter_search_space(cls, trial: "Trial") -> dict[str, Any]:  # noqa: ARG003
         """Define hyperparameter search space for Optuna.
 
         Override this method to define strategy-specific hyperparameters.

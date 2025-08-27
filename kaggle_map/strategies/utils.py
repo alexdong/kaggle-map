@@ -1,6 +1,10 @@
 """Utilities for strategy implementations."""
 
+import json
+import pickle
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 import torch
@@ -164,7 +168,7 @@ def get_split_indices(
 # PyTorch utilities for neural network strategies
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from torch import nn
 from torch.utils.data import DataLoader
@@ -626,7 +630,7 @@ def load_embeddings(
     embeddings_path: Path | None,
     training_data: list,
     train_df: Any | None = None,
-    compute_fn: Any | None = None,
+    compute_fn: Callable[[list], tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Load or compute embeddings for training data.
 
@@ -682,8 +686,8 @@ def train_torch_model(
     config: TorchConfig,
     device: torch.device,
     criterion: nn.Module | None = None,
-    train_batch_fn: Any | None = None,
-    val_batch_fn: Any | None = None,
+    train_batch_fn: Callable | None = None,
+    val_batch_fn: Callable | None = None,
 ) -> tuple[nn.Module, dict[str, Any]]:
     """Generic training loop for PyTorch models.
 
@@ -804,6 +808,7 @@ def train_torch_model(
 def save_torch_strategy(
     strategy: Any,
     filepath: Path,
+    *,
     save_params: bool = True,
 ) -> None:
     """Save a PyTorch-based strategy to disk.
@@ -817,8 +822,6 @@ def save_torch_strategy(
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     # Save entire strategy object with pickle
-    import pickle
-
     with filepath.open("wb") as f:
         pickle.dump(strategy, f)
 
@@ -826,8 +829,6 @@ def save_torch_strategy(
     if save_params and hasattr(strategy, "parameters") and strategy.parameters:
         params_path = filepath.with_suffix(".params.json")
         logger.info(f"Saving model parameters to {params_path}")
-        import json
-
         with params_path.open("w") as f:
             json.dump(strategy.parameters.model_dump(), f, indent=2)
 
@@ -835,6 +836,7 @@ def save_torch_strategy(
 def load_torch_strategy(
     cls: type,
     filepath: Path,
+    *,
     load_params: bool = True,
 ) -> Any:
     """Load a PyTorch-based strategy from disk.
@@ -850,8 +852,6 @@ def load_torch_strategy(
     logger.info(f"Loading model from {filepath}")
     assert filepath.exists(), f"Model file not found: {filepath}"
 
-    import pickle
-
     with filepath.open("rb") as f:
         loaded_model = pickle.load(f)
 
@@ -860,8 +860,6 @@ def load_torch_strategy(
         params_path = filepath.with_suffix(".params.json")
         if params_path.exists():
             logger.info(f"Loading model parameters from {params_path}")
-            import json
-
             with params_path.open("r") as f:
                 params_data = json.load(f)
                 parameters = ModelParameters.model_validate(params_data)
