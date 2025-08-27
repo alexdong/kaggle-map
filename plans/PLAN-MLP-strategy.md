@@ -18,7 +18,7 @@ Implement a question-specific MLP for **misconception detection**.
 
 - Follow existing `Strategy` pattern from `kaggle_map/strategies/base.py`
 - Use data structures `TrainingInput` for X and Label above, where
-   **X**: "Question: {}; Expected Answer: {}; Student's Answer: {}; Student's Explanation: {}" ->Embedding (384-dim)
+   **X**: `"Question: {}; Expected Answer: {}; Student's Answer: {}; Student's Explanation: {}"` ->Embedding (384-dim)
    **label**: Misconception | "NA"
 - Use 70% train.csv for training, 15% for validation and 15% for testing
 - Embedding calculated using `core/embeddings/tokenizer.py`

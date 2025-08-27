@@ -8,6 +8,7 @@ import pandas as pd
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
+from kaggle_map.core.embeddings.tokenizer import get_tokenizer
 
 # Domain-specific type aliases
 type RowId = int
@@ -93,11 +94,18 @@ class EvaluationRow(BaseModel):
         the data serialization format for ML processing.
 
         Example output:
-            "Question: {Q}, Answer: {A}, Explanation: {E}"
+            "Question: {}; Expected Answer: {}; Student's Answer: {}; Student's Explanation: {}"
 
         """
-        return f"Question: {self.question_text}, Answer: {self.mc_answer}, Explanation: {self.student_explanation}"
+        return (
+            f"Question: {self.question_text}; "
+            f"Student's Answer: {self.mc_answer}; Student's Explanation: {self.student_explanation}"
+        )
 
+class TrainingInput(NamedTuple):
+    question_id: QuestionId
+    embeddings: np.ndarray
+    misconception: Misconception
 
 class TrainingRow(EvaluationRow):
     """Training data row: EvaluationRow + Prediction.
@@ -133,13 +141,20 @@ class TrainingRow(EvaluationRow):
             prediction=prediction,
         )
 
+    def as_training_input(self) -> TrainingInput:
+        tokenizer = get_tokenizer()
+        text = repr(self)
+
+        # Generate embeddings and convert to numpy array
+        embeddings_tensor = tokenizer.encode(text)
+        embeddings = np.array(embeddings_tensor)
+
+        return TrainingInput(
+            question_id=self.question_id,
+            embeddings=embeddings,
+            misconception=self.misconception,
+        )
 
 class SubmissionRow(NamedTuple):
     row_id: RowId
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
-
-
-class TrainingInput(NamedTuple):
-    question_id: QuestionId
-    embeddings: np.ndarray
-    misconception: Misconception
