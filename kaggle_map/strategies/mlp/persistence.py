@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from kaggle_map.embeddings.embedding_models import EmbeddingModel
+from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
 
 if TYPE_CHECKING:
     from kaggle_map.strategies.mlp.strategy import MLPStrategy

@@ -12,7 +12,7 @@ import torch
 from loguru import logger
 from torch.utils.data import Dataset
 
-from kaggle_map.models import QuestionId
+from kaggle_map.core.models import QuestionId
 
 
 class DatasetItem(NamedTuple):

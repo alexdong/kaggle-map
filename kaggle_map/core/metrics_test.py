@@ -2,8 +2,8 @@
 
 import pytest
 
-from kaggle_map.metrics import calculate_map_at_3
-from kaggle_map.models import Category, Prediction
+from kaggle_map.core.metrics import calculate_map_at_3
+from kaggle_map.core.models import Category, Prediction
 
 
 def test_calculate_map_at_3():

@@ -6,7 +6,7 @@ from typing import NamedTuple
 import pandas as pd
 from pydantic import BaseModel, field_validator
 
-from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
+from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
 
 # Domain-specific type aliases
 type RowId = int

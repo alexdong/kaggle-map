@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from kaggle_map.embeddings.embedding_models import EmbeddingModel
+from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
 
 def test_embedding_metadata_dims_and_seq():
     assert EmbeddingModel.MINI_LM.dim == 384

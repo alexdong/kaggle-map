@@ -14,8 +14,8 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.eval import evaluate
-from kaggle_map.models import EvaluationRow, TrainingRow
+from kaggle_map.core.metrics import calculate_map_at_3
+from kaggle_map.core.models import EvaluationRow, Prediction, RowId, TrainingRow
 from kaggle_map.strategies.mlp.config import HIDDEN_DIMS
 
 if TYPE_CHECKING:
@@ -194,8 +194,8 @@ class MLPEvaluator:
             submission_path = tmp_path / "submission.csv"
             submission_df.to_csv(submission_path, index=False)
 
-            # Use existing evaluate function
-            eval_result = evaluate(ground_truth_path, submission_path)
+            # Inline evaluate function
+            eval_result = _evaluate_files(ground_truth_path, submission_path)
 
             logger.info(
                 "Evaluation completed",
@@ -215,3 +215,65 @@ class MLPEvaluator:
                 if eval_result.total_observations > 0
                 else 0.0,
             }
+
+
+def _evaluate_files(ground_truth_path: Path, submission_path: Path) -> float:
+    """Evaluate predictions against ground truth using MAP@3 metric.
+
+    Inlined from the removed eval.py file.
+    """
+    logger.debug(f"Evaluating {submission_path} against {ground_truth_path}")
+
+    # Load and parse files
+    ground_truth = _load_ground_truth(ground_truth_path)
+    submissions = _load_submissions(submission_path)
+
+    # Calculate metric using MAP@3
+    total_score = 0.0
+    common_row_ids = set(ground_truth.keys()) & set(submissions.keys())
+    assert len(common_row_ids) > 0, "No common row IDs found"
+
+    for row_id in common_row_ids:
+        gt_prediction = ground_truth[row_id]
+        submission_predictions = submissions[row_id]
+        score = calculate_map_at_3(gt_prediction, submission_predictions)
+        total_score += score
+
+    total_observations = len(common_row_ids)
+    map_score = total_score / total_observations
+    logger.debug(f"Metric score: {map_score:.4f} over {total_observations} observations")
+    return map_score
+
+
+def _load_ground_truth(path: Path) -> dict[RowId, Prediction]:
+    """Load ground truth CSV into Prediction objects."""
+    assert path.exists(), f"Ground truth file not found: {path}"
+
+    ground_truth_data = pd.read_csv(path)
+    assert not ground_truth_data.empty, "Ground truth file cannot be empty"
+
+    result = {
+        int(row["row_id"]): Prediction.from_ground_truth_row(row)
+        for _, row in ground_truth_data.iterrows()
+    }
+
+    logger.debug(f"Loaded {len(result)} ground truth rows")
+    return result
+
+
+def _load_submissions(path: Path) -> dict[RowId, list[Prediction]]:
+    """Load submission CSV into Prediction objects."""
+    assert path.exists(), f"Submission file not found: {path}"
+
+    submission_data = pd.read_csv(path)
+
+    result = {
+        int(row["row_id"]): [
+            Prediction.from_string(s)
+            for s in str(row["Category:Misconception"]).split()
+        ]
+        for _, row in submission_data.iterrows()
+    }
+
+    logger.debug(f"Loaded {len(result)} submission rows")
+    return result

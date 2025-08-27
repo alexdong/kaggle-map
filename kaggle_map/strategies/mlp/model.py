@@ -9,8 +9,8 @@ import torch
 from loguru import logger
 from torch import nn
 
-from kaggle_map.embeddings.embedding_models import EmbeddingModel
-from kaggle_map.models import Misconception, QuestionId
+from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
+from kaggle_map.core.models import Misconception, QuestionId
 from kaggle_map.strategies.mlp.config import (
     DROPOUT_RATE,
     HIDDEN_DIMS,

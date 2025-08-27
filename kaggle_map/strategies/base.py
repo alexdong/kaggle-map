@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from kaggle_map.models import EvaluationRow, SubmissionRow
+from kaggle_map.core.models import EvaluationRow, SubmissionRow
 
 
 class Strategy(ABC):
@@ -25,10 +25,18 @@ class Strategy(ABC):
 
     @classmethod
     @abstractmethod
-    def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "Strategy":
+    def fit(
+        cls,
+        *,
+        train_split: float = 0.8,
+        random_seed: int = 42,
+        train_csv_path: Path = Path("dataset/train.csv"),
+    ) -> "Strategy":
         """Fit the strategy on training data.
 
         Args:
+            train_split: Fraction of data for training
+            random_seed: Random seed for reproducible results
             train_csv_path: Path to training CSV file
 
         Returns:
@@ -64,4 +72,24 @@ class Strategy(ABC):
 
         Returns:
             Loaded strategy instance
+        """
+
+    @classmethod
+    @abstractmethod
+    def evaluate_on_split(
+        cls,
+        model: "Strategy",
+        *,
+        train_split: float = 0.8,
+        random_seed: int = 42,
+    ) -> dict[str, float]:
+        """Evaluate model on validation split.
+
+        Args:
+            model: Fitted strategy instance to evaluate
+            train_split: Fraction of data used for training (rest for validation)
+            random_seed: Random seed for reproducible split
+
+        Returns:
+            Dictionary with evaluation metrics
         """

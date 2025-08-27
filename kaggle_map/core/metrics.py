@@ -1,6 +1,6 @@
 """Evaluation metrics for the Kaggle MAP competition."""
 
-from kaggle_map.models import Prediction
+from kaggle_map.core.models import Prediction
 
 
 def calculate_map_at_3(ground_truth: Prediction, predictions: list[Prediction]) -> float:
@@ -18,7 +18,7 @@ def calculate_map_at_3(ground_truth: Prediction, predictions: list[Prediction]) 
         Average precision score (0.0 to 1.0)
 
     Examples:
-        >>> from kaggle_map.models import Category, Prediction
+        >>> from kaggle_map.core.models import Category, Prediction
         >>> gt = Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
 
         >>> # Perfect prediction (position 1)

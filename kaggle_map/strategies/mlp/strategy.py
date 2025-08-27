@@ -14,9 +14,9 @@ from loguru import logger
 from platformdirs import PlatformDirs
 from sklearn.model_selection import train_test_split
 
-from kaggle_map.dataset import parse_training_data
-from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
-from kaggle_map.models import (
+from kaggle_map.core.dataset import parse_training_data
+from kaggle_map.core.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.core.models import (
     Answer,
     EvaluationRow,
     Misconception,

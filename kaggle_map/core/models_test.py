@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from kaggle_map.models import (
+from kaggle_map.core.models import (
     Category,
     Prediction,
     SubmissionRow,

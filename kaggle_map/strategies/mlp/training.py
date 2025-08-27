@@ -15,9 +15,9 @@ from loguru import logger
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from kaggle_map.dataset import extract_misconceptions_by_popularity
-from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
-from kaggle_map.models import Answer, Misconception, QuestionId, TrainingRow
+from kaggle_map.core.dataset import extract_misconceptions_by_popularity
+from kaggle_map.core.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.core.models import Answer, Misconception, QuestionId, TrainingRow
 from kaggle_map.strategies.mlp.config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_LEARNING_RATE,

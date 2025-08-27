@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from loguru import logger
 
-from kaggle_map.models import (
+from kaggle_map.core.models import (
     Answer,
     Category,
     EvaluationRow,

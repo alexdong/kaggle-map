@@ -6,14 +6,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from kaggle_map.dataset import (
+from kaggle_map.core.dataset import (
     build_category_frequencies,
     extract_correct_answers,
     extract_most_common_misconceptions,
     is_answer_correct,
     parse_training_data,
 )
-from kaggle_map.models import Category, Prediction, TrainingRow
+from kaggle_map.core.models import Category, Prediction, TrainingRow
 
 
 # =============================================================================

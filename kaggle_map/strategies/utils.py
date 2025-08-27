@@ -12,7 +12,7 @@ from torch import nn, optim
 if TYPE_CHECKING:
     import numpy as np
 
-    from kaggle_map.models import QuestionId
+    from kaggle_map.core.models import QuestionId
 
     from .mlp import MLPNet
 
