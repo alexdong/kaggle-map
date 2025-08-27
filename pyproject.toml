@@ -38,6 +38,7 @@ include = ["kaggle_map*"]
 exclude = ["llms*"]
 
 [tool.uv]
+package = true
 dev-dependencies = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
