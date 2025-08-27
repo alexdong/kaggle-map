@@ -2,63 +2,86 @@
 
 Map charting student math misunderstandings with comprehensive tooling and documentation.
 
-## Features
+## Purpose
 
-- **Modern Python tooling**: uv, ruff, pytest, pydantic
-- **Comprehensive documentation**: Ready-to-use guides for common Python packages
-- **GitHub Pages ready**: The `docs/` folder can be directly hosted as a static documentation site
-- **Best practices**: Pre-configured with Python coding standards and project structure
-
-## Documentation
-
-The `docs/` folder contains comprehensive documentation that can be hosted directly on GitHub Pages:
-
-1. Go to your repository Settings → Pages
-2. Under "Source", select "Deploy from a branch"
-3. Choose "main" branch and "/docs" folder
-4. Click Save
-
-Your documentation will be available at: `https://[username].github.io/[repository-name]/`
+This project implements machine learning strategies to predict student misconceptions in mathematics problems for the Kaggle MAP competition. It provides a modular framework for training, evaluating, and generating predictions using various prediction strategies.
 
 ## Quick Start
 
-### Running the Baseline Model
+1. **Install dependencies**: `uv install`
+2. **List available strategies**: `uv run -m kaggle_map.cli list-strategies`
+3. **Train a model**: `uv run -m kaggle_map.cli run baseline fit`
+4. **Evaluate performance**: `uv run -m kaggle_map.cli run baseline eval`
 
-Test the baseline model for student misconception prediction:
+## Basic Commands
+
+### Strategy Management
 
 ```bash
-# Run the model demonstration
-uv run kaggle_map/models.py
-
-# This will:
-# - Fit the model from dataset/train.csv
-# - Display model statistics
-# - Save the model to baseline_model.json
-# - Test serialization by loading the saved model
+# List all available prediction strategies
+uv run -m kaggle_map.cli list-strategies
 ```
 
-### Development Commands
+### Model Training
 
 ```bash
-# Run code quality checks
+# Train a strategy with default settings (80% training split, seed 42)
+uv run -m kaggle_map.cli run <strategy> fit
+
+# Train with custom parameters
+uv run -m kaggle_map.cli run <strategy> fit --train-split 0.7 --random-seed 123
+
+# Train with pre-computed embeddings
+uv run -m kaggle_map.cli run <strategy> fit --embeddings-path embeddings.npz
+
+# Save model to custom location
+uv run -m kaggle_map.cli run <strategy> fit --output-path my_model.pkl
+```
+
+### Model Evaluation
+
+```bash
+# Evaluate using default model path
+uv run -m kaggle_map.cli run <strategy> eval
+
+# Evaluate with custom model path
+uv run -m kaggle_map.cli run <strategy> eval --model-path my_model.pkl
+
+# Evaluate with specific train/test split
+uv run -m kaggle_map.cli run <strategy> eval --train-split 0.7
+```
+
+### Prediction Generation
+
+```bash
+# Generate predictions (not yet implemented)
+uv run -m kaggle_map.cli run <strategy> predict
+
+# Generate predictions with custom model and output paths
+uv run -m kaggle_map.cli run <strategy> predict --model-path my_model.pkl --output-path predictions.csv
+```
+
+### Additional Options
+
+- `--verbose, -v`: Show detailed model information
+- `--train-split`: Fraction of data for training (default: 0.7)
+- `--random-seed`: Random seed for reproducible results (default: 42)
+
+## Development Commands
+
+```bash
+# Run linting and type checking
 make dev
 
-# Run tests
+# Run tests (fast tests only)
 make test
+
+# Run all tests including slow integration tests
+make test-all
 ```
 
-## Project Structure
+## Available Strategies
 
-```
-./
-├── docs/                   # Documentation (GitHub Pages ready)
-├── kaggle_map/             # Application code
-├── dataset/                # Training and test data
-├── tests/                  # Test files
-├── logs/                   # Implementation logs
-├── llms/                   # LLM-friendly documentation
-├── Makefile               # Task automation
-├── pyproject.toml         # Project configuration
-├── Python.md              # Python coding standards
-└── CLAUDE.md              # AI assistant instructions
-```
+The project uses a dynamic strategy discovery system that automatically finds and registers prediction strategies in the `kaggle_map/strategies/` directory. Each strategy implements the base `Strategy` class and provides methods for training (`fit`), evaluation (`eval`), and prediction (`predict`).
+
+Run `uv run -m kaggle_map.cli list-strategies` to see currently available strategies and their descriptions.

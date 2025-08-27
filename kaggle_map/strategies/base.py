@@ -1,11 +1,11 @@
-"""Abstract base class for all prediction strategies."""
-
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from rich.console import Console
+from kaggle_map.core.models import EvaluationRow, SubmissionRow
 
-from kaggle_map.models import SubmissionRow, TestRow
+if TYPE_CHECKING:
+    from optuna.trial import Trial
 
 
 class Strategy(ABC):
@@ -27,10 +27,18 @@ class Strategy(ABC):
 
     @classmethod
     @abstractmethod
-    def fit(cls, train_csv_path: Path = Path("dataset/train.csv")) -> "Strategy":
+    def fit(
+        cls,
+        *,
+        train_split: float = 0.7,
+        random_seed: int = 42,
+        train_csv_path: Path = Path("dataset/train.csv"),
+    ) -> "Strategy":
         """Fit the strategy on training data.
 
         Args:
+            train_split: Fraction of data for training
+            random_seed: Random seed for reproducible results
             train_csv_path: Path to training CSV file
 
         Returns:
@@ -38,14 +46,14 @@ class Strategy(ABC):
         """
 
     @abstractmethod
-    def predict(self, test_data: list[TestRow]) -> list[SubmissionRow]:
-        """Make predictions on test data.
+    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
+        """Make predictions on a single evaluation row.
 
         Args:
-            test_data: List of test rows to predict on
+            evaluation_row: Single evaluation row to predict on
 
         Returns:
-            List of submission rows with predictions
+            Submission row with prediction
         """
 
     @abstractmethod
@@ -68,26 +76,63 @@ class Strategy(ABC):
             Loaded strategy instance
         """
 
+    @classmethod
     @abstractmethod
-    def display_stats(self, console: Console) -> None:
-        """Display model statistics.
+    def evaluate_on_split(
+        cls,
+        model: "Strategy",
+        *,
+        train_split: float = 0.7,
+        random_seed: int = 42,
+    ) -> dict[str, float]:
+        """Evaluate model on validation split.
 
         Args:
-            console: Rich console for formatted output
+            model: Fitted strategy instance to evaluate
+            train_split: Fraction of data used for training (rest for validation)
+            random_seed: Random seed for reproducible split
+
+        Returns:
+            Dictionary with evaluation metrics
         """
 
-    @abstractmethod
-    def display_detailed_info(self, console: Console) -> None:
-        """Display detailed model info for verbose mode.
+    @classmethod
+    def get_hyperparameter_search_space(cls, trial: "Trial") -> dict[str, Any]:
+        """Define hyperparameter search space for Optuna.
+
+        Override this method to define strategy-specific hyperparameters.
 
         Args:
-            console: Rich console for formatted output
-        """
+            trial: Optuna trial object for suggesting parameters
 
-    @abstractmethod
-    def demonstrate_predictions(self, console: Console) -> None:
-        """Show sample predictions to validate the model works.
+        Returns:
+            Dictionary of hyperparameter names to values
+
+        Note:
+            Default implementation returns empty dict.
+            Override in subclasses to enable hyperparameter search.
+        """
+        return {}
+
+    @classmethod
+    def create_config_from_hyperparams(
+        cls,
+        hyperparams: dict[str, Any],
+        **base_params: Any,
+    ) -> dict[str, Any]:
+        """Create configuration from hyperparameters.
+
+        Override this method to convert hyperparameters to strategy-specific config.
 
         Args:
-            console: Rich console for formatted output
+            hyperparams: Dictionary of hyperparameters from search
+            **base_params: Additional base parameters
+
+        Returns:
+            Configuration dictionary or object for training
+
+        Note:
+            Default implementation merges hyperparams with base_params.
+            Override for custom configuration handling.
         """
+        return {**base_params, **hyperparams}

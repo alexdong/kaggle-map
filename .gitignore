@@ -1,7 +1,9 @@
+.sesskey
+checkpoints/
 logs/
+wandb/
 
 # Model outputs and submissions
-baseline_model.json
 submission.csv
 
 # Byte-compiled / optimized / DLL files
