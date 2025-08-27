@@ -1,7 +1,6 @@
 """Kaggle MAP - Charting Student Math Misunderstandings."""
 
-from .eval import evaluate
-from .models import (
+from .core.models import (
     Category,
     EvaluationRow,
     Prediction,
@@ -15,5 +14,4 @@ __all__ = [
     "EvaluationRow",
     "Prediction",
     "TrainingRow",
-    "evaluate",
 ]

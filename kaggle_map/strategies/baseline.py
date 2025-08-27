@@ -13,6 +13,7 @@ from kaggle_map.core.dataset import (
     is_answer_correct,
     parse_training_data,
 )
+from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     Answer,
     Category,
@@ -24,6 +25,7 @@ from kaggle_map.core.models import (
 )
 
 from .base import Strategy
+from .utils import TRAIN_RATIO, ModelParameters, split_training_data
 
 
 @dataclass(frozen=True)
@@ -47,16 +49,34 @@ class BaselineStrategy(Strategy):
         return "Frequency-based model using category patterns and common misconceptions"
 
     @classmethod
-    def fit(cls, train_csv_path: Path = Path("datasets/train.csv")) -> "BaselineStrategy":
+    def fit(
+        cls,
+        *,
+        train_split: float = TRAIN_RATIO,
+        random_seed: int = 42,
+        train_csv_path: Path = Path("datasets/train.csv"),
+    ) -> "BaselineStrategy":
         logger.info(f"Fitting baseline strategy from {train_csv_path}")
-        training_data = parse_training_data(train_csv_path)
-        logger.debug(f"Parsed {len(training_data)} training rows")
+        logger.info(f"Using train_split={train_split}, random_seed={random_seed}")
 
-        correct_answers = extract_correct_answers(training_data)
+        # Parse all training data
+        all_training_data = parse_training_data(train_csv_path)
+        logger.debug(f"Parsed {len(all_training_data)} total training rows")
+
+        # Split the data
+        train_data, val_data, test_data = split_training_data(
+            all_training_data, train_ratio=train_split, random_seed=random_seed
+        )
+        logger.info(
+            f"Data split: train={len(train_data)}, val={len(val_data)}, test={len(test_data)}"
+        )
+
+        # Train only on the training split
+        correct_answers = extract_correct_answers(train_data)
         logger.debug(f"Found correct answers for {len(correct_answers)} questions")
 
-        category_frequencies = build_category_frequencies(training_data, correct_answers)
-        common_misconceptions = extract_most_common_misconceptions(training_data)
+        category_frequencies = build_category_frequencies(train_data, correct_answers)
+        common_misconceptions = extract_most_common_misconceptions(train_data)
 
         return cls(
             correct_answers=correct_answers,
@@ -69,19 +89,43 @@ class BaselineStrategy(Strategy):
         prediction_strings = self._predict_categories_for_row(evaluation_row)
         return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=prediction_strings[:3])
 
-    def save(self, filepath: Path) -> None:
+    def save(self, filepath: Path, parameters: ModelParameters | None = None) -> None:
+        """Save model and optionally its training parameters."""
         logger.info(f"Saving baseline model to {filepath}")
+
+        # Save the model pickle/json
         with filepath.open("w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
+        # Save parameters if provided
+        if parameters:
+            params_path = filepath.with_suffix(".params.json")
+            logger.info(f"Saving model parameters to {params_path}")
+            with params_path.open("w") as f:
+                json.dump(parameters.model_dump(), f, indent=2)
+
     @classmethod
-    def load(cls, filepath: Path) -> "BaselineStrategy":
+    def load(cls, filepath: Path) -> tuple["BaselineStrategy", ModelParameters | None]:
+        """Load model and its parameters if available."""
         logger.info(f"Loading baseline model from {filepath}")
         assert filepath.exists(), f"Model file not found: {filepath}"
 
         with filepath.open("r") as f:
             data = json.load(f)
-        return cls.from_dict(data)
+        model = cls.from_dict(data)
+
+        # Try to load parameters
+        params = None
+        params_path = filepath.with_suffix(".params.json")
+        if params_path.exists():
+            logger.info(f"Loading model parameters from {params_path}")
+            with params_path.open("r") as f:
+                params_data = json.load(f)
+                params = ModelParameters.model_validate(params_data)
+        else:
+            logger.warning(f"No parameters file found at {params_path}")
+
+        return model, params
 
     # Implementation methods
 
@@ -97,6 +141,60 @@ class BaselineStrategy(Strategy):
 
     def _is_answer_correct(self, question_id: QuestionId, student_answer: Answer) -> bool:
         return is_answer_correct(question_id, student_answer, self.correct_answers)
+
+    @classmethod
+    def evaluate_on_split(
+        cls,
+        model: "BaselineStrategy",
+        *,
+        train_split: float = TRAIN_RATIO,
+        random_seed: int = 42,
+        train_csv_path: Path = Path("datasets/train.csv"),
+    ) -> dict[str, float]:
+        """Evaluate model on validation split using MAP@3 metric."""
+        logger.info("Evaluating baseline model on validation split")
+        logger.info(f"Using train_split={train_split}, random_seed={random_seed}")
+
+        # Parse and split data
+        all_training_data = parse_training_data(train_csv_path)
+        train_data, val_data, test_data = split_training_data(
+            all_training_data, train_ratio=train_split, random_seed=random_seed
+        )
+
+        logger.info(f"Evaluating on {len(val_data)} validation samples")
+
+        # Calculate MAP@3 for each validation sample
+        map_scores = []
+        for row in val_data:
+            # Create evaluation row (without ground truth)
+            eval_row = EvaluationRow(
+                row_id=row.row_id,
+                question_id=row.question_id,
+                question_text=row.question_text,
+                mc_answer=row.mc_answer,
+                student_explanation=row.student_explanation,
+            )
+
+            # Get predictions
+            submission = model.predict(eval_row)
+            predictions = submission.predicted_categories
+
+            # Calculate MAP@3
+            ground_truth = row.prediction
+            score = calculate_map_at_3(ground_truth, predictions)
+            map_scores.append(score)
+
+        # Calculate average MAP@3
+        avg_map = sum(map_scores) / len(map_scores) if map_scores else 0.0
+
+        results = {
+            "validation_map@3": avg_map,
+            "validation_samples": len(val_data),
+        }
+
+        logger.info(f"Validation MAP@3: {avg_map:.4f} on {len(val_data)} samples")
+
+        return results
 
     def _apply_misconception_suffix(self, categories: list[Category], misconception: Misconception) -> list[Prediction]:
         result = []

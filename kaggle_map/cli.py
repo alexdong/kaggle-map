@@ -6,8 +6,10 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .core.dataset import parse_training_data
 from .strategies import get_all_strategies, get_strategy, list_strategies
 from .strategies.base import Strategy
+from .strategies.utils import TRAIN_RATIO, ModelParameters, get_split_indices
 
 
 @click.group()
@@ -21,8 +23,8 @@ def cli() -> None:
 @click.option(
     "--train-split",
     type=float,
-    default=0.8,
-    help="Fraction of data for training (default: 0.8)",
+    default=TRAIN_RATIO,
+    help=f"Fraction of data for training (default: {TRAIN_RATIO})",
 )
 @click.option(
     "--random-seed",
@@ -72,13 +74,37 @@ def _handle_fit(
     train_split: float,
     random_seed: int,
 ) -> None:
+    # Fit the model
     model = strategy_class.fit(train_split=train_split, random_seed=random_seed)
 
-    model_path = Path(f"models/{strategy}.pkl")
+    # Prepare save path
+    model_path = Path(f"models/{strategy}.json")
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    model.save(model_path)
+
+    # Create model parameters for saving
+    # Get the actual data size from the training data
+    all_data = parse_training_data(Path("datasets/train.csv"))
+    train_indices, val_indices, test_indices = get_split_indices(
+        len(all_data), train_ratio=train_split, random_seed=random_seed
+    )
+
+    params = ModelParameters.create(
+        train_split=train_split,
+        random_seed=random_seed,
+        train_indices=train_indices,
+        val_indices=val_indices,
+        test_indices=test_indices,
+        total_samples=len(all_data),
+    )
+
+    # Save model with parameters
+    if hasattr(model, "save") and "parameters" in model.save.__code__.co_varnames:
+        model.save(model_path, parameters=params)
+    else:
+        model.save(model_path)
 
     print(f"Model trained and saved to {model_path}")
+    print(f"Training split: {train_split}, Random seed: {random_seed}")
 
 
 def _handle_eval(
@@ -87,16 +113,35 @@ def _handle_eval(
     train_split: float,
     random_seed: int,
 ) -> None:
-    model_file = Path(f"models/{strategy}.pkl")
+    # Try both .json and .pkl extensions
+    model_file = Path(f"models/{strategy}.json")
+    if not model_file.exists():
+        model_file = Path(f"models/{strategy}.pkl")
     assert model_file.exists(), f"Model file not found: {model_file}"
 
-    model = strategy_class.load(model_file)
+    # Load model and parameters
+    load_result = strategy_class.load(model_file)
+    if isinstance(load_result, tuple):
+        model, params = load_result
+        if params:
+            # Use saved parameters if available
+            print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
+            train_split = params.train_split
+            random_seed = params.random_seed
+    else:
+        # Backward compatibility for models without parameter support
+        model = load_result
 
     assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
 
     eval_results = strategy_class.evaluate_on_split(model, train_split=train_split, random_seed=random_seed)
 
-    print(f"Evaluation results: {eval_results}")
+    print("\nEvaluation results:")
+    for key, value in eval_results.items():
+        if isinstance(value, float):
+            print(f"  {key}: {value:.4f}")
+        else:
+            print(f"  {key}: {value}")
 
 
 
