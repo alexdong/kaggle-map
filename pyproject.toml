@@ -26,6 +26,8 @@ dependencies = [
     "torch>=2.8.0",
     "platformdirs>=4.0.0",
     "wandb>=0.21.1",
+    "optuna>=3.6.0",
+    "optuna-dashboard>=0.15.0",
 ]
 
 [project.scripts]
