@@ -77,8 +77,8 @@ def _handle_fit(
     # Fit the model
     model = strategy_class.fit(train_split=train_split, random_seed=random_seed)
 
-    # Prepare save path
-    model_path = Path(f"models/{strategy}.json")
+    # Prepare save path - MLP uses .pkl, others use .json
+    model_path = Path(f"models/{strategy}.pkl") if strategy == "mlp" else Path(f"models/{strategy}.json")
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Create model parameters for saving
@@ -117,20 +117,28 @@ def _handle_eval(
     model_file = Path(f"models/{strategy}.json")
     if not model_file.exists():
         model_file = Path(f"models/{strategy}.pkl")
-    assert model_file.exists(), f"Model file not found: {model_file}"
 
-    # Load model and parameters
-    load_result = strategy_class.load(model_file)
-    if isinstance(load_result, tuple):
-        model, params = load_result
-        if params:
-            # Use saved parameters if available
-            print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
-            train_split = params.train_split
-            random_seed = params.random_seed
+    # Check if model file exists
+    if model_file.exists():
+        # Load model and parameters
+        load_result = strategy_class.load(model_file)
+        if isinstance(load_result, tuple):
+            model, params = load_result
+            if params:
+                # Use saved parameters if available
+                print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
+                train_split = params.train_split
+                random_seed = params.random_seed
+        else:
+            # Backward compatibility for models without parameter support
+            model = load_result
+    # For MLP, try to use checkpoint if no model file exists
+    elif strategy == "mlp":
+        print("Model file not found, looking for checkpoints...")
+        model = None  # Will trigger checkpoint loading in evaluate_on_split
     else:
-        # Backward compatibility for models without parameter support
-        model = load_result
+        msg = f"Model file not found: {model_file}"
+        raise FileNotFoundError(msg)
 
     assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
 

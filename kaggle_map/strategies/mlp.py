@@ -5,7 +5,7 @@ Architecture Design:
 Shared Trunk:
   - Input: embedding(384) from sentence-transformers/all-MiniLM-L6-v2
   - Hidden 1: 768 units, ReLU, 0.3 dropout
-  - Hidden 2: 384 units, ReLU, 0.3 dropout  
+  - Hidden 2: 384 units, ReLU, 0.3 dropout
   - Shared: 192 units, ReLU, 0.3 dropout
 
 Question-Specific Misconception Heads (nn.ModuleDict):
@@ -85,12 +85,13 @@ class MLPConfig:
     random_seed: int = 42
     train_csv_path: Path = field(default_factory=lambda: Path("datasets/train.csv"))
     embeddings_path: Path | None = field(default_factory=lambda: Path("datasets/train_embeddings.npz"))
-    epochs: int = 10
+    epochs: int = 20
     batch_size: int = 128
     learning_rate: float = 1e-3
-    early_stopping_patience: int = 10
+    early_stopping_patience: int = 5
     wandb_project: str = "kaggle-map-mlp"
     wandb_run_name: str | None = None
+    checkpoint_dir: Path = field(default_factory=lambda: Path("checkpoints"))
 
 
 class QuestionSpecificMLP(nn.Module):
@@ -304,12 +305,20 @@ class MLPStrategy(Strategy):
         return val_loss / val_samples if val_samples > 0 else 0
 
     @classmethod
+    def load_checkpoint(cls, checkpoint_path: Path) -> dict:
+        """Load a training checkpoint."""
+        logger.info(f"Loading checkpoint from {checkpoint_path}")
+        # weights_only=False needed for loading custom classes like MLPConfig
+        return torch.load(checkpoint_path, weights_only=False)
+
+    @classmethod
     def fit(
         cls,
         *,
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
+        resume_from_checkpoint: Path | None = None,
         **kwargs: object,
     ) -> "MLPStrategy":
         """Fit the MLP strategy on training data."""
@@ -318,17 +327,17 @@ class MLPStrategy(Strategy):
             train_split=train_split,
             random_seed=random_seed,
             train_csv_path=train_csv_path,
-            embeddings_path=kwargs.get("embeddings_path", Path("datasets/train_embeddings.npz")),
-            epochs=kwargs.get("epochs", 50),
-            batch_size=kwargs.get("batch_size", 128),
-            learning_rate=kwargs.get("learning_rate", 1e-3),
-            early_stopping_patience=kwargs.get("early_stopping_patience", 10),
-            wandb_project=kwargs.get("wandb_project", "kaggle-map-mlp"),
-            wandb_run_name=kwargs.get("wandb_run_name", None),
+            embeddings_path=Path(str(kwargs.get("embeddings_path", "datasets/train_embeddings.npz"))),
+            epochs=int(kwargs.get("epochs", 20)),
+            batch_size=int(kwargs.get("batch_size", 128)),
+            learning_rate=float(kwargs.get("learning_rate", 1e-3)),
+            early_stopping_patience=int(kwargs.get("early_stopping_patience", 5)),
+            wandb_project=str(kwargs.get("wandb_project", "kaggle-map-mlp")),
+            wandb_run_name=str(kwargs.get("wandb_run_name")) if kwargs.get("wandb_run_name") else None,
         )
 
         logger.info(f"Fitting MLP strategy from {config.train_csv_path}")
-        
+
         # Initialize wandb
         # Auto-generate descriptive run name if not provided
         if not config.wandb_run_name:
@@ -339,7 +348,7 @@ class MLPStrategy(Strategy):
                 f"split{int(config.train_split*100)}-"
                 f"seed{config.random_seed}"
             )
-        
+
         wandb.init(
             project=config.wandb_project,
             name=config.wandb_run_name,
@@ -380,7 +389,7 @@ class MLPStrategy(Strategy):
         # Create model
         model = QuestionSpecificMLP(question_misconceptions)
         model = model.to(device)
-        
+
         # Log model info to wandb
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -396,7 +405,7 @@ class MLPStrategy(Strategy):
         train_indices, val_indices, test_indices = get_split_indices(
             n_samples, train_ratio=config.train_split, random_seed=config.random_seed
         )
-        
+
         # Update wandb with actual dataset sizes
         wandb.config.update({
             "train_samples": len(train_indices),
@@ -429,39 +438,75 @@ class MLPStrategy(Strategy):
 
         best_val_loss = float("inf")
         patience_counter = 0
+        start_epoch = 0
 
-        # Training loop
-        for epoch in range(config.epochs):
-            # Training
-            avg_train_loss = cls._train_epoch(model, train_loader, optimizer, criterion, device)
+        # Load checkpoint if resuming
+        if resume_from_checkpoint and resume_from_checkpoint.exists():
+            checkpoint = cls.load_checkpoint(resume_from_checkpoint)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"]
+            best_val_loss = checkpoint.get("val_loss", float("inf"))
+            logger.info(f"Resuming from epoch {start_epoch} with best val loss {best_val_loss:.4f}")
+            wandb.log({"resumed_from_epoch": start_epoch})
 
-            # Validation
-            avg_val_loss = cls._validate_epoch(model, val_loader, criterion, device)
+        # Training loop with interrupt handling
+        try:
+            for epoch in range(start_epoch, config.epochs):
+                # Training
+                avg_train_loss = cls._train_epoch(model, train_loader, optimizer, criterion, device)
 
-            logger.info(
-                f"Epoch {epoch+1}/{config.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
-            )
-            
-            # Log metrics to wandb
-            wandb.log({
-                "epoch": epoch + 1,
-                "train_loss": avg_train_loss,
-                "val_loss": avg_val_loss,
-                "learning_rate": config.learning_rate,
-            })
+                # Validation
+                avg_val_loss = cls._validate_epoch(model, val_loader, criterion, device)
 
-            # Early stopping
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                patience_counter = 0
-                # Log best validation loss
-                wandb.log({"best_val_loss": best_val_loss})
-            else:
-                patience_counter += 1
-                if patience_counter >= config.early_stopping_patience:
-                    logger.info(f"Early stopping triggered at epoch {epoch+1}")
-                    wandb.log({"early_stopped_epoch": epoch + 1})
-                    break
+                logger.info(
+                    f"Epoch {epoch+1}/{config.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+                )
+
+                # Log metrics to wandb
+                wandb.log({
+                    "epoch": epoch + 1,
+                    "train_loss": avg_train_loss,
+                    "val_loss": avg_val_loss,
+                    "learning_rate": config.learning_rate,
+                })
+
+                # Early stopping and checkpoint saving
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    patience_counter = 0
+                    # Log best validation loss
+                    wandb.log({"best_val_loss": best_val_loss})
+
+                    # Save checkpoint
+                    checkpoint_path = config.checkpoint_dir / f"mlp_best_{config.wandb_run_name or 'model'}.pt"
+                    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+                    torch.save({
+                        "epoch": epoch + 1,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "val_loss": avg_val_loss,
+                        "train_loss": avg_train_loss,
+                        "config": config,
+                    }, checkpoint_path)
+                    logger.info(f"Saved checkpoint to {checkpoint_path}")
+                else:
+                    patience_counter += 1
+                    if patience_counter >= config.early_stopping_patience:
+                        logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                        wandb.log({"early_stopped_epoch": epoch + 1})
+                        break
+        except KeyboardInterrupt:
+            logger.warning("Training interrupted by user!")
+            wandb.log({"interrupted": True})
+
+        # Load best checkpoint if it exists
+        checkpoint_path = config.checkpoint_dir / f"mlp_best_{config.wandb_run_name or 'model'}.pt"
+        if checkpoint_path.exists():
+            logger.info(f"Loading best model from checkpoint: {checkpoint_path}")
+            checkpoint = cls.load_checkpoint(checkpoint_path)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            logger.info(f"Loaded model from epoch {checkpoint['epoch']} with val loss {checkpoint['val_loss']:.4f}")
 
         # Get tokenizer for predictions
         tokenizer = get_tokenizer()
@@ -475,7 +520,7 @@ class MLPStrategy(Strategy):
             test_indices=list(test_indices),
             total_samples=n_samples,
         )
-        
+
         # Finish wandb run
         wandb.finish()
 
@@ -556,30 +601,106 @@ class MLPStrategy(Strategy):
         assert filepath.exists(), f"Model file not found: {filepath}"
 
         with filepath.open("rb") as f:
-            model = pickle.load(f)
+            loaded_model = pickle.load(f)
 
-        # Try to load parameters
+        # Try to load parameters if they exist
         params_path = filepath.with_suffix(".params.json")
+        parameters = None
         if params_path.exists():
             logger.info(f"Loading model parameters from {params_path}")
             with params_path.open("r") as f:
                 params_data = json.load(f)
-                model.parameters = ModelParameters.model_validate(params_data)
+                parameters = ModelParameters.model_validate(params_data)
         else:
             logger.warning(f"No parameters file found at {params_path}")
+            # Use the parameters from the loaded model if available
+            parameters = loaded_model.parameters if hasattr(loaded_model, 'parameters') else None
 
-        return model
+        # If parameters were loaded separately, create a new instance with updated parameters
+        # Otherwise return the loaded model as-is
+        if parameters and parameters != loaded_model.parameters:
+            return cls(
+                model=loaded_model.model,
+                correct_answers=loaded_model.correct_answers,
+                tokenizer=loaded_model.tokenizer,
+                device=loaded_model.device,
+                parameters=parameters,
+            )
+
+        return loaded_model
 
     @classmethod
     def evaluate_on_split(
         cls,
-        model: "MLPStrategy",
+        model: "MLPStrategy | None" = None,
         *,
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
+        checkpoint_path: Path | None = None,
     ) -> dict[str, float]:
-        """Evaluate model on validation split using MAP@3 metric."""
+        """Evaluate model on validation split using MAP@3 metric.
+
+        Can either evaluate a provided model or load from a checkpoint.
+        If neither is provided, looks for the latest checkpoint.
+        """
+
+        # Handle checkpoint loading if model not provided
+        if model is None:
+            if checkpoint_path is None:
+                # Find the latest checkpoint
+                checkpoint_dir = Path("checkpoints")
+                checkpoints = list(checkpoint_dir.glob("mlp_best_*.pt"))
+                if not checkpoints:
+                    msg = "No model provided and no checkpoints found!"
+                    raise ValueError(msg)
+                checkpoint_path = max(checkpoints, key=lambda p: p.stat().st_mtime)
+                logger.info(f"Using latest checkpoint: {checkpoint_path}")
+
+            # Load checkpoint and create model
+            logger.info(f"Loading model from checkpoint: {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path, weights_only=False)
+            config = checkpoint["config"]
+
+            # Recreate model architecture
+            training_data = parse_training_data(train_csv_path)
+            question_misconceptions = extract_misconceptions_by_popularity(training_data)
+            correct_answers = extract_correct_answers(training_data)
+
+            # Create and load model
+            mlp_model = QuestionSpecificMLP(question_misconceptions)
+            mlp_model.load_state_dict(checkpoint["model_state_dict"])
+            device = get_device()
+            mlp_model = mlp_model.to(device)
+
+            # Create strategy instance
+            tokenizer = get_tokenizer()
+            n_samples = len(training_data)
+            train_indices, val_indices, test_indices = get_split_indices(
+                n_samples, train_ratio=config.train_split, random_seed=config.random_seed
+            )
+            parameters = ModelParameters.create(
+                train_split=config.train_split,
+                random_seed=config.random_seed,
+                train_indices=list(train_indices),
+                val_indices=list(val_indices),
+                test_indices=list(test_indices),
+                total_samples=n_samples,
+            )
+
+            model = cls(
+                model=mlp_model,
+                correct_answers=correct_answers,
+                tokenizer=tokenizer,
+                device=device,
+                parameters=parameters,
+            )
+
+            logger.info(f"Loaded model from epoch {checkpoint['epoch']} with val loss {checkpoint['val_loss']:.4f}")
+
+            # Use checkpoint's training config for evaluation
+            train_split = config.train_split
+            random_seed = config.random_seed
 
         logger.info("Evaluating MLP model on validation split")
         logger.info(f"Using train_split={train_split}, random_seed={random_seed}")
@@ -629,28 +750,28 @@ class MLPStrategy(Strategy):
 if __name__ == "__main__":
     """Quick test of MLP training with wandb visualization."""
     from pathlib import Path
-    
+
     print("🚀 Training MLP with wandb visualization...")
     print("=" * 60)
-    
+
     # Train with fewer epochs for quick testing
     model = MLPStrategy.fit(
         epochs=5,  # Quick training for testing
         wandb_project="kaggle-map-mlp",
         wandb_run_name="mlp-quicktest",
     )
-    
+
     # Save the model
     model_path = Path("models/mlp.pkl")
     model.save(model_path)
     print(f"\n✅ Model saved to {model_path}")
-    
+
     # Quick evaluation
     print("\n📊 Evaluating model on validation split...")
     results = MLPStrategy.evaluate_on_split(model)
     print(f"Validation MAP@3: {results['validation_map@3']:.4f}")
     print(f"Validation samples: {results['validation_samples']}")
-    
+
     print("\n🎉 Training complete! Check your wandb dashboard for visualizations.")
     print("Dashboard: https://wandb.ai/")
     print("=" * 60)

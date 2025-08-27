@@ -48,28 +48,27 @@ def _log_class_analysis(name: str, obj: type, _module_name: str) -> str:
         logger.debug(f"Class '{name}' qualifies as Strategy (inherits from Strategy base class)")
         return ""
 
-    logger.debug(f"Skipping '{name}': {reason}")
+    # Don't log skipping for normal non-Strategy classes - it's too verbose
+    # Only log if it's something noteworthy (like the base Strategy class itself)
+    if reason == "is the base Strategy class":
+        logger.debug(f"Skipping '{name}': {reason}")
     return reason
 
 
 def _find_strategy_class(module: ModuleType) -> type[Strategy] | None:
     module_name = module.__name__
-    logger.debug(f"Scanning module '{module_name}' for Strategy classes")
 
     all_classes = []
     strategy_classes = []
 
     for name, obj in inspect.getmembers(module, inspect.isclass):
         all_classes.append(name)
-        logger.debug(f"Found class '{name}' in module '{module_name}'")
 
         skip_reason = _log_class_analysis(name, obj, module_name)
         if not skip_reason:  # Valid strategy class found
             strategy_classes.append(name)
             logger.info(f"Selected strategy class '{name}' from module '{module_name}'")
             return obj
-
-    logger.debug(f"Module '{module_name}' contains {len(all_classes)} classes: {all_classes}")
 
     if not strategy_classes:
         logger.warning(f"No Strategy classes found in module '{module_name}'. Available classes: {all_classes}")
