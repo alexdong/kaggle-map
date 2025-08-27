@@ -48,7 +48,7 @@ uv run -m kaggle_map.cli run <strategy> eval
 uv run -m kaggle_map.cli run <strategy> eval --model-path my_model.pkl
 
 # Evaluate with specific train/test split
-uv run -m kaggle_map.cli run <strategy> eval --train-split 0.8
+uv run -m kaggle_map.cli run <strategy> eval --train-split 0.7
 ```
 
 ### Prediction Generation
@@ -64,7 +64,7 @@ uv run -m kaggle_map.cli run <strategy> predict --model-path my_model.pkl --outp
 ### Additional Options
 
 - `--verbose, -v`: Show detailed model information
-- `--train-split`: Fraction of data for training (default: 0.8)
+- `--train-split`: Fraction of data for training (default: 0.7)
 - `--random-seed`: Random seed for reproducible results (default: 42)
 
 ## Development Commands

@@ -1,5 +1,3 @@
-"""Abstract base class for all prediction strategies."""
-
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -28,7 +26,7 @@ class Strategy(ABC):
     def fit(
         cls,
         *,
-        train_split: float = 0.8,
+        train_split: float = 0.7,
         random_seed: int = 42,
         train_csv_path: Path = Path("dataset/train.csv"),
     ) -> "Strategy":
@@ -80,7 +78,7 @@ class Strategy(ABC):
         cls,
         model: "Strategy",
         *,
-        train_split: float = 0.8,
+        train_split: float = 0.7,
         random_seed: int = 42,
     ) -> dict[str, float]:
         """Evaluate model on validation split.

@@ -3,6 +3,7 @@
 from enum import Enum
 from typing import NamedTuple
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, field_validator
 
@@ -136,3 +137,9 @@ class TrainingRow(EvaluationRow):
 class SubmissionRow(NamedTuple):
     row_id: RowId
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
+
+
+class TrainingInput(NamedTuple):
+    question_id: QuestionId
+    embeddings: np.ndarray
+    misconception: Misconception

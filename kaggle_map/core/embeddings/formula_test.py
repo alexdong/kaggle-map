@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pytest
 
 from kaggle_map.core.embeddings.formula import (
