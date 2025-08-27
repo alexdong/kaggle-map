@@ -82,6 +82,48 @@ from .utils import (
 )
 
 
+class ListMLELoss(nn.Module):
+    """ListMLE loss for learning to rank, optimized for MAP@3."""
+
+    def forward(self, scores: torch.Tensor, labels: torch.Tensor, k: int = 3) -> torch.Tensor:
+        """
+        Compute ListMLE loss for ranking.
+
+        Args:
+            scores: [batch_size, n_classes] - predicted scores for each class
+            labels: [batch_size] - ground truth class indices
+            k: Top-k positions to optimize for (default 3 for MAP@3)
+        """
+        batch_size, n_classes = scores.shape
+
+        # Create one-hot encoding of labels
+        labels_one_hot = torch.zeros_like(scores)
+        labels_one_hot.scatter_(1, labels.unsqueeze(1), 1)
+
+        # Sort scores in descending order
+        sorted_scores, indices = torch.sort(scores, dim=1, descending=True)
+
+        # Reorder labels according to sorted scores
+        sorted_labels = labels_one_hot.gather(1, indices)
+
+        # Compute ListMLE loss focusing on top-k positions
+        top_k_scores = sorted_scores[:, :k]
+        top_k_labels = sorted_labels[:, :k]
+
+        # Compute probability for correct items being ranked high
+        exp_scores = torch.exp(top_k_scores)
+        cumsum_exp_scores = torch.cumsum(exp_scores, dim=1)
+
+        # Avoid log(0)
+        epsilon = 1e-10
+        log_probs = top_k_scores - torch.log(cumsum_exp_scores + epsilon)
+
+        # Weight by ground truth labels
+        loss = -torch.sum(top_k_labels * log_probs, dim=1)
+
+        return loss.mean()
+
+
 class QuestionSpecificMLP(nn.Module):
     """MLP with shared trunk and question-specific misconception heads."""
 
@@ -95,12 +137,19 @@ class QuestionSpecificMLP(nn.Module):
         if config is None:
             config = TorchConfig()
 
+        # Add learnable correctness embedding
+        self.correctness_embedding = nn.Embedding(2, 32)
+
         activation = get_activation(config.activation)
-        dims = [385, 512, 256, 192]
+        # Updated dims: 768 (q+a embeddings) + 32 (correctness) = 800 -> 1024 -> 512 -> 256 -> 192
+        dims = [800, 1024, 512, 256, 192]
 
         layers = []
         for i in range(len(dims) - 1):
-            layers.extend([nn.Linear(dims[i], dims[i + 1]), activation, nn.Dropout(config.dropout)])
+            layers.append(nn.Linear(dims[i], dims[i + 1]))
+            layers.append(nn.LayerNorm(dims[i + 1]))  # Add layer normalization
+            layers.append(activation)
+            layers.append(nn.Dropout(config.dropout))
 
         self.trunk = nn.Sequential(*layers)
         self.output_dim = dims[-1]
@@ -127,8 +176,21 @@ class QuestionSpecificMLP(nn.Module):
                 self.false_label_encoders[question_id] = false_encoder
 
     def forward(self, x: torch.Tensor, question_ids: torch.Tensor, is_correct: torch.Tensor) -> dict[int, torch.Tensor]:
-        """Forward pass returning logits per question, split by correctness."""
-        shared_features = self.trunk(x)
+        """Forward pass returning logits per question, split by correctness.
+
+        Args:
+            x: [batch_size, 768] - concatenated question and answer embeddings
+            question_ids: [batch_size] - question IDs
+            is_correct: [batch_size] - correctness indices (0 or 1)
+        """
+        # Get learnable correctness embeddings
+        correct_emb = self.correctness_embedding(is_correct.long())
+
+        # Concatenate embeddings with correctness
+        combined = torch.cat([x, correct_emb.squeeze(1) if correct_emb.dim() > 2 else correct_emb], dim=-1)
+
+        # Pass through trunk
+        shared_features = self.trunk(combined)
 
         outputs = {}
         unique_questions = torch.unique(question_ids)
@@ -143,7 +205,7 @@ class QuestionSpecificMLP(nn.Module):
 
                 # Use different heads based on correctness
                 # We'll return a tuple (qid, is_correct) as key
-                if question_correctness[0].item() > 0.5:  # Answer is correct
+                if question_correctness[0].item() > 0:  # Answer is correct (index 1)
                     if str(qid_int) in self.true_heads:
                         outputs[(qid_int, True)] = self.true_heads[str(qid_int)](question_features)
                 elif str(qid_int) in self.false_heads:
@@ -182,9 +244,8 @@ class MLPDataset(Dataset):
         mc_answer = self.mc_answers[idx]
 
         is_correct = mc_answer == self.correct_answers.get(qid, "")
-        is_correct_tensor = torch.tensor([1.0 if is_correct else 0.0], dtype=torch.float32)
-
-        enhanced_embedding = torch.cat([self.embeddings[idx], is_correct_tensor], dim=0)
+        # Return correctness as index for embedding lookup (0 or 1)
+        is_correct_idx = torch.tensor(1 if is_correct else 0, dtype=torch.long)
 
         label_encoder = self.true_label_encoders.get(qid) if is_correct else self.false_label_encoders.get(qid)
 
@@ -193,7 +254,8 @@ class MLPDataset(Dataset):
         else:
             label = 0
 
-        return enhanced_embedding, self.question_ids[idx], torch.tensor(label, dtype=torch.long), is_correct_tensor
+        # Return embeddings and correctness index separately
+        return self.embeddings[idx], self.question_ids[idx], torch.tensor(label, dtype=torch.long), is_correct_idx
 
 
 @dataclass(frozen=True)
@@ -230,7 +292,7 @@ class MLPStrategy(Strategy):
         Args:
             model: The MLP model with question-specific heads
             batch: Tuple of (embeddings, question_ids, labels, is_correct)
-            criterion: Loss function (typically CrossEntropyLoss)
+            criterion: Loss function (ListMLELoss or CrossEntropyLoss)
             device: Device to run computations on
 
         Returns:
@@ -247,7 +309,7 @@ class MLPStrategy(Strategy):
         total_loss = 0.0
         total_samples = 0
         for (qid, is_correct), logits in outputs.items():
-            correctness_mask = batch_correctness.squeeze() > 0.5 if is_correct else batch_correctness.squeeze() <= 0.5
+            correctness_mask = batch_correctness > 0 if is_correct else batch_correctness == 0
             question_mask = batch_questions == qid
             combined_mask = question_mask & correctness_mask
 
@@ -271,9 +333,13 @@ class MLPStrategy(Strategy):
         logger.info(f"Fitting MLP strategy from {config.train_csv_path}")
 
         extra_config = {
-            "architecture": "shared_trunk_question_heads",
-            "trunk_layers": [384, 768, 384, 192],
-            "dropout": 0.3,
+            "architecture": "improved_mlp_with_correctness",
+            "trunk_layers": [800, 1024, 512, 256, 192],
+            "correctness_embedding_dim": 32,
+            "include_question": True,
+            "loss_function": "ListMLE",
+            "layer_norm": True,
+            "dropout": config.dropout,
         }
         init_wandb(config, extra_config)
 
@@ -290,7 +356,7 @@ class MLPStrategy(Strategy):
         question_predictions = extract_question_predictions(training_data)
 
         def compute_embeddings(data):
-            logger.info("Computing embeddings (no precomputed file found)")
+            logger.info("Computing separate question and answer embeddings")
             tokenizer = get_tokenizer()
 
             embeddings_list = []
@@ -299,10 +365,17 @@ class MLPStrategy(Strategy):
             mc_answers_list = []
 
             for row in data:
-                text = f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}"
-                embedding = tokenizer.encode(text)
+                # Compute question embedding
+                question_emb = tokenizer.encode(row.question_text)
 
-                embeddings_list.append(embedding)
+                # Compute answer + explanation embedding
+                answer_text = f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}"
+                answer_emb = tokenizer.encode(answer_text)
+
+                # Concatenate question and answer embeddings (768 dims total)
+                combined_emb = np.concatenate([question_emb, answer_emb])
+
+                embeddings_list.append(combined_emb)
                 question_ids_list.append(row.question_id)
                 predictions_list.append(str(row.prediction))
                 mc_answers_list.append(row.mc_answer)
@@ -371,14 +444,14 @@ class MLPStrategy(Strategy):
         train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 
-        # Train the model using the generic training function
+        # Train the model using the generic training function with ListMLE loss
         model, history = train_torch_model(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
             config=config,
             device=device,
-            criterion=nn.CrossEntropyLoss(),
+            criterion=ListMLELoss(),  # Use ranking loss instead of CrossEntropyLoss
             train_batch_fn=cls.process_mlp_batch,
             val_batch_fn=cls.process_mlp_batch,  # Same logic for validation
         )
@@ -409,19 +482,26 @@ class MLPStrategy(Strategy):
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions on a single evaluation row."""
-        # Prepare input
+        # Compute separate embeddings
+        question_emb = self.tokenizer.encode(evaluation_row.question_text)
+        answer_text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
+        answer_emb = self.tokenizer.encode(answer_text)
+
+        # Concatenate question and answer embeddings
+        combined_emb = torch.FloatTensor(np.concatenate([question_emb, answer_emb]))
+        combined_emb = combined_emb.unsqueeze(0).to(self.device)
+
+        # Determine correctness
         is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
-        text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
-        embedding = torch.FloatTensor(self.tokenizer.encode(text))
-        enhanced = torch.cat([embedding, torch.tensor([float(is_correct)])]).unsqueeze(0).to(self.device)
+        correctness_idx = torch.tensor([1 if is_correct else 0], dtype=torch.long).to(self.device)
 
         # Get predictions from model
         self.model.eval()
         with torch.no_grad():
             outputs = self.model(
-                enhanced,
+                combined_emb,
                 torch.LongTensor([evaluation_row.question_id]).to(self.device),
-                torch.tensor([[float(is_correct)]]).to(self.device),
+                correctness_idx,
             )
 
         # Extract predictions
