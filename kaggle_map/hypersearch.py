@@ -55,29 +55,24 @@ class HyperparameterSearch:
 
     def get_search_space(self, trial: Trial) -> dict[str, Any]:
         """Define search space based on strategy type."""
-        if self.config.strategy == "mlp":
+        # Use strategy's own search space definition
+        search_space = self.strategy_class.get_hyperparameter_search_space(trial)
+
+        # If strategy doesn't define search space, try some defaults
+        if not search_space:
+            logger.warning(f"Strategy {self.config.strategy} has no search space defined")
+            # Try some generic defaults based on strategy name
+            if self.config.strategy == "baseline":
+                return {
+                    "smoothing": trial.suggest_float("smoothing", 0.0, 1.0, step=0.1),
+                    "min_count": trial.suggest_int("min_count", 1, 10),
+                }
             return {
-                "hidden_dim": trial.suggest_int("hidden_dim", 128, 1024, step=128),
-                "n_layers": trial.suggest_int("n_layers", 2, 6),
-                "dropout": trial.suggest_float("dropout", 0.1, 0.5, step=0.05),
-                "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
-                "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True),
-                "batch_size": trial.suggest_categorical("batch_size", [16, 32, 64, 128]),
-                "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"]),
-                "scheduler": trial.suggest_categorical("scheduler", ["none", "cosine", "step", "onecycle"]),
-                "activation": trial.suggest_categorical("activation", ["relu", "gelu", "leaky_relu"]),
+                "param1": trial.suggest_float("param1", 0.0, 1.0),
+                "param2": trial.suggest_int("param2", 1, 100),
             }
-        if self.config.strategy == "baseline":
-            return {
-                "smoothing": trial.suggest_float("smoothing", 0.0, 1.0, step=0.1),
-                "min_count": trial.suggest_int("min_count", 1, 10),
-            }
-        # Default search space for unknown strategies
-        logger.warning(f"No predefined search space for {self.config.strategy}, using defaults")
-        return {
-            "param1": trial.suggest_float("param1", 0.0, 1.0),
-            "param2": trial.suggest_int("param2", 1, 100),
-        }
+
+        return search_space
 
     def objective(self, trial: Trial) -> float:
         """Objective function for optimization."""
@@ -112,31 +107,18 @@ class HyperparameterSearch:
 
     def train_with_params(self, params: dict[str, Any]) -> Strategy:
         """Train model with specific hyperparameters."""
-        # Strategy-specific training
-        if self.config.strategy == "mlp":
-            # Create custom config for MLP
-            from .strategies.mlp import MLPConfig, MLPStrategy
+        # Let strategy handle its own config creation
+        config_or_params = self.strategy_class.create_config_from_hyperparams(
+            params,
+            epochs=50,  # Use fewer epochs for search
+            early_stopping_patience=5,
+        )
 
-            config = MLPConfig(
-                hidden_dim=params.get("hidden_dim", 768),
-                n_layers=params.get("n_layers", 3),
-                dropout=params.get("dropout", 0.3),
-                learning_rate=params.get("learning_rate", 1e-3),
-                weight_decay=params.get("weight_decay", 0.0),
-                batch_size=params.get("batch_size", 128),
-                epochs=50,  # Use fewer epochs for search
-                n_epochs=50,  # Alias
-                early_stopping_patience=5,
-                optimizer=params.get("optimizer", "adam"),
-                scheduler=params.get("scheduler", "none"),
-                activation=params.get("activation", "relu"),
-                device="auto",
-            )
-
-            # Pass config to fit method
-            return MLPStrategy.fit(config=config)
-        # For other strategies, pass params directly
-        return self.strategy_class.fit(**params)
+        # If the strategy returns a config object, pass it as config
+        # Otherwise pass as kwargs
+        if isinstance(config_or_params, dict):
+            return self.strategy_class.fit(**config_or_params)
+        return self.strategy_class.fit(config=config_or_params)
 
     def save_trial_result(self, trial_number: int, params: dict, results: dict) -> None:
         """Save individual trial results."""
@@ -258,6 +240,11 @@ class HyperparameterSearch:
 
     def get_grid_search_space(self) -> dict[str, list[Any]]:
         """Define grid search space for systematic exploration."""
+        # Check if strategy defines a grid search space
+        if hasattr(self.strategy_class, "get_grid_search_space"):
+            return self.strategy_class.get_grid_search_space()
+
+        # Default grid spaces for known strategies
         if self.config.strategy == "mlp":
             return {
                 "hidden_dim": [256, 512, 768],
@@ -266,6 +253,8 @@ class HyperparameterSearch:
                 "learning_rate": [1e-4, 5e-4, 1e-3],
                 "batch_size": [32, 64],
             }
+
+        logger.warning(f"No grid search space defined for {self.config.strategy}")
         return {}
 
 

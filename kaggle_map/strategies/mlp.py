@@ -3,32 +3,32 @@
 Architecture Design:
 -------------------
 Shared Trunk:
-  - Input: embedding(384) from sentence-transformers/all-MiniLM-L6-v2
+  - Input: embedding(384) from sentence-transformers/all-MiniLM-L6-v2 (answer + explanation only)
   - Hidden 1: 768 units, ReLU, 0.3 dropout
   - Hidden 2: 384 units, ReLU, 0.3 dropout
   - Shared: 192 units, ReLU, 0.3 dropout
 
-Question-Specific Misconception Heads (nn.ModuleDict):
+Question-Specific Prediction Heads (nn.ModuleDict):
   - One head per question ID (e.g., Q31772, Q31774, etc.)
-  - Each head outputs N classes where N = unique misconceptions + NA
+  - Each head outputs N classes where N = unique Category:Misconception pairs for that question
   - Examples:
-    - Q31772: 3 outputs → [Incomplete, WNB, NA]
-    - Q31774: 4 outputs → [Mult, SwapDividend, FlipChange, NA]
+    - Q31772: 8 outputs → [True_Correct:NA, False_Misconception:Incomplete, False_Misconception:WNB, ...]
+    - Q31774: 10 outputs → [True_Correct:NA, False_Misconception:Mult, True_Misconception:SwapDividend, ...]
 
 Key Design Decisions:
 --------------------
-1. NA Handling: "NA" is treated as a separate class in multi-class classification
+1. Full Prediction Labels: Predicts complete "Category:Misconception" pairs as atomic classes
 2. Loss Function: CrossEntropyLoss for multi-class classification per question head
 3. Loss Aggregation: Average loss across all question heads during training
 4. Optimizer: Adam with learning rate 1e-3
 5. Early Stopping: Based on validation loss with patience of 10 epochs
 6. Data Split: 70% train, 15% validation, 15% test (configurable)
-7. Embeddings: Precomputed 384-dim embeddings from MiniLM stored at datasets/train_embeddings.npz
+7. Embeddings: 384-dim embeddings from MiniLM using only answer and explanation text
 
 Training Process:
 ----------------
 1. Load precomputed embeddings or compute on-the-fly
-2. Create question-specific label encoders for misconception mapping
+2. Create question-specific label encoders for full prediction mapping
 3. Train with mini-batches, grouping by question ID for head-specific loss
 4. Track progress with Weights & Biases (wandb) integration
 5. Apply early stopping based on validation loss
@@ -37,23 +37,24 @@ Training Process:
 
 import json
 import pickle
+import sys
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
+import torch.optim
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
-from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 
 import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
-    extract_misconceptions_by_popularity,
     parse_training_data,
 )
 from kaggle_map.core.embeddings.tokenizer import get_tokenizer
@@ -62,7 +63,6 @@ from kaggle_map.core.models import (
     Answer,
     Category,
     EvaluationRow,
-    Misconception,
     Prediction,
     QuestionId,
     SubmissionRow,
@@ -86,56 +86,97 @@ class MLPConfig:
     train_csv_path: Path = field(default_factory=lambda: Path("datasets/train.csv"))
     embeddings_path: Path | None = field(default_factory=lambda: Path("datasets/train_embeddings.npz"))
     epochs: int = 20
+    n_epochs: int = 20  # Alias for epochs
     batch_size: int = 128
     learning_rate: float = 1e-3
+    weight_decay: float = 0.0
     early_stopping_patience: int = 5
     wandb_project: str = "kaggle-map-mlp"
     wandb_run_name: str | None = None
     checkpoint_dir: Path = field(default_factory=lambda: Path("checkpoints"))
+    # Architecture hyperparameters
+    hidden_dim: int = 128
+    n_layers: int = 2
+    dropout: float = 0.1
+    activation: str = "relu"  # relu, gelu, leaky_relu
+    optimizer: str = "adamw"  # adam, adamw, sgd
+    scheduler: str = "onecycle"  # none, cosine, step, onecycle
+    device: str = "auto"  # auto, cpu, cuda, mps
 
 
 class QuestionSpecificMLP(nn.Module):
     """MLP with shared trunk and question-specific misconception heads."""
 
-    def __init__(self, question_misconceptions: dict[QuestionId, list[Misconception]]) -> None:
+    def __init__(
+        self,
+        question_predictions: dict[QuestionId, list[str]],
+        config: MLPConfig | None = None,
+    ) -> None:
         super().__init__()
 
-        # Shared trunk layers
-        self.trunk = nn.Sequential(
-            nn.Linear(384, 768),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(768, 384),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(384, 192),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-        )
+        # Use config or defaults
+        if config is None:
+            config = MLPConfig()
 
-        # Question-specific heads
-        self.question_heads = nn.ModuleDict()
-        self.question_label_encoders = {}
+        # Get activation function
+        activation_map = {
+            "relu": nn.ReLU(),
+            "gelu": nn.GELU(),
+            "leaky_relu": nn.LeakyReLU(0.2),
+        }
+        activation = activation_map.get(config.activation, nn.ReLU())
 
-        for question_id, misconceptions in question_misconceptions.items():
-            # Always include NA as a class
-            unique_misconceptions = sorted(set(misconceptions) | {"NA"})
-            num_classes = len(unique_misconceptions)
+        # Build trunk layers dynamically based on config
+        layers = []
+        input_dim = 384 + 1  # +1 for answer correctness feature
 
-            # Create head for this question
-            self.question_heads[str(question_id)] = nn.Linear(192, num_classes)
+        # Create hidden layers
+        hidden_dims = [config.hidden_dim] * config.n_layers
+        # Gradually reduce dimensions
+        for i, hidden_dim in enumerate(hidden_dims):
+            # Adjust dimension for deeper layers
+            adjusted_dim = int(hidden_dim * (0.5 ** (i / max(config.n_layers - 1, 1))))
+            adjusted_dim = max(adjusted_dim, 192)  # Minimum dimension
 
-            # Create label encoder for this question
-            label_encoder = LabelEncoder()
-            label_encoder.fit(unique_misconceptions)
-            self.question_label_encoders[question_id] = label_encoder
+            layers.append(nn.Linear(input_dim, adjusted_dim))
+            layers.append(activation)
+            layers.append(nn.Dropout(config.dropout))
+            input_dim = adjusted_dim
 
-    def forward(self, x: torch.Tensor, question_ids: torch.Tensor) -> dict[int, torch.Tensor]:
-        """Forward pass returning logits per question."""
+        self.trunk = nn.Sequential(*layers)
+        self.output_dim = input_dim  # Final dimension from trunk
+
+        # Question-specific heads split by correctness
+        self.true_heads = nn.ModuleDict()  # For when answer is correct
+        self.false_heads = nn.ModuleDict()  # For when answer is incorrect
+        self.true_label_encoders = {}
+        self.false_label_encoders = {}
+
+        for question_id, predictions in question_predictions.items():
+            # Split predictions by True_ and False_ prefixes
+            true_preds = [p for p in predictions if p.startswith("True_")]
+            false_preds = [p for p in predictions if p.startswith("False_")]
+
+            # Create heads for True predictions
+            if true_preds:
+                self.true_heads[str(question_id)] = nn.Linear(self.output_dim, len(true_preds))
+                true_encoder = LabelEncoder()
+                true_encoder.fit(sorted(true_preds))
+                self.true_label_encoders[question_id] = true_encoder
+
+            # Create heads for False predictions
+            if false_preds:
+                self.false_heads[str(question_id)] = nn.Linear(self.output_dim, len(false_preds))
+                false_encoder = LabelEncoder()
+                false_encoder.fit(sorted(false_preds))
+                self.false_label_encoders[question_id] = false_encoder
+
+    def forward(self, x: torch.Tensor, question_ids: torch.Tensor, is_correct: torch.Tensor) -> dict[int, torch.Tensor]:
+        """Forward pass returning logits per question, split by correctness."""
         # Pass through shared trunk
         shared_features = self.trunk(x)
 
-        # Group by question and apply appropriate head
+        # Group by question and correctness, apply appropriate head
         outputs = {}
         unique_questions = torch.unique(question_ids)
 
@@ -143,9 +184,17 @@ class QuestionSpecificMLP(nn.Module):
             qid_int = int(qid.item())
             mask = question_ids == qid
 
-            if str(qid_int) in self.question_heads:
+            if mask.any():
                 question_features = shared_features[mask]
-                outputs[qid_int] = self.question_heads[str(qid_int)](question_features)
+                question_correctness = is_correct[mask]
+
+                # Use different heads based on correctness
+                # We'll return a tuple (qid, is_correct) as key
+                if question_correctness[0].item() > 0.5:  # Answer is correct
+                    if str(qid_int) in self.true_heads:
+                        outputs[(qid_int, True)] = self.true_heads[str(qid_int)](question_features)
+                elif str(qid_int) in self.false_heads:
+                    outputs[(qid_int, False)] = self.false_heads[str(qid_int)](question_features)
 
         return outputs
 
@@ -157,25 +206,44 @@ class MLPDataset(Dataset):
         self,
         embeddings: np.ndarray,
         question_ids: np.ndarray,
-        misconceptions: np.ndarray,
-        label_encoders: dict[QuestionId, LabelEncoder],
+        predictions: np.ndarray,  # Full prediction strings
+        correct_answers: dict[QuestionId, Answer],
+        mc_answers: np.ndarray,  # Student answers
+        true_label_encoders: dict[QuestionId, LabelEncoder],
+        false_label_encoders: dict[QuestionId, LabelEncoder],
     ) -> None:
         self.embeddings = torch.FloatTensor(embeddings)
         self.question_ids = torch.LongTensor(question_ids)
-        self.misconceptions = misconceptions
-        self.label_encoders = label_encoders
+        self.predictions = predictions
+        self.correct_answers = correct_answers
+        self.mc_answers = mc_answers
+        self.true_label_encoders = true_label_encoders
+        self.false_label_encoders = false_label_encoders
 
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         qid = int(self.question_ids[idx].item())
-        misconception = self.misconceptions[idx]
+        prediction = self.predictions[idx]
+        mc_answer = self.mc_answers[idx]
 
-        # Encode the misconception for this question
-        label = self.label_encoders[qid].transform([misconception])[0] if qid in self.label_encoders else 0
+        # Determine if answer is correct
+        is_correct = mc_answer == self.correct_answers.get(qid, "")
+        is_correct_tensor = torch.tensor([1.0 if is_correct else 0.0], dtype=torch.float32)
 
-        return self.embeddings[idx], self.question_ids[idx], torch.tensor(label, dtype=torch.long)
+        # Add correctness as a feature to embeddings
+        enhanced_embedding = torch.cat([self.embeddings[idx], is_correct_tensor], dim=0)
+
+        # Encode prediction based on correctness
+        label_encoder = self.true_label_encoders.get(qid) if is_correct else self.false_label_encoders.get(qid)
+
+        if label_encoder and prediction in label_encoder.classes_:
+            label = label_encoder.transform([prediction])[0]
+        else:
+            label = 0  # Default
+
+        return enhanced_embedding, self.question_ids[idx], torch.tensor(label, dtype=torch.long), is_correct_tensor
 
 
 @dataclass(frozen=True)
@@ -198,73 +266,110 @@ class MLPStrategy(Strategy):
 
     @property
     def description(self) -> str:
-        return "MLP with shared trunk and question-specific heads for misconception prediction"
+        return "MLP with shared trunk and question-specific heads for full prediction (Category:Misconception)"
+
+    @staticmethod
+    def extract_question_predictions(training_data: list) -> dict[QuestionId, list[str]]:
+        """Extract unique prediction strings per question."""
+        question_predictions = defaultdict(list)
+        for row in training_data:
+            pred_str = str(row.prediction)
+            question_predictions[row.question_id].append(pred_str)
+
+        # Return unique predictions per question
+        return {
+            qid: list(set(preds))
+            for qid, preds in question_predictions.items()
+        }
 
     @staticmethod
     def _load_embeddings_and_labels(
         embeddings_path: Path | None,
         training_data: list,
         train_df: pd.DataFrame,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Load or compute embeddings and associated labels."""
         if embeddings_path and embeddings_path.exists():
             logger.info(f"Loading precomputed embeddings from {embeddings_path}")
             data = np.load(embeddings_path)
             embeddings = data["embeddings"]
             row_ids = data["row_ids"]
-            misconceptions = data["misconceptions"]
-            # Get question IDs from training CSV
+            # We need to reconstruct full predictions from the CSV
+            # Get question IDs and predictions from training data
             question_ids = train_df.set_index("row_id").loc[row_ids]["QuestionId"].to_numpy()
+            mc_answers = train_df.set_index("row_id").loc[row_ids]["MC_Answer"].to_numpy()
+            # Create full prediction strings from the training data
+            row_id_to_prediction = {row.row_id: str(row.prediction) for row in training_data}
+            predictions = np.array([row_id_to_prediction[rid] for rid in row_ids])
         else:
             logger.info("Computing embeddings from scratch")
             tokenizer = get_tokenizer()
             embeddings = []
             question_ids = []
-            misconceptions = []
+            predictions = []
+            mc_answers = []
             for row in training_data:
-                text = repr(row)
+                # Create text from only answer and explanation
+                text = f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}"
                 embedding = tokenizer.encode(text)
                 embeddings.append(embedding)
                 question_ids.append(row.question_id)
-                misconceptions.append(row.misconception)
+                predictions.append(str(row.prediction))  # Store full prediction string (category:misconception)
+                mc_answers.append(row.mc_answer)
             embeddings = np.array(embeddings)
             question_ids = np.array(question_ids)
-            misconceptions = np.array(misconceptions)
-        return embeddings, question_ids, misconceptions
+            predictions = np.array(predictions)
+            mc_answers = np.array(mc_answers)
+        return embeddings, question_ids, predictions, mc_answers
 
     @staticmethod
     def _train_epoch(
         model: QuestionSpecificMLP,
         train_loader: DataLoader,
-        optimizer: Adam,
+        optimizer: torch.optim.Optimizer,
         criterion: nn.CrossEntropyLoss,
         device: str,
+        scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     ) -> float:
         """Train for one epoch and return average loss."""
         model.train()
         train_loss = 0.0
         train_samples = 0
 
-        for batch_embeds, batch_quests, batch_lbls in train_loader:
+        for batch_embeds, batch_quests, batch_lbls, batch_correct in train_loader:
             batch_embeddings = batch_embeds.to(device)
             batch_questions = batch_quests.to(device)
             batch_labels = batch_lbls.to(device)
+            batch_correctness = batch_correct.to(device)
 
             optimizer.zero_grad()
-            outputs = model(batch_embeddings, batch_questions)
+            outputs = model(batch_embeddings, batch_questions, batch_correctness)
 
-            # Calculate loss per question and aggregate
-            loss = 0.0
-            for qid, logits in outputs.items():
-                mask = batch_questions == qid
-                if mask.any():
-                    question_labels = batch_labels[mask]
-                    loss += criterion(logits, question_labels)
+            # Calculate loss - outputs is a dict of (qid, is_correct) -> logits for those samples
+            total_loss = 0.0
+            total_samples = 0
+            for (qid, is_correct), logits in outputs.items():
+                # Find indices for this question and correctness combination
+                correctness_mask = batch_correctness.squeeze() > 0.5 if is_correct else batch_correctness.squeeze() <= 0.5
+                question_mask = batch_questions == qid
+                combined_mask = question_mask & correctness_mask
 
-            if len(outputs) > 0:
-                loss = loss / len(outputs)  # Average across questions
+                if combined_mask.any():
+                    question_labels = batch_labels[combined_mask]
+                    # Ensure logits and labels have matching dimensions
+                    if logits.size(0) == question_labels.size(0):
+                        total_loss += criterion(logits, question_labels) * logits.size(0)
+                        total_samples += logits.size(0)
+
+            if total_samples > 0:
+                loss = total_loss / total_samples  # Weighted average
                 loss.backward()
                 optimizer.step()
+
+                # Step OneCycle scheduler after each batch
+                if scheduler is not None and hasattr(scheduler, "__class__") and scheduler.__class__.__name__ == "OneCycleLR":
+                    scheduler.step()
+
                 train_loss += loss.item() * batch_embeddings.size(0)
                 train_samples += batch_embeddings.size(0)
 
@@ -283,24 +388,34 @@ class MLPStrategy(Strategy):
         val_samples = 0
 
         with torch.no_grad():
-            for batch_embeds, batch_quests, batch_lbls in val_loader:
+            for batch_embeds, batch_quests, batch_lbls, batch_correct in val_loader:
                 batch_embeddings = batch_embeds.to(device)
                 batch_questions = batch_quests.to(device)
                 batch_labels = batch_lbls.to(device)
+                batch_correctness = batch_correct.to(device)
 
-                outputs = model(batch_embeddings, batch_questions)
+                outputs = model(batch_embeddings, batch_questions, batch_correctness)
 
-                loss = 0.0
-                for qid, logits in outputs.items():
-                    mask = batch_questions == qid
-                    if mask.any():
-                        question_labels = batch_labels[mask]
-                        loss += criterion(logits, question_labels)
+                # Calculate loss - outputs is a dict of (qid, is_correct) -> logits for those samples
+                total_loss = 0.0
+                total_samples = 0
+                for (qid, is_correct), logits in outputs.items():
+                    # Find indices for this question and correctness combination
+                    correctness_mask = batch_correctness.squeeze() > 0.5 if is_correct else batch_correctness.squeeze() <= 0.5
+                    question_mask = batch_questions == qid
+                    combined_mask = question_mask & correctness_mask
 
-                if len(outputs) > 0:
-                    loss = loss / len(outputs)
-                    val_loss += loss.item() * batch_embeddings.size(0)
-                    val_samples += batch_embeddings.size(0)
+                    if combined_mask.any():
+                        question_labels = batch_labels[combined_mask]
+                        # Ensure logits and labels have matching dimensions
+                        if logits.size(0) == question_labels.size(0):
+                            total_loss += criterion(logits, question_labels) * logits.size(0)
+                            total_samples += logits.size(0)
+
+                if total_samples > 0:
+                    loss = total_loss / total_samples  # Weighted average
+                    val_loss += loss * total_samples
+                    val_samples += total_samples
 
         return val_loss / val_samples if val_samples > 0 else 0
 
@@ -319,22 +434,32 @@ class MLPStrategy(Strategy):
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
         resume_from_checkpoint: Path | None = None,
+        config: MLPConfig | None = None,
         **kwargs: object,
     ) -> "MLPStrategy":
         """Fit the MLP strategy on training data."""
-        # Create config with defaults and overrides
-        config = MLPConfig(
-            train_split=train_split,
-            random_seed=random_seed,
-            train_csv_path=train_csv_path,
-            embeddings_path=Path(str(kwargs.get("embeddings_path", "datasets/train_embeddings.npz"))),
-            epochs=int(kwargs.get("epochs", 20)),
-            batch_size=int(kwargs.get("batch_size", 128)),
-            learning_rate=float(kwargs.get("learning_rate", 1e-3)),
-            early_stopping_patience=int(kwargs.get("early_stopping_patience", 5)),
-            wandb_project=str(kwargs.get("wandb_project", "kaggle-map-mlp")),
-            wandb_run_name=str(kwargs.get("wandb_run_name")) if kwargs.get("wandb_run_name") else None,
-        )
+        # Use provided config or create one with defaults and overrides
+        if config is None:
+            config = MLPConfig(
+                train_split=train_split,
+                random_seed=random_seed,
+                train_csv_path=train_csv_path,
+                embeddings_path=Path(str(kwargs.get("embeddings_path", "datasets/train_embeddings.npz"))),
+                epochs=int(kwargs.get("epochs", 20)),
+                batch_size=int(kwargs.get("batch_size", 128)),
+                learning_rate=float(kwargs.get("learning_rate", 1e-3)),
+                early_stopping_patience=int(kwargs.get("early_stopping_patience", 5)),
+                wandb_project=str(kwargs.get("wandb_project", "kaggle-map-mlp")),
+                wandb_run_name=str(kwargs.get("wandb_run_name")) if kwargs.get("wandb_run_name") else None,
+            )
+        else:
+            # Update config with provided parameters if not already set
+            if not hasattr(config, "train_split"):
+                config.train_split = train_split
+            if not hasattr(config, "random_seed"):
+                config.random_seed = random_seed
+            if not hasattr(config, "train_csv_path"):
+                config.train_csv_path = train_csv_path
 
         logger.info(f"Fitting MLP strategy from {config.train_csv_path}")
 
@@ -377,17 +502,17 @@ class MLPStrategy(Strategy):
         training_data = parse_training_data(config.train_csv_path)
         train_df = pd.read_csv(config.train_csv_path)
 
-        # Extract correct answers and misconceptions
+        # Extract correct answers and question predictions
         correct_answers = extract_correct_answers(training_data)
-        question_misconceptions = extract_misconceptions_by_popularity(training_data)
+        question_predictions = cls.extract_question_predictions(training_data)
 
         # Load or compute embeddings
-        embeddings, question_ids, misconceptions = cls._load_embeddings_and_labels(
+        embeddings, question_ids, predictions, mc_answers = cls._load_embeddings_and_labels(
             config.embeddings_path, training_data, train_df
         )
 
-        # Create model
-        model = QuestionSpecificMLP(question_misconceptions)
+        # Create model with config
+        model = QuestionSpecificMLP(question_predictions, config=config)
         model = model.to(device)
 
         # Log model info to wandb
@@ -396,7 +521,7 @@ class MLPStrategy(Strategy):
         wandb.config.update({
             "total_parameters": total_params,
             "trainable_parameters": trainable_params,
-            "num_questions": len(question_misconceptions),
+            "num_questions": len(question_predictions),
             "total_samples": len(embeddings),
         })
 
@@ -417,23 +542,51 @@ class MLPStrategy(Strategy):
         train_dataset = MLPDataset(
             embeddings[train_indices],
             question_ids[train_indices],
-            misconceptions[train_indices],
-            model.question_label_encoders,
+            predictions[train_indices],
+            correct_answers,
+            mc_answers[train_indices],
+            model.true_label_encoders,
+            model.false_label_encoders,
         )
 
         val_dataset = MLPDataset(
             embeddings[val_indices],
             question_ids[val_indices],
-            misconceptions[val_indices],
-            model.question_label_encoders,
+            predictions[val_indices],
+            correct_answers,
+            mc_answers[val_indices],
+            model.true_label_encoders,
+            model.false_label_encoders,
         )
 
         # Create data loaders
         train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False)
 
-        # Training setup
-        optimizer = Adam(model.parameters(), lr=config.learning_rate)
+        # Training setup - choose optimizer based on config
+        if config.optimizer == "adam":
+            optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+        elif config.optimizer == "adamw":
+            optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+        elif config.optimizer == "sgd":
+            optimizer = torch.optim.SGD(model.parameters(), lr=config.learning_rate, momentum=0.9, weight_decay=config.weight_decay)
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+
+        # Setup scheduler if specified
+        scheduler = None
+        if config.scheduler == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
+        elif config.scheduler == "step":
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+        elif config.scheduler == "onecycle":
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=config.learning_rate * 10,
+                epochs=config.epochs,
+                steps_per_epoch=len(train_loader),
+            )
+
         criterion = nn.CrossEntropyLoss()
 
         best_val_loss = float("inf")
@@ -454,7 +607,7 @@ class MLPStrategy(Strategy):
         try:
             for epoch in range(start_epoch, config.epochs):
                 # Training
-                avg_train_loss = cls._train_epoch(model, train_loader, optimizer, criterion, device)
+                avg_train_loss = cls._train_epoch(model, train_loader, optimizer, criterion, device, scheduler)
 
                 # Validation
                 avg_val_loss = cls._validate_epoch(model, val_loader, criterion, device)
@@ -468,8 +621,12 @@ class MLPStrategy(Strategy):
                     "epoch": epoch + 1,
                     "train_loss": avg_train_loss,
                     "val_loss": avg_val_loss,
-                    "learning_rate": config.learning_rate,
+                    "learning_rate": optimizer.param_groups[0]["lr"],
                 })
+
+                # Step scheduler if using one
+                if scheduler is not None and config.scheduler != "onecycle":
+                    scheduler.step()  # OneCycle steps per batch, not epoch
 
                 # Early stopping and checkpoint saving
                 if avg_val_loss < best_val_loss:
@@ -534,47 +691,72 @@ class MLPStrategy(Strategy):
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions on a single evaluation row."""
-        logger.debug(f"Making MLP prediction for row {evaluation_row.row_id}")
+        # Determine if answer is correct
+        is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
+        is_correct_tensor = torch.tensor([[1.0 if is_correct else 0.0]], dtype=torch.float32).to(self.device)
 
-        # Generate embedding for the evaluation row
-        text = repr(evaluation_row)
+        # Generate embedding for the evaluation row using only answer and explanation
+        text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
         embedding = self.tokenizer.encode(text)
         embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(self.device)
+
+        # Concatenate correctness feature to embedding
+        enhanced_embedding = torch.cat([embedding_tensor, is_correct_tensor], dim=1)
+
         question_tensor = torch.LongTensor([evaluation_row.question_id]).to(self.device)
 
         # Get prediction
         self.model.eval()
         with torch.no_grad():
-            outputs = self.model(embedding_tensor, question_tensor)
+            outputs = self.model(enhanced_embedding, question_tensor, is_correct_tensor)
 
-            if evaluation_row.question_id in outputs:
-                logits = outputs[evaluation_row.question_id]
+            prediction_strings = []
+
+            # Check which head was used based on correctness
+            key = (evaluation_row.question_id, is_correct)
+            if key in outputs:
+                logits = outputs[key]
                 probabilities = functional.softmax(logits, dim=-1)
 
                 # Get top 3 predictions
                 top_probs, top_indices = torch.topk(probabilities[0], k=min(3, probabilities.size(-1)))
 
-                # Convert to misconceptions
-                label_encoder = self.model.question_label_encoders.get(evaluation_row.question_id)
-                if label_encoder:
-                    misconceptions = label_encoder.inverse_transform(top_indices.cpu().numpy())
+                # Get appropriate label encoder
+                if is_correct:
+                    label_encoder = self.model.true_label_encoders.get(evaluation_row.question_id)
                 else:
-                    misconceptions = ["NA", "NA", "NA"]
-            else:
-                # Question not seen in training
-                misconceptions = ["NA", "NA", "NA"]
+                    label_encoder = self.model.false_label_encoders.get(evaluation_row.question_id)
 
-        # Determine if answer is correct
-        is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
+                if label_encoder:
+                    prediction_strings = label_encoder.inverse_transform(top_indices.cpu().numpy())
 
-        # Create predictions with appropriate categories
+            # Fallback if no predictions
+            if prediction_strings is None or len(prediction_strings) == 0:
+                if is_correct:
+                    prediction_strings = ["True_Correct:NA", "True_Neither:NA", "True_Neither:NA"]
+                else:
+                    prediction_strings = ["False_Neither:NA", "False_Misconception:Incomplete", "False_Neither:NA"]
+
+        # Parse prediction strings back to Prediction objects
         predictions = []
-        for misconception in misconceptions[:3]:
-            if misconception == "NA":
-                category = Category.TRUE_NEITHER if is_correct else Category.FALSE_NEITHER
+        for pred_str in prediction_strings[:3]:
+            try:
+                prediction = Prediction.from_string(pred_str)
+                predictions.append(prediction)
+            except Exception as e:
+                logger.warning(f"Failed to parse prediction string '{pred_str}': {e}")
+                # Fallback prediction based on correctness
+                if is_correct:
+                    predictions.append(Prediction(category=Category.TRUE_NEITHER, misconception="NA"))
+                else:
+                    predictions.append(Prediction(category=Category.FALSE_NEITHER, misconception="NA"))
+
+        # Ensure we have exactly 3 predictions
+        while len(predictions) < 3:
+            if is_correct:
+                predictions.append(Prediction(category=Category.TRUE_NEITHER, misconception="NA"))
             else:
-                category = Category.TRUE_MISCONCEPTION if is_correct else Category.FALSE_MISCONCEPTION
-            predictions.append(Prediction(category=category, misconception=misconception))
+                predictions.append(Prediction(category=Category.FALSE_NEITHER, misconception="NA"))
 
         return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions)
 
@@ -614,7 +796,7 @@ class MLPStrategy(Strategy):
         else:
             logger.warning(f"No parameters file found at {params_path}")
             # Use the parameters from the loaded model if available
-            parameters = loaded_model.parameters if hasattr(loaded_model, 'parameters') else None
+            parameters = loaded_model.parameters if hasattr(loaded_model, "parameters") else None
 
         # If parameters were loaded separately, create a new instance with updated parameters
         # Otherwise return the loaded model as-is
@@ -664,11 +846,11 @@ class MLPStrategy(Strategy):
 
             # Recreate model architecture
             training_data = parse_training_data(train_csv_path)
-            question_misconceptions = extract_misconceptions_by_popularity(training_data)
+            question_predictions = cls.extract_question_predictions(training_data)
             correct_answers = extract_correct_answers(training_data)
 
-            # Create and load model
-            mlp_model = QuestionSpecificMLP(question_misconceptions)
+            # Create and load model with correct configuration
+            mlp_model = QuestionSpecificMLP(question_predictions, config=config)
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
             device = get_device()
             mlp_model = mlp_model.to(device)
@@ -748,30 +930,65 @@ class MLPStrategy(Strategy):
 
 
 if __name__ == "__main__":
-    """Quick test of MLP training with wandb visualization."""
+    """Quick test of MLP training and prediction functionality."""
+    import random
     from pathlib import Path
 
-    print("🚀 Training MLP with wandb visualization...")
-    print("=" * 60)
+    import pandas as pd
 
-    # Train with fewer epochs for quick testing
-    model = MLPStrategy.fit(
-        epochs=5,  # Quick training for testing
-        wandb_project="kaggle-map-mlp",
-        wandb_run_name="mlp-quicktest",
+    from kaggle_map.core.dataset import parse_training_data
+    from kaggle_map.core.models import EvaluationRow
+
+    # Load existing model
+    model_path = Path("models/mlp.pkl")
+    if not model_path.exists():
+        logger.error(f"Model not found at {model_path}. Run training first.")
+        sys.exit(1)
+
+    model = MLPStrategy.load(model_path)
+
+    # Load training data to get a sample row
+    train_csv_path = Path("datasets/train.csv")
+    train_df = pd.read_csv(train_csv_path)
+    training_data = parse_training_data(train_csv_path)
+
+    # Pick a random row for testing prediction
+    random_idx = random.randint(0, len(train_df) - 1)
+    sample_row = train_df.iloc[random_idx]
+
+    logger.info(f"Selected random row {sample_row['row_id']} for prediction test")
+    logger.info(f"Question ID: {sample_row['QuestionId']}")
+    logger.info(f"MC Answer: {sample_row['MC_Answer']}")
+
+    # Create evaluation row
+    eval_row = EvaluationRow(
+        row_id=sample_row["row_id"],
+        question_id=sample_row["QuestionId"],
+        question_text=sample_row["QuestionText"],
+        mc_answer=sample_row["MC_Answer"],
+        student_explanation=sample_row["StudentExplanation"],
     )
 
-    # Save the model
-    model_path = Path("models/mlp.pkl")
-    model.save(model_path)
-    print(f"\n✅ Model saved to {model_path}")
+    # Make prediction
+    logger.info("Making prediction...")
+    submission = model.predict(eval_row)
 
-    # Quick evaluation
-    print("\n📊 Evaluating model on validation split...")
-    results = MLPStrategy.evaluate_on_split(model)
-    print(f"Validation MAP@3: {results['validation_map@3']:.4f}")
-    print(f"Validation samples: {results['validation_samples']}")
+    # Get ground truth for comparison if available
+    matching_training_rows = [r for r in training_data if r.row_id == sample_row["row_id"]]
+    if matching_training_rows:
+        ground_truth = matching_training_rows[0]
+        logger.info(f"Ground truth: {ground_truth.prediction.category.value}:{ground_truth.misconception}")
 
-    print("\n🎉 Training complete! Check your wandb dashboard for visualizations.")
-    print("Dashboard: https://wandb.ai/")
-    print("=" * 60)
+        # Calculate MAP@3 score
+        from kaggle_map.core.metrics import calculate_map_at_3
+        map_score = calculate_map_at_3(ground_truth.prediction, submission.predicted_categories)
+        logger.info(f"MAP@3 score: {map_score:.4f}")
+
+    # Display predictions
+    logger.info(f"Predictions for row {submission.row_id}:")
+    for i, pred in enumerate(submission.predicted_categories, 1):
+        logger.info(f"  {i}. {pred.category.value}:{pred.misconception}")
+
+
+
+

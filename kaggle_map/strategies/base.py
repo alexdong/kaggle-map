@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from kaggle_map.core.models import EvaluationRow, SubmissionRow
+
+if TYPE_CHECKING:
+    from optuna.trial import Trial
 
 
 class Strategy(ABC):
@@ -91,3 +95,44 @@ class Strategy(ABC):
         Returns:
             Dictionary with evaluation metrics
         """
+
+    @classmethod
+    def get_hyperparameter_search_space(cls, trial: "Trial") -> dict[str, Any]:
+        """Define hyperparameter search space for Optuna.
+
+        Override this method to define strategy-specific hyperparameters.
+
+        Args:
+            trial: Optuna trial object for suggesting parameters
+
+        Returns:
+            Dictionary of hyperparameter names to values
+
+        Note:
+            Default implementation returns empty dict.
+            Override in subclasses to enable hyperparameter search.
+        """
+        return {}
+
+    @classmethod
+    def create_config_from_hyperparams(
+        cls,
+        hyperparams: dict[str, Any],
+        **base_params: Any,
+    ) -> dict[str, Any]:
+        """Create configuration from hyperparameters.
+
+        Override this method to convert hyperparameters to strategy-specific config.
+
+        Args:
+            hyperparams: Dictionary of hyperparameters from search
+            **base_params: Additional base parameters
+
+        Returns:
+            Configuration dictionary or object for training
+
+        Note:
+            Default implementation merges hyperparams with base_params.
+            Override for custom configuration handling.
+        """
+        return {**base_params, **hyperparams}
