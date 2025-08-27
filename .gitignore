@@ -1,7 +1,8 @@
+.sesskey
 logs/
+wandb/
 
 # Model outputs and submissions
-models/
 submission.csv
 
 # Byte-compiled / optimized / DLL files
