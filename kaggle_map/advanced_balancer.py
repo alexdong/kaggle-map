@@ -8,8 +8,8 @@ from loguru import logger
 
 
 def balance_dataset_advanced(
-    input_path: str = "dataset/synth.csv",
-    output_path: str = "dataset/synth_balanced_advanced.csv",
+    input_path: str = "dataset/synth_original_367k_unbalanced.csv",
+    output_path: str = "dataset/synth_balanced_custom.csv",
     strategy: Literal["undersample", "oversample", "hybrid", "weighted"] = "hybrid",
     target_samples_per_class: int | None = None,
     seed: int = 42,
@@ -126,8 +126,8 @@ def add_sample_weights(df: pd.DataFrame, output_path: str) -> pd.DataFrame:
 
 
 def create_augmented_balanced_dataset(
-    input_path: str = "dataset/synth.csv",
-    output_path: str = "dataset/synth_augmented.csv",
+    input_path: str = "dataset/synth_original_367k_unbalanced.csv",
+    output_path: str = "dataset/synth_augmented_balanced.csv",
     augmentation_factor: float = 1.5,
 ) -> pd.DataFrame:
     """Create balanced dataset with text augmentation for minority classes.
@@ -211,13 +211,13 @@ if __name__ == "__main__":
     # Example 1: Hybrid strategy (balance to median)
     logger.info("=== HYBRID BALANCING ===")
     hybrid_df = balance_dataset_advanced(
-        strategy="hybrid", output_path="dataset/synth_balanced_hybrid.csv"
+        strategy="hybrid", output_path="dataset/synth_median_balanced_59k_per_cat.csv"
     )
 
     # Example 2: Weighted samples (for use with weighted loss)
     logger.info("\n=== WEIGHTED SAMPLES ===")
     weighted_df = balance_dataset_advanced(
-        strategy="weighted", output_path="dataset/synth_weighted.csv"
+        strategy="weighted", output_path="dataset/synth_original_with_inverse_freq_weights.csv"
     )
 
     # Example 3: Custom target
@@ -225,5 +225,5 @@ if __name__ == "__main__":
     custom_df = balance_dataset_advanced(
         strategy="hybrid",
         target_samples_per_class=5000,
-        output_path="dataset/synth_balanced_5k.csv",
+        output_path="dataset/synth_balanced_5000_per_cat.csv",
     )

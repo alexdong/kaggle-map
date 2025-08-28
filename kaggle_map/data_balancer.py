@@ -5,8 +5,8 @@ from loguru import logger
 
 
 def balance_dataset(
-    input_path: str = "dataset/synth.csv",
-    output_path: str = "dataset/synth_balanced.csv",
+    input_path: str = "dataset/synth_original_367k_unbalanced.csv",
+    output_path: str = "dataset/synth_undersampled_2330_per_cat.csv",
     strategy: str = "undersample",
 ) -> pd.DataFrame:
     """Balance the dataset by undersampling to the smallest category or a specified size.
@@ -150,8 +150,8 @@ if __name__ == "__main__":
     train_df, val_df, test_df = create_stratified_splits(balanced_df)
 
     # Save splits
-    train_df.to_csv("dataset/synth_balanced_train.csv", index=False)
-    val_df.to_csv("dataset/synth_balanced_val.csv", index=False)
-    test_df.to_csv("dataset/synth_balanced_test.csv", index=False)
+    train_df.to_csv("dataset/synth_undersampled_2330_per_cat_train_70pct.csv", index=False)
+    val_df.to_csv("dataset/synth_undersampled_2330_per_cat_val_15pct.csv", index=False)
+    test_df.to_csv("dataset/synth_undersampled_2330_per_cat_test_15pct.csv", index=False)
 
     logger.success("Balanced dataset and splits created successfully!")
