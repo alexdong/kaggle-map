@@ -311,36 +311,126 @@ class MLPStrategy(Strategy):
 
     @classmethod
     def get_hyperparameter_search_space(cls, trial) -> dict[str, Any]:
-        """Define comprehensive hyperparameter search space for Optuna optimization."""
+        """Comprehensive 3-stage search space for thorough 5-day exploration.
+
+        Stage 1 (trials 0-999): Exploitation - fine-grained search around best regions
+        Stage 2 (trials 1000-1499): Exploration - test untested parameter interactions
+        Stage 3 (trials 1500+): Extreme - push boundaries with radical configurations
+        """
         if optuna is None:
             msg = "Optuna is required for hyperparameter search"
             raise ImportError(msg)
 
+        trial_num = trial.number
+
+        # Stage 1: Fine-grained exploitation (first 1000 trials)
+        if trial_num < 1000:
+            return {
+                # Dense sampling around optimal LR range [8e-5, 3e-4]
+                "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
+
+                # Focus on proven batch sizes with fine gradations
+                "batch_size": trial.suggest_categorical("batch_size",
+                    [224, 256, 288, 320, 384, 448, 512]),
+
+                # Fine-grained dropout exploration around optimum
+                "dropout": trial.suggest_float("dropout", 0.30, 0.42),
+
+                # Heavy bias toward xlarge (85%), some large (10%), rare xxlarge (5%)
+                "architecture_size": trial.suggest_categorical("architecture_size",
+                    ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]),
+
+                # Both optimizers with AdamW preference
+                "optimizer": trial.suggest_categorical("optimizer",
+                    ["adamw", "adamw", "adamw", "adam"]),
+
+                # Focus on promising weight decay range
+                "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
+
+                # Test all successful activations
+                "activation": trial.suggest_categorical("activation",
+                    ["gelu", "silu", "relu", "leaky_relu"]),
+
+                # Focus on successful schedulers
+                "scheduler": trial.suggest_categorical("scheduler",
+                    ["cosine", "cosine", "onecycle", "none"]),
+
+                # Optimal patience range
+                "early_stopping_patience": trial.suggest_int("patience", 16, 22),
+                "epochs": trial.suggest_int("epochs", 28, 36),
+            }
+
+        # Stage 2: Broad exploration (trials 1000-1499)
+        if trial_num < 1500:
+            return {
+                # Wider LR exploration
+                "learning_rate": trial.suggest_float("learning_rate", 3e-5, 3e-3, log=True),
+
+                # Include extreme batch sizes
+                "batch_size": trial.suggest_categorical("batch_size",
+                    [128, 192, 256, 384, 512, 640, 768, 896, 1024]),
+
+                # Full dropout range
+                "dropout": trial.suggest_float("dropout", 0.15, 0.50),
+
+                # All architectures with equal probability
+                "architecture_size": trial.suggest_categorical("architecture_size",
+                    ["small", "medium", "large", "xlarge", "xxlarge"]),
+
+                # Include SGD for comparison
+                "optimizer": trial.suggest_categorical("optimizer",
+                    ["adamw", "adam", "sgd"]),
+
+                # Extreme weight decay exploration
+                "weight_decay": trial.suggest_float("weight_decay", 1e-5, 5e-2, log=True),
+
+                # All activation functions
+                "activation": trial.suggest_categorical("activation",
+                    ["relu", "gelu", "silu", "leaky_relu", "elu"]),
+
+                # All scheduler types
+                "scheduler": trial.suggest_categorical("scheduler",
+                    ["none", "cosine", "onecycle", "step"]),
+
+                # Wide patience range
+                "early_stopping_patience": trial.suggest_int("patience", 10, 30),
+                "epochs": trial.suggest_int("epochs", 20, 45),
+            }
+
+        # Stage 3: Extreme configurations (trials 1500+)
         return {
-            # Learning dynamics - wide exploration range
-            "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
-            "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512, 768, 1024]),
-            "dropout": trial.suggest_float("dropout", 0.05, 0.5),
+            # Very wide learning rate range
+            "learning_rate": trial.suggest_float("learning_rate", 5e-6, 5e-3, log=True),
 
-            # Architecture scaling - let search decide optimal size
+            # Extreme batch sizes for memory limits
+            "batch_size": trial.suggest_categorical("batch_size",
+                [64, 128, 256, 512, 768, 1024, 1536]),
+
+            # Extreme dropout values
+            "dropout": trial.suggest_float("dropout", 0.05, 0.60),
+
+            # Focus on largest architectures
             "architecture_size": trial.suggest_categorical("architecture_size",
-                ["small", "medium", "large", "xlarge"]),
+                ["xlarge", "xlarge", "xxlarge", "xxlarge"]),
 
-            # Optimizer options - comprehensive set
-            "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"]),
-            "weight_decay": trial.suggest_float("weight_decay", 1e-6, 0.1, log=True),
+            # All optimizers including SGD
+            "optimizer": trial.suggest_categorical("optimizer",
+                ["adamw", "adam", "sgd"]),
 
-            # Activation functions - all viable options
+            # Very high weight decay for extreme regularization
+            "weight_decay": trial.suggest_float("weight_decay", 1e-5, 1e-1, log=True),
+
+            # Focus on best activations
             "activation": trial.suggest_categorical("activation",
-                ["relu", "gelu", "leaky_relu", "silu", "elu"]),
+                ["gelu", "silu"]),
 
-            # Scheduler options - complete range
+            # Advanced schedulers only
             "scheduler": trial.suggest_categorical("scheduler",
-                ["none", "cosine", "onecycle", "step"]),
+                ["cosine", "onecycle"]),
 
-            # Training dynamics
-            "early_stopping_patience": trial.suggest_int("patience", 5, 20),
-            "epochs": trial.suggest_int("epochs", 10, 50),
+            # Long training with high patience
+            "early_stopping_patience": trial.suggest_int("patience", 20, 35),
+            "epochs": trial.suggest_int("epochs", 35, 60),
         }
 
     @classmethod
@@ -362,6 +452,10 @@ class MLPStrategy(Strategy):
             "xlarge": {
                 "hidden_dim": 1024,
                 "trunk_layers": [800, 2048, 1024, 512, 384]
+            },
+            "xxlarge": {
+                "hidden_dim": 1536,
+                "trunk_layers": [800, 2560, 1536, 768, 512]
             }
         }
         return configs[size]

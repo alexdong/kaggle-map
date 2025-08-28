@@ -602,10 +602,21 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
     if extra_config:
         wandb_config.update(extra_config)
 
+    # Extract tags and metadata if provided
+    tags = getattr(config, "wandb_tags", [])
+    if hasattr(config, "study_id"):
+        wandb_config["study_id"] = config.study_id
+    if hasattr(config, "stage"):
+        wandb_config["stage"] = config.stage
+    if hasattr(config, "trial_number"):
+        wandb_config["trial_number"] = config.trial_number
+
     wandb.init(
         project=config.wandb_project,
         name=config.wandb_run_name,
         config=wandb_config,
+        tags=tags,
+        reinit=True,  # Allow multiple runs in parallel optimization
     )
 
 

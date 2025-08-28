@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import click
+import numpy as np
 import optuna
 import torch
 from loguru import logger
@@ -46,6 +47,15 @@ class OptimiseManager:
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
 
+        # Determine which stage we're in based on trial number
+        trial_num = trial.number
+        if trial_num < 1000:
+            stage = "stage1_exploitation"
+        elif trial_num < 1500:
+            stage = "stage2_exploration"
+        else:
+            stage = "stage3_extreme"
+
         # Add trial information to wandb run name
         trial_info = f"trial_{trial.number}"
         key_params = []
@@ -62,6 +72,12 @@ class OptimiseManager:
 
         wandb_run_name = f"hypersearch_{trial_info}_{'_'.join(key_params)}"
         hyperparams["wandb_run_name"] = wandb_run_name
+
+        # Add metadata for wandb tracking
+        hyperparams["wandb_tags"] = [stage, f"study_{trial.study.study_name}", f"trial_{trial_num}"]
+        hyperparams["study_id"] = trial.study.study_name
+        hyperparams["stage"] = stage
+        hyperparams["trial_number"] = trial_num
 
         # Clear GPU memory before training
         if torch.cuda.is_available():
@@ -278,6 +294,157 @@ class OptimiseManager:
                 arch_size = trial.params.get("architecture_size", "N/A")
                 console.print(f"  Trial #{trial.number}: batch_size={batch_size}, arch={arch_size}")
 
+    def generate_study_summary(self, study_name: str) -> None:
+        """Generate a markdown summary of the optimization study."""
+        study = optuna.load_study(study_name=study_name, storage=self.storage)
+
+        if len(study.trials) == 0:
+            logger.warning(f"Study {study_name} has no trials, skipping summary")
+            return
+
+        # Create logs directory if it doesn't exist
+        logs_dir = Path("logs")
+        logs_dir.mkdir(exist_ok=True)
+
+        # Generate summary file
+        summary_path = logs_dir / f"{study_name}.md"
+
+        with summary_path.open("w") as f:
+            f.write(f"# Optimization Study: {study_name}\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+            # Overview
+            f.write("## Study Overview\n\n")
+            f.write(f"- **Total Trials**: {len(study.trials)}\n")
+            f.write(f"- **Best MAP@3**: {study.best_value:.4f}\n")
+            f.write(f"- **Best Trial**: #{study.best_trial.number}\n\n")
+
+            # Best parameters
+            f.write("## Best Parameters\n\n")
+            f.write("| Parameter | Value |\n")
+            f.write("|-----------|-------|\n")
+            for param, value in sorted(study.best_params.items()):
+                if isinstance(value, float):
+                    if value < 0.01:
+                        f.write(f"| {param} | {value:.2e} |\n")
+                    else:
+                        f.write(f"| {param} | {value:.4f} |\n")
+                else:
+                    f.write(f"| {param} | {value} |\n")
+
+            # Parameter importance
+            f.write("\n## Parameter Importance\n\n")
+            try:
+                importance = optuna.importance.get_param_importances(study)
+                f.write("| Parameter | Importance |\n")
+                f.write("|-----------|------------|\n")
+                for param, imp in sorted(importance.items(), key=lambda x: x[1], reverse=True):
+                    f.write(f"| {param} | {imp:.3f} |\n")
+            except Exception:
+                f.write("*Parameter importance analysis unavailable*\n")
+
+            # Trial statistics
+            completed_trials = [t for t in study.trials if t.value is not None]
+            if completed_trials:
+                values = [t.value for t in completed_trials]
+                f.write("\n## Trial Statistics\n\n")
+                f.write(f"- **Completed**: {len(completed_trials)}/{len(study.trials)}\n")
+                f.write(f"- **Mean MAP@3**: {np.mean(values):.4f}\n")
+                f.write(f"- **Std Dev**: {np.std(values):.4f}\n")
+                f.write(f"- **Min**: {min(values):.4f}\n")
+                f.write(f"- **Max**: {max(values):.4f}\n")
+
+            # Performance analysis by key parameters
+            f.write("\n## Performance Analysis\n\n")
+
+            # Architecture analysis
+            arch_performance = {}
+            for trial in completed_trials:
+                if "architecture_size" in trial.params:
+                    arch = trial.params["architecture_size"]
+                    if arch not in arch_performance:
+                        arch_performance[arch] = []
+                    arch_performance[arch].append(trial.value)
+
+            if arch_performance:
+                f.write("### By Architecture Size\n\n")
+                f.write("| Architecture | Mean MAP@3 | Std Dev | Count | Max |\n")
+                f.write("|--------------|------------|---------|-------|-----|\n")
+                for arch, vals in sorted(arch_performance.items()):
+                    vals_array = np.array(vals)
+                    f.write(f"| {arch} | {vals_array.mean():.4f} | {vals_array.std():.4f} | {len(vals)} | {vals_array.max():.4f} |\n")
+
+            # Learning rate analysis
+            lr_ranges = {
+                "very_low (<1e-4)": (0, 1e-4),
+                "low (1e-4 to 1e-3)": (1e-4, 1e-3),
+                "medium (1e-3 to 5e-3)": (1e-3, 5e-3),
+                "high (>5e-3)": (5e-3, 1)
+            }
+            lr_performance = {k: [] for k in lr_ranges}
+
+            for trial in completed_trials:
+                if "learning_rate" in trial.params:
+                    lr = trial.params["learning_rate"]
+                    for range_name, (low, high) in lr_ranges.items():
+                        if low <= lr < high:
+                            lr_performance[range_name].append(trial.value)
+                            break
+
+            f.write("\n### By Learning Rate Range\n\n")
+            f.write("| LR Range | Mean MAP@3 | Count | Max |\n")
+            f.write("|----------|------------|-------|-----|\n")
+            for range_name in ["very_low (<1e-4)", "low (1e-4 to 1e-3)", "medium (1e-3 to 5e-3)", "high (>5e-3)"]:
+                vals = lr_performance[range_name]
+                if vals:
+                    vals_array = np.array(vals)
+                    f.write(f"| {range_name} | {vals_array.mean():.4f} | {len(vals)} | {vals_array.max():.4f} |\n")
+                else:
+                    f.write(f"| {range_name} | - | 0 | - |\n")
+
+            # Top trials
+            f.write("\n## Top 5 Trials\n\n")
+            top_trials = sorted(completed_trials, key=lambda t: t.value, reverse=True)[:5]
+
+            for _i, trial in enumerate(top_trials, 1):
+                f.write(f"### Trial #{trial.number} (MAP@3: {trial.value:.4f})\n\n")
+                f.write("```json\n")
+                f.write(json.dumps(trial.params, indent=2))
+                f.write("\n```\n\n")
+
+            # Key insights
+            f.write("## Key Insights\n\n")
+
+            # Automatic insights based on data
+            if arch_performance:
+                best_arch = max(arch_performance.items(), key=lambda x: np.mean(x[1]))
+                f.write(f"- **Best architecture**: {best_arch[0]} (mean MAP@3: {np.mean(best_arch[1]):.4f})\n")
+
+            # Learning rate insight
+            lr_with_data = [(k, v) for k, v in lr_performance.items() if v]
+            if lr_with_data:
+                best_lr_range = max(lr_with_data, key=lambda x: np.mean(x[1]))
+                f.write(f"- **Optimal learning rate range**: {best_lr_range[0]} (mean MAP@3: {np.mean(best_lr_range[1]):.4f})\n")
+
+            # Parameter correlation insights
+            if study.best_params.get("dropout"):
+                f.write(f"- **Best dropout**: {study.best_params['dropout']:.3f}\n")
+            if study.best_params.get("batch_size"):
+                f.write(f"- **Best batch size**: {study.best_params['batch_size']}\n")
+
+            # OOM analysis
+            oom_trials = [t for t in study.trials if t.user_attrs.get("oom_error", False)]
+            if oom_trials:
+                f.write("\n### Memory Issues\n")
+                f.write(f"- **OOM Trials**: {len(oom_trials)} trials encountered out-of-memory errors\n")
+                f.write("- **Common patterns**: ")
+                batch_sizes = [t.params.get("batch_size", "N/A") for t in oom_trials[:3]]
+                archs = [t.params.get("architecture_size", "N/A") for t in oom_trials[:3]]
+                f.write(f"batch_sizes={batch_sizes}, architectures={archs}\n")
+
+        logger.info(f"Generated study summary: {summary_path}")
+        print(f"\n✅ Study summary saved to: {summary_path}")
+
 
 @click.group()
 def cli() -> None:
@@ -298,6 +465,9 @@ def search(strategy: str, trials: int, jobs: int, timeout: int | None) -> None:
     print(f"Study name: {study.study_name}")
     print(f"Best MAP@3: {study.best_value:.4f}")
     print(f"Best parameters: {study.best_params}")
+
+    # Generate study summary
+    manager.generate_study_summary(study.study_name)
 
 
 @click.command("list-studies")

@@ -42,16 +42,6 @@ search:
 		--jobs $(or $(JOBS),3) \
 		$(if $(TIMEOUT),--timeout $(TIMEOUT))
 
-search-grid:
-	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make search-grid STRATEGY=<strategy_name>"; \
-		echo "Example: make search-grid STRATEGY=mlp"; \
-		exit 1; \
-	fi
-	uv run -m kaggle_map.optimise search $(STRATEGY) \
-		--trials 1000 \
-		--jobs $(or $(JOBS),3)
-
 search-quick:
 	@if [ -z "$(STRATEGY)" ]; then \
 		echo "Usage: make search-quick STRATEGY=<strategy_name>"; \
@@ -62,6 +52,28 @@ search-quick:
 	uv run -m kaggle_map.optimise search $(STRATEGY) \
 		--trials 20 \
 		--jobs $(or $(JOBS),2)
+
+# Comprehensive 5-day search
+search-comprehensive:
+	@echo "========================================="
+	@echo "Starting 5-Day Comprehensive Search"
+	@echo "Start time: $$(date)"
+	@echo "========================================="
+	@echo ""
+	@echo "Configuration:"
+	@echo "- Strategy: mlp"
+	@echo "- Total trials: 2500"  
+	@echo "- Parallel jobs: 4"
+	@echo "- Stage 1 (0-999): Exploitation"
+	@echo "- Stage 2 (1000-1499): Exploration"
+	@echo "- Stage 3 (1500+): Extreme"
+	@echo ""
+	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
+	@echo ""
+	uv run -m kaggle_map.optimise search mlp \
+		--trials 2500 \
+		--jobs 4 \
+		--timeout 432000
 
 # Compare and analyze optimization results
 list-studies:
