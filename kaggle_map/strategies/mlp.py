@@ -48,13 +48,13 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
+import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
-import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,

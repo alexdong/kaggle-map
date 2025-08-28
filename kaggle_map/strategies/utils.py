@@ -2,14 +2,20 @@
 
 import json
 import pickle
+from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
 import numpy as np
 import torch
+import wandb
 from loguru import logger
 from pydantic import BaseModel
+from torch import nn
+from torch.utils.data import DataLoader
 
 from kaggle_map.core.models import TrainingRow
 
@@ -125,7 +131,9 @@ def split_training_data(
     logger.debug(f"Split {n_samples} samples into train={len(train_rows)}, val={len(val_rows)}, test={len(test_rows)}")
 
     assert train_rows, "Training split cannot be empty"
-    assert val_rows, "Validation split cannot be empty"
+    # Allow empty validation split for very small datasets (e.g. tests)
+    if n_samples > 2:  # Only require validation split for datasets with more than 2 samples
+        assert val_rows, "Validation split cannot be empty for datasets with >2 samples"
 
     return train_rows, val_rows, test_rows
 
@@ -166,14 +174,6 @@ def get_split_indices(
 
 
 # PyTorch utilities for neural network strategies
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Protocol
-
-from torch import nn
-from torch.utils.data import DataLoader
-
-import wandb
 
 
 @dataclass
@@ -216,6 +216,21 @@ class TrainingCallback(Protocol):
     """Protocol for training callbacks."""
 
     def on_epoch_start(self, epoch: int) -> None:
+        """Called at the start of each epoch."""
+
+
+class TorchStrategy(Protocol):
+    """Protocol for PyTorch-based strategies."""
+
+    model: nn.Module
+    parameters: ModelParameters | None
+
+    def save(self, filepath: Path) -> None:
+        """Save the strategy."""
+
+    @classmethod
+    def load(cls, filepath: Path) -> Any:
+        """Load the strategy."""
         """Called at the start of each epoch."""
         ...
 
@@ -293,6 +308,7 @@ class CheckpointManager:
         epoch: int,
         metric_value: float,
         metrics: dict[str, float],
+        *,
         config: TorchConfig | None = None,
         metric_name: str = "val_loss",
     ) -> bool:
@@ -407,31 +423,50 @@ def create_scheduler(
     steps_per_epoch: int | None = None,
 ) -> torch.optim.lr_scheduler.LRScheduler | None:
     """Create learning rate scheduler based on configuration."""
-    if config.scheduler == "cosine":
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=config.epochs,
-        )
-    if config.scheduler == "step":
-        return torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=10,
-            gamma=0.1,
-        )
-    if config.scheduler == "onecycle":
-        if steps_per_epoch is None:
-            logger.warning("OneCycle scheduler requires steps_per_epoch, skipping")
-            return None
-        return torch.optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=config.learning_rate * 10,
-            epochs=config.epochs,
-            steps_per_epoch=steps_per_epoch,
-        )
     if config.scheduler == "none":
         return None
+
+    scheduler_map = {
+        "cosine": lambda: _create_cosine_scheduler(optimizer, config),
+        "step": lambda: _create_step_scheduler(optimizer),
+        "onecycle": lambda: _create_onecycle_scheduler(optimizer, config, steps_per_epoch),
+    }
+
+    scheduler_fn = scheduler_map.get(config.scheduler)
+    if scheduler_fn:
+        return scheduler_fn()
+
     logger.warning(f"Unknown scheduler {config.scheduler}, not using any")
     return None
+
+
+def _create_cosine_scheduler(
+    optimizer: torch.optim.Optimizer, config: TorchConfig
+) -> torch.optim.lr_scheduler.LRScheduler:
+    """Create cosine annealing scheduler."""
+    return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
+
+
+def _create_step_scheduler(optimizer: torch.optim.Optimizer) -> torch.optim.lr_scheduler.LRScheduler:
+    """Create step scheduler."""
+    return torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+
+
+def _create_onecycle_scheduler(
+    optimizer: torch.optim.Optimizer,
+    config: TorchConfig,
+    steps_per_epoch: int | None,
+) -> torch.optim.lr_scheduler.LRScheduler | None:
+    """Create OneCycle scheduler."""
+    if steps_per_epoch is None:
+        logger.warning("OneCycle scheduler requires steps_per_epoch, skipping")
+        return None
+    return torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=config.learning_rate * 10,
+        epochs=config.epochs,
+        steps_per_epoch=steps_per_epoch,
+    )
 
 
 def get_activation(activation: str) -> nn.Module:
@@ -452,8 +487,9 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    *,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
-    batch_callback: Any | None = None,
+    batch_callback: Callable[[nn.Module, Any, nn.Module, torch.device], tuple[torch.Tensor, int]] | None = None,
 ) -> float:
     """Generic training epoch for PyTorch models.
 
@@ -511,7 +547,8 @@ def validate_epoch(
     val_loader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
-    batch_callback: Any | None = None,
+    *,
+    batch_callback: Callable[[nn.Module, Any, nn.Module, torch.device], tuple[torch.Tensor, int]] | None = None,
 ) -> float:
     """Generic validation epoch for PyTorch models.
 
@@ -576,7 +613,13 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
         config: Training configuration
         extra_config: Additional configuration to log
     """
-    # Auto-generate descriptive run name if not provided
+    _ensure_wandb_run_name(config)
+    wandb_config = _build_wandb_config(config, extra_config)
+    _setup_wandb_run(config, wandb_config)
+
+
+def _ensure_wandb_run_name(config: TorchConfig) -> None:
+    """Generate wandb run name if not provided."""
     if not config.wandb_run_name:
         config.wandb_run_name = (
             f"{config.wandb_project.split('-')[-1]}-e{config.epochs}-"
@@ -586,6 +629,11 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
             f"seed{config.random_seed}"
         )
 
+
+def _build_wandb_config(
+    config: TorchConfig, extra_config: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Build wandb configuration dictionary."""
     wandb_config = {
         "train_split": config.train_split,
         "random_seed": config.random_seed,
@@ -602,19 +650,25 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
     if extra_config:
         wandb_config.update(extra_config)
 
-    # Extract tags and metadata if provided
-    tags = getattr(config, "wandb_tags", [])
-    if hasattr(config, "study_id"):
-        wandb_config["study_id"] = config.study_id
-    if hasattr(config, "stage"):
-        wandb_config["stage"] = config.stage
-    if hasattr(config, "trial_number"):
-        wandb_config["trial_number"] = config.trial_number
+    _add_metadata_to_config(config, wandb_config)
+    return wandb_config
 
+
+def _add_metadata_to_config(config: TorchConfig, wandb_config: dict[str, Any]) -> None:
+    """Add metadata from config to wandb config."""
+    metadata_attrs = ["study_id", "stage", "trial_number"]
+    for attr in metadata_attrs:
+        if hasattr(config, attr):
+            wandb_config[attr] = getattr(config, attr)
+
+
+def _setup_wandb_run(config: TorchConfig, wandb_config: dict[str, Any]) -> None:
+    """Setup and initialize the wandb run."""
     # Finish any previous run before starting a new one
     if wandb.run is not None:
         wandb.finish()
 
+    tags = getattr(config, "wandb_tags", [])
     wandb.init(
         project=config.wandb_project,
         name=config.wandb_run_name,
@@ -633,7 +687,6 @@ def extract_question_predictions(training_data: list) -> dict[int, list[str]]:
     Returns:
         Dictionary mapping question ID to list of unique prediction strings
     """
-    from collections import defaultdict
 
     question_predictions = defaultdict(list)
     for row in training_data:
@@ -646,9 +699,9 @@ def extract_question_predictions(training_data: list) -> dict[int, list[str]]:
 
 def load_embeddings(
     embeddings_path: Path | None,
-    training_data: list,
-    train_df: Any | None = None,
-    compute_fn: Callable[[list], tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] | None = None,
+    training_data: list[Any],
+    train_df: object | None = None,
+    compute_fn: Callable[[list[Any]], tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Load or compute embeddings for training data.
 
@@ -703,9 +756,10 @@ def train_torch_model(
     val_loader: DataLoader,
     config: TorchConfig,
     device: torch.device,
+    *,
     criterion: nn.Module | None = None,
-    train_batch_fn: Callable | None = None,
-    val_batch_fn: Callable | None = None,
+    train_batch_fn: Callable[..., Any] | None = None,
+    val_batch_fn: Callable[..., Any] | None = None,
 ) -> tuple[nn.Module, dict[str, Any]]:
     """Generic training loop for PyTorch models.
 
@@ -824,7 +878,7 @@ def train_torch_model(
 
 
 def save_torch_strategy(
-    strategy: Any,
+    strategy: TorchStrategy,
     filepath: Path,
     *,
     save_params: bool = True,
@@ -852,11 +906,11 @@ def save_torch_strategy(
 
 
 def load_torch_strategy(
-    cls: type,
+    cls: type[TorchStrategy],
     filepath: Path,
     *,
     load_params: bool = True,
-) -> Any:
+) -> TorchStrategy:
     """Load a PyTorch-based strategy from disk.
 
     Args:

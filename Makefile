@@ -103,6 +103,9 @@ search-balanced:
 		--train-data datasets/synth_median_balanced_354210_total.csv
 
 # Compare and analyze optimization results
+#  - Use make list-studies for listing all studies
+#  - Use make analyze STUDY=<study_name> for individual analysis
+#  - Use make compare STUDIES='study1 study2 study3' to compare multiple studies
 list-studies:
 	@echo "Press Ctrl+C to exit auto-refresh"
 	@while true; do \
