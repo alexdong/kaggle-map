@@ -35,9 +35,13 @@ Training Process:
 6. Save model with pickle and parameters as JSON
 """
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# Disable tokenizer parallelism to avoid fork warnings with DataLoader multiprocessing
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import numpy as np
 import pandas as pd
@@ -130,6 +134,7 @@ class QuestionSpecificMLP(nn.Module):
     def __init__(
         self,
         question_predictions: dict[QuestionId, list[str]],
+        embedding_dim: int = 768,  # Add parameter for actual embedding dimension
         config: TorchConfig | None = None,
     ) -> None:
         super().__init__()
@@ -138,11 +143,17 @@ class QuestionSpecificMLP(nn.Module):
             config = TorchConfig()
 
         # Add learnable correctness embedding
-        self.correctness_embedding = nn.Embedding(2, 32)
+        correctness_embedding_dim = 32
+        self.correctness_embedding = nn.Embedding(2, correctness_embedding_dim)
 
         activation = get_activation(config.activation)
-        # Updated dims: 768 (q+a embeddings) + 32 (correctness) = 800 -> 1024 -> 512 -> 256 -> 192
-        dims = [800, 1024, 512, 256, 192]
+        # Dynamic input dimension: embedding_dim + correctness_embedding_dim
+        input_dim = embedding_dim + correctness_embedding_dim
+        # Scale hidden dimensions proportionally based on input size
+        if embedding_dim == 384:  # MINI_LM model
+            dims = [input_dim, 512, 256, 192, 128]
+        else:  # Larger models (768 dim)
+            dims = [input_dim, 1024, 512, 256, 192]
 
         layers = []
         for i in range(len(dims) - 1):
@@ -459,7 +470,11 @@ class MLPStrategy(Strategy):
         predictions = extra_data.get("predictions", np.array([]))
         mc_answers = extra_data.get("mc_answers", np.array([]))
 
-        model = QuestionSpecificMLP(question_predictions, config=config)
+        # Get actual embedding dimension from the data
+        embedding_dim = embeddings.shape[1] if embeddings.ndim > 1 else 768
+        logger.info(f"Creating model with embedding dimension: {embedding_dim}")
+
+        model = QuestionSpecificMLP(question_predictions, embedding_dim=embedding_dim, config=config)
         model = model.to(device)
 
         total_params = sum(p.numel() for p in model.parameters())
@@ -645,8 +660,22 @@ class MLPStrategy(Strategy):
             checkpoint = torch.load(checkpoint_path, weights_only=False)
             config = checkpoint["config"]
 
+            # Get embedding dimension from saved model state dict
+            model_state = checkpoint["model_state_dict"]
+            # Extract input dimension from the first layer of trunk
+            first_layer_weight = model_state.get("trunk.0.weight")
+            if first_layer_weight is not None:
+                input_dim = first_layer_weight.shape[1]  # [out_features, in_features]
+                embedding_dim = input_dim - 32  # Subtract correctness embedding dimension
+            else:
+                embedding_dim = 768  # Default fallback
+
             training_data = parse_training_data(train_csv_path)
-            mlp_model = QuestionSpecificMLP(extract_question_predictions(training_data), config=config)
+            mlp_model = QuestionSpecificMLP(
+                extract_question_predictions(training_data),
+                embedding_dim=embedding_dim,
+                config=config
+            )
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
 
             model = cls(
