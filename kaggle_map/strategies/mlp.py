@@ -581,14 +581,12 @@ class MLPStrategy(Strategy):
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions on a single evaluation row."""
-        # Compute separate embeddings
-        question_emb = self.tokenizer.encode(evaluation_row.question_text)
-        answer_text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
-        answer_emb = self.tokenizer.encode(answer_text)
-
-        # Concatenate question and answer embeddings
-        combined_emb = torch.FloatTensor(np.concatenate([question_emb, answer_emb]))
-        combined_emb = combined_emb.unsqueeze(0).to(self.device)
+        # Create the same combined text as used during training with precomputed embeddings
+        combined_text = f"{evaluation_row.question_text} Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
+        
+        # Encode the combined text to get single embedding (matching training data format)
+        combined_embedding = self.tokenizer.encode(combined_text)
+        combined_emb = torch.FloatTensor(combined_embedding).unsqueeze(0).to(self.device)
 
         # Determine correctness
         is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")

@@ -191,7 +191,7 @@ class TorchConfig:
     batch_size: int = 128
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
-    early_stopping_patience: int = 5
+    early_stopping_patience: int = 10
 
     # Architecture hyperparameters
     hidden_dim: int = 128
