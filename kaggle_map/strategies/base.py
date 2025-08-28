@@ -6,6 +6,7 @@ from kaggle_map.core.models import EvaluationRow, SubmissionRow
 
 if TYPE_CHECKING:
     from optuna.trial import Trial
+    from rich.console import Console
 
 
 class Strategy(ABC):
@@ -32,7 +33,7 @@ class Strategy(ABC):
         *,
         train_split: float = 0.7,
         random_seed: int = 42,
-        train_csv_path: Path = Path("dataset/train.csv"),
+        train_csv_path: Path = Path("datasets/train.csv"),
     ) -> "Strategy":
         """Fit the strategy on training data.
 
@@ -136,3 +137,24 @@ class Strategy(ABC):
             Override for custom configuration handling.
         """
         return {**base_params, **hyperparams}
+
+    def display_stats(self, console: "Console") -> None:
+        """Display strategy statistics.
+
+        Args:
+            console: Rich console for formatted output
+        """
+
+    def display_detailed_info(self, console: "Console") -> None:
+        """Display detailed strategy information.
+
+        Args:
+            console: Rich console for formatted output
+        """
+
+    def demonstrate_predictions(self, console: "Console") -> None:
+        """Demonstrate predictions with examples.
+
+        Args:
+            console: Rich console for formatted output
+        """

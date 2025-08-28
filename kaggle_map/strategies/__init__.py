@@ -12,10 +12,10 @@ from .base import Strategy
 
 
 def _should_skip_file(filename: str) -> bool:
-    should_skip = filename.startswith("_") or filename in ("base.py", "__init__.py")
+    should_skip = filename.startswith("_") or filename in ("base.py", "__init__.py", "utils.py")
     if should_skip:
         logger.debug(
-            f"Skipping file '{filename}': {'private/internal file' if filename.startswith('_') else 'base/init file'}"
+            f"Skipping file '{filename}': {'private/internal file' if filename.startswith('_') else 'base/init/utils file'}"
         )
     return should_skip
 
