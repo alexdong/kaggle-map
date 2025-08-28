@@ -51,6 +51,9 @@ search:
 		--timeout 14400
 
 # Compare and analyze optimization results
+#  - Use make list-studies for listing all studies
+#  - Use make analyze STUDY=<study_name> for individual analysis
+#  - Use make compare STUDIES='study1 study2 study3' to compare multiple studies
 list-studies:
 	uv run -m kaggle_map.optimise list-studies
 
