@@ -107,6 +107,21 @@ class OptimiseManager:
 
             # Return very poor score to avoid this configuration
             return 0.0
+        
+        except Exception as e:
+            # Log any other exceptions and ensure cleanup
+            logger.error(f"Trial {trial.number} failed with error: {e}")
+            raise
+        
+        finally:
+            # Always ensure wandb is properly closed to free file handles
+            import wandb
+            if wandb.run is not None:
+                wandb.finish()
+            
+            # Clear GPU memory after each trial
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     def run_search(
         self,

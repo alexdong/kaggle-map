@@ -627,24 +627,24 @@ class MLPStrategy(Strategy):
         )
 
         # Create data loaders with optimizations for GPU
-        # Use larger batch size for GPU, multiple workers, and pin memory for faster transfers
+        # Use num_workers=0 to avoid "too many open files" error during hyperparameter search
         train_loader = DataLoader(
             train_dataset,
             batch_size=config.batch_size,
             shuffle=True,
-            num_workers=4 if str(device) != "cpu" else 0,  # Multiple workers for GPU
+            num_workers=0,  # Disable multiprocessing to avoid file handle issues
             pin_memory=str(device) != "cpu",  # Pin memory for faster GPU transfers
-            persistent_workers=bool(str(device) != "cpu" and config.epochs > 1),
-            prefetch_factor=2 if str(device) != "cpu" else None,
+            persistent_workers=False,  # Disable to avoid file handle accumulation
+            prefetch_factor=None,  # Disable prefetching when num_workers=0
         )
         val_loader = DataLoader(
             val_dataset,
             batch_size=config.batch_size * 2,  # Larger batch for validation (no gradients)
             shuffle=False,
-            num_workers=4 if str(device) != "cpu" else 0,
+            num_workers=0,  # Disable multiprocessing to avoid file handle issues
             pin_memory=str(device) != "cpu",
-            persistent_workers=bool(str(device) != "cpu" and config.epochs > 1),
-            prefetch_factor=2 if str(device) != "cpu" else None,
+            persistent_workers=False,  # Disable to avoid file handle accumulation
+            prefetch_factor=None,  # Disable prefetching when num_workers=0
         )
 
         # Train the model using the generic training function with ListMLE loss

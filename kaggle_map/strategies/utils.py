@@ -611,12 +611,16 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
     if hasattr(config, "trial_number"):
         wandb_config["trial_number"] = config.trial_number
 
+    # Finish any previous run before starting a new one
+    if wandb.run is not None:
+        wandb.finish()
+    
     wandb.init(
         project=config.wandb_project,
         name=config.wandb_run_name,
         config=wandb_config,
         tags=tags,
-        reinit=True,  # Allow multiple runs in parallel optimization
+        resume="allow",
     )
 
 
