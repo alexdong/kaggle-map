@@ -45,16 +45,15 @@ from typing import Any
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import numpy as np
+import optuna
 import pandas as pd
 import torch
+import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
-
-import wandb
-import optuna
 
 from kaggle_map.core.dataset import (
     extract_correct_answers,
@@ -87,7 +86,6 @@ from .utils import (
     split_training_data,
     train_torch_model,
 )
-
 
 
 class ListMLELoss(nn.Module):
@@ -357,6 +355,7 @@ class MLPStrategy(Strategy):
                 "early_stopping_patience": trial.suggest_int("patience", 16, 22),
                 "epochs": trial.suggest_int("epochs", 28, 36),
             }
+        return None
 
     @classmethod
     def _get_architecture_config(cls, size: str) -> dict[str, Any]:

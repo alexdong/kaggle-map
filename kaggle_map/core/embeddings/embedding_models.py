@@ -97,9 +97,9 @@ def get_tokenizer(
 
     # Load model to CPU first to avoid meta tensor issues in parallel processes
     st_model = SentenceTransformer(model.model_id, device="cpu")
-    
+
     # Move to target device if not CPU
     if device != "cpu":
         st_model = st_model.to(device)
-    
+
     return st_model
