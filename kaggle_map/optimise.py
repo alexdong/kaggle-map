@@ -46,7 +46,7 @@ class OptimiseManager:
 
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
-        
+
         # Add train_csv_path if provided
         if train_data_path:
             from pathlib import Path
@@ -207,12 +207,33 @@ class OptimiseManager:
             completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
             [t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]
 
-            # Determine status
-            if running_trials:
+            # Determine status - fix off-by-one error
+            # A study is only "RUNNING" if it has MULTIPLE running trials OR if it's recent
+            # Most orphaned studies have exactly 1 running trial left over from crashes
+            total_trials = len(study.trials)
+            completed_count = len(completed_trials)
+            running_count = len(running_trials)
+
+            # Check if study has real activity by looking for studies that are actively progressing
+            # Studies with lots of completed trials + 1 running are likely active
+            # Studies with few trials and 1 orphaned running trial are likely stale
+
+            # If we have >= 3 completed trials, then 1 running trial likely means active optimization
+            has_substantial_progress = completed_count >= 3
+
+            # For newer studies, be more conservative but allow recently started studies
+            looks_like_active_study = (
+                running_count > 1 or  # Multiple running trials = definitely active
+                (running_count == 1 and completed_count == 0 and total_trials == 1) or  # Brand new study
+                (running_count == 1 and has_substantial_progress) or  # Study with lots of progress
+                (running_count == 1 and total_trials <= 5 and completed_count >= 1)  # Small active studies
+            )
+
+            has_real_activity = looks_like_active_study
+
+            if running_count > 0 and has_real_activity:
                 status = "RUNNING"
-                # Create progress bar for running studies
-                total_trials = len(study.trials)
-                completed_count = len(completed_trials)
+                # Progress based on completed trials vs total trials
                 progress_bar = self._create_progress_bar(completed_count, total_trials)
             elif completed_trials:
                 status = "COMPLETED"

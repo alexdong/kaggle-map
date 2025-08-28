@@ -104,7 +104,17 @@ search-balanced:
 
 # Compare and analyze optimization results
 list-studies:
-	uv run -m kaggle_map.optimise list-studies
+	@echo "Press Ctrl+C to exit auto-refresh"
+	@while true; do \
+		clear; \
+		echo "=== Studies List (Auto-refreshing every 5 seconds) ==="; \
+		echo "Last updated: $$(date)"; \
+		echo ""; \
+		uv run -m kaggle_map.optimise list-studies; \
+		echo ""; \
+		echo "Press Ctrl+C to exit..."; \
+		sleep 5; \
+	done
 
 compare:
 	@if [ -z "$(STUDIES)" ]; then \
