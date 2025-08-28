@@ -392,13 +392,13 @@ def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv)
 def test_model_fit_handles_training_data_without_misconceptions():
     """Model handles training data where no misconceptions are present."""
     training_data = {
-        "row_id": [1, 2],
-        "QuestionId": [100, 100],
-        "QuestionText": ["Test", "Test"],
-        "MC_Answer": ["A", "B"],
-        "StudentExplanation": ["Exp1", "Exp2"],
-        "Category": ["True_Correct", "False_Neither"],
-        "Misconception": [None, None]
+        "row_id": list(range(1, 11)),
+        "QuestionId": [100, 100, 101, 101, 102, 102, 103, 103, 104, 104],
+        "QuestionText": ["Test"] * 10,
+        "MC_Answer": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+        "StudentExplanation": [f"Exp{i}" for i in range(1, 11)],
+        "Category": ["True_Correct", "False_Neither"] * 5,
+        "Misconception": [None] * 10
     }
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:

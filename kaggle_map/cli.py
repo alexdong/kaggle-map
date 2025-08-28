@@ -81,8 +81,8 @@ def run(
         # Convert train_data to Path if provided
         train_csv_path = Path(train_data) if train_data else Path("datasets/train.csv")
 
-        _dispatch_action(
-            action=action,
+        # Create CLIParams object
+        params = CLIParams(
             strategy=strategy,
             strategy_class=strategy_class,
             console=console,
@@ -93,6 +93,8 @@ def run(
             output_path=output_path,
             train_csv_path=train_csv_path,
         )
+
+        _dispatch_action(action=action, params=params)
 
     except ValueError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
