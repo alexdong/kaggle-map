@@ -19,6 +19,7 @@ dependencies = [
     "pytest-asyncio>=1.0.0",
     "kaggle>=1.7.4.5",
     "pandas>=2.0.0",
+    "scikit-learn>=1.7.1",
 ]
 
 [project.scripts]

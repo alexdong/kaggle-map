@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from ..models import SubmissionRow, TestRow
+from kaggle_map.models import SubmissionRow, TestRow
 
 
 class Strategy(ABC):

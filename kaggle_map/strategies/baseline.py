@@ -10,7 +10,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from ..models import (
+from kaggle_map.models import (
     Answer,
     Category,
     Misconception,
@@ -20,6 +20,7 @@ from ..models import (
     TestRow,
     TrainingRow,
 )
+
 from .base import Strategy
 
 
