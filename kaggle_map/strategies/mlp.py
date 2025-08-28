@@ -39,6 +39,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # Disable tokenizer parallelism to avoid fork warnings with DataLoader multiprocessing
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -84,6 +85,11 @@ from .utils import (
     split_training_data,
     train_torch_model,
 )
+
+try:
+    import optuna
+except ImportError:
+    optuna = None
 
 
 class ListMLELoss(nn.Module):
@@ -149,8 +155,14 @@ class QuestionSpecificMLP(nn.Module):
         activation = get_activation(config.activation)
         # Dynamic input dimension: embedding_dim + correctness_embedding_dim
         input_dim = embedding_dim + correctness_embedding_dim
-        # Scale hidden dimensions proportionally based on input size
-        if embedding_dim == 384:  # MINI_LM model
+
+        # Use configurable trunk_layers if provided, otherwise use default scaling
+        if hasattr(config, "trunk_layers") and config.trunk_layers:
+            # Hyperparameter search case - use provided architecture
+            dims = config.trunk_layers
+            assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"
+        # Default case - scale based on embedding dimension
+        elif embedding_dim == 384:  # MINI_LM model
             dims = [input_dim, 512, 256, 192, 128]
         else:  # Larger models (768 dim)
             dims = [input_dim, 1024, 512, 256, 192]
@@ -297,6 +309,75 @@ class MLPStrategy(Strategy):
     def description(self) -> str:
         return "MLP with shared trunk and question-specific heads for full prediction (Category:Misconception)"
 
+    @classmethod
+    def get_hyperparameter_search_space(cls, trial) -> dict[str, Any]:
+        """Define comprehensive hyperparameter search space for Optuna optimization."""
+        if optuna is None:
+            msg = "Optuna is required for hyperparameter search"
+            raise ImportError(msg)
+
+        return {
+            # Learning dynamics - wide exploration range
+            "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True),
+            "batch_size": trial.suggest_categorical("batch_size", [128, 256, 512, 768, 1024]),
+            "dropout": trial.suggest_float("dropout", 0.05, 0.5),
+
+            # Architecture scaling - let search decide optimal size
+            "architecture_size": trial.suggest_categorical("architecture_size",
+                ["small", "medium", "large", "xlarge"]),
+
+            # Optimizer options - comprehensive set
+            "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw", "sgd"]),
+            "weight_decay": trial.suggest_float("weight_decay", 1e-6, 0.1, log=True),
+
+            # Activation functions - all viable options
+            "activation": trial.suggest_categorical("activation",
+                ["relu", "gelu", "leaky_relu", "silu", "elu"]),
+
+            # Scheduler options - complete range
+            "scheduler": trial.suggest_categorical("scheduler",
+                ["none", "cosine", "onecycle", "step"]),
+
+            # Training dynamics
+            "early_stopping_patience": trial.suggest_int("patience", 5, 20),
+            "epochs": trial.suggest_int("epochs", 10, 50),
+        }
+
+    @classmethod
+    def _get_architecture_config(cls, size: str) -> dict[str, Any]:
+        """Get architecture configuration for different model sizes."""
+        configs = {
+            "small": {
+                "hidden_dim": 256,
+                "trunk_layers": [800, 512, 256, 128, 96]
+            },
+            "medium": {
+                "hidden_dim": 512,
+                "trunk_layers": [800, 1024, 512, 256, 192]
+            },
+            "large": {
+                "hidden_dim": 768,
+                "trunk_layers": [800, 1536, 768, 384, 256]
+            },
+            "xlarge": {
+                "hidden_dim": 1024,
+                "trunk_layers": [800, 2048, 1024, 512, 384]
+            }
+        }
+        return configs[size]
+
+    @classmethod
+    def create_config_from_hyperparams(cls, hyperparams: dict[str, Any], **base_params: Any) -> TorchConfig:
+        """Convert hyperparameters to TorchConfig, including architecture scaling."""
+        # Extract architecture size and get config
+        arch_size = hyperparams.pop("architecture_size", "medium")
+        arch_config = cls._get_architecture_config(arch_size)
+
+        # Merge architecture config with hyperparameters
+        config_params = {**hyperparams, **arch_config, **base_params}
+
+        return TorchConfig(**{k: v for k, v in config_params.items() if hasattr(TorchConfig, k)})
+
     @staticmethod
     def process_mlp_batch_train(
         model: QuestionSpecificMLP,
@@ -398,9 +479,13 @@ class MLPStrategy(Strategy):
             kwargs["batch_size"] = 256  # Larger batch for GPU
             logger.info(f"Using batch_size=256 for {device} (override with batch_size parameter)")
 
-        config = TorchConfig(
-            wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
-        )
+        # Use create_config_from_hyperparams if architecture_size is provided (hyperparameter search)
+        if "architecture_size" in kwargs:
+            config = cls.create_config_from_hyperparams(kwargs, wandb_project="kaggle-map-mlp")
+        else:
+            config = TorchConfig(
+                wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
+            )
         logger.info(f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}")
 
         extra_config = {
@@ -585,7 +670,7 @@ class MLPStrategy(Strategy):
         question_emb = self.tokenizer.encode(evaluation_row.question_text)
         answer_text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
         answer_emb = self.tokenizer.encode(answer_text)
-        
+
         # Concatenate question and answer embeddings (768-dimensional)
         combined_emb = torch.FloatTensor(np.concatenate([question_emb, answer_emb]))
         combined_emb = combined_emb.unsqueeze(0).to(self.device)

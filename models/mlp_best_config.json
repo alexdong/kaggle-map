@@ -1,0 +1,17 @@
+{
+  "study_name": "mlp_20250828_125657",
+  "best_value": 0.7653524709302325,
+  "best_params": {
+    "learning_rate": 0.0037230218381653054,
+    "batch_size": 128,
+    "dropout": 0.08006436222367008,
+    "architecture_size": "xlarge",
+    "optimizer": "adam",
+    "weight_decay": 4.620396869563978e-05,
+    "activation": "gelu",
+    "scheduler": "onecycle",
+    "patience": 17,
+    "epochs": 12
+  },
+  "n_trials": 1
+}

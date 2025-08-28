@@ -33,15 +33,14 @@ eval:
 # Hyperparameter search commands
 search:
 	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make search STRATEGY=<strategy_name> [TRIALS=100] [JOBS=1]"; \
-		echo "Example: make search STRATEGY=mlp TRIALS=50 JOBS=4"; \
+		echo "Usage: make search STRATEGY=<strategy_name> [TRIALS=100] [JOBS=3]"; \
+		echo "Example: make search STRATEGY=mlp TRIALS=50 JOBS=3"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.hypersearch $(STRATEGY) \
-		--n-trials $(or $(TRIALS),100) \
-		--n-jobs $(or $(JOBS),1) \
-		--metric $(or $(METRIC),accuracy) \
-		--sampler $(or $(SAMPLER),tpe)
+	uv run -m kaggle_map.optimise search $(STRATEGY) \
+		--trials $(or $(TRIALS),100) \
+		--jobs $(or $(JOBS),3) \
+		$(if $(TIMEOUT),--timeout $(TIMEOUT))
 
 search-grid:
 	@if [ -z "$(STRATEGY)" ]; then \
@@ -49,10 +48,9 @@ search-grid:
 		echo "Example: make search-grid STRATEGY=mlp"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.hypersearch $(STRATEGY) \
-		--n-trials 1000 \
-		--n-jobs $(or $(JOBS),4) \
-		--sampler grid
+	uv run -m kaggle_map.optimise search $(STRATEGY) \
+		--trials 1000 \
+		--jobs $(or $(JOBS),3)
 
 search-quick:
 	@if [ -z "$(STRATEGY)" ]; then \
@@ -61,14 +59,13 @@ search-quick:
 		echo "Runs 20 trials for quick exploration"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.hypersearch $(STRATEGY) \
-		--n-trials 20 \
-		--n-jobs $(or $(JOBS),2) \
-		--metric accuracy
+	uv run -m kaggle_map.optimise search $(STRATEGY) \
+		--trials 20 \
+		--jobs $(or $(JOBS),2)
 
-# Compare and analyze hypersearch results
+# Compare and analyze optimization results
 list-studies:
-	uv run -m kaggle_map.compare list-studies
+	uv run -m kaggle_map.optimise list-studies
 
 compare:
 	@if [ -z "$(STUDIES)" ]; then \
@@ -76,7 +73,7 @@ compare:
 		echo "Example: make compare STUDIES='mlp_20240101_120000 mlp_20240102_140000'"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.compare compare $(STUDIES)
+	uv run -m kaggle_map.optimise compare $(STUDIES)
 
 analyze:
 	@if [ -z "$(STUDY)" ]; then \
@@ -84,10 +81,4 @@ analyze:
 		echo "Example: make analyze STUDY=mlp_20240101_120000"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.compare analyze $(STUDY)
-
-# Launch Optuna dashboard for visualization (requires optuna-dashboard)
-dashboard:
-	@echo "Starting Optuna Dashboard on http://localhost:8080"
-	@echo "Press Ctrl+C to stop"
-	optuna-dashboard sqlite:///optuna.db
+	uv run -m kaggle_map.optimise analyze $(STUDY)
