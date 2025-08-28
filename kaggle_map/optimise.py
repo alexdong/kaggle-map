@@ -46,7 +46,7 @@ class OptimiseManager:
 
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
-        
+
         # Add train_csv_path if provided
         if train_data_path:
             from pathlib import Path
