@@ -324,33 +324,22 @@ class MLPStrategy(Strategy):
             return {
                 # Dense sampling around optimal LR range [8e-5, 3e-4]
                 "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
-
                 # Focus on proven batch sizes with fine gradations
-                "batch_size": trial.suggest_categorical("batch_size",
-                    [224, 256, 288, 320, 384, 448, 512]),
-
+                "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
                 # Fine-grained dropout exploration around optimum
                 "dropout": trial.suggest_float("dropout", 0.30, 0.42),
-
                 # Heavy bias toward xlarge (85%), some large (10%), rare xxlarge (5%)
-                "architecture_size": trial.suggest_categorical("architecture_size",
-                    ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]),
-
+                "architecture_size": trial.suggest_categorical(
+                    "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]
+                ),
                 # Both optimizers with AdamW preference
-                "optimizer": trial.suggest_categorical("optimizer",
-                    ["adamw", "adamw", "adamw", "adam"]),
-
+                "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adamw", "adamw", "adam"]),
                 # Focus on promising weight decay range
                 "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-
                 # Test all successful activations
-                "activation": trial.suggest_categorical("activation",
-                    ["gelu", "silu", "relu", "leaky_relu"]),
-
+                "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
                 # Focus on successful schedulers
-                "scheduler": trial.suggest_categorical("scheduler",
-                    ["cosine", "cosine", "onecycle", "none"]),
-
+                "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
                 # Optimal patience range
                 "early_stopping_patience": trial.suggest_int("patience", 16, 22),
                 "epochs": trial.suggest_int("epochs", 28, 36),
@@ -361,26 +350,11 @@ class MLPStrategy(Strategy):
     def _get_architecture_config(cls, size: str) -> dict[str, Any]:
         """Get architecture configuration for different model sizes."""
         configs = {
-            "small": {
-                "hidden_dim": 256,
-                "trunk_layers": [800, 512, 256, 128, 96]
-            },
-            "medium": {
-                "hidden_dim": 512,
-                "trunk_layers": [800, 1024, 512, 256, 192]
-            },
-            "large": {
-                "hidden_dim": 768,
-                "trunk_layers": [800, 1536, 768, 384, 256]
-            },
-            "xlarge": {
-                "hidden_dim": 1024,
-                "trunk_layers": [800, 2048, 1024, 512, 384]
-            },
-            "xxlarge": {
-                "hidden_dim": 1536,
-                "trunk_layers": [800, 2560, 1536, 768, 512]
-            }
+            "small": {"hidden_dim": 256, "trunk_layers": [800, 512, 256, 128, 96]},
+            "medium": {"hidden_dim": 512, "trunk_layers": [800, 1024, 512, 256, 192]},
+            "large": {"hidden_dim": 768, "trunk_layers": [800, 1536, 768, 384, 256]},
+            "xlarge": {"hidden_dim": 1024, "trunk_layers": [800, 2048, 1024, 512, 384]},
+            "xxlarge": {"hidden_dim": 1536, "trunk_layers": [800, 2560, 1536, 768, 512]},
         }
         return configs[size]
 
@@ -775,9 +749,7 @@ class MLPStrategy(Strategy):
 
             training_data = parse_training_data(train_csv_path)
             mlp_model = QuestionSpecificMLP(
-                extract_question_predictions(training_data),
-                embedding_dim=embedding_dim,
-                config=config
+                extract_question_predictions(training_data), embedding_dim=embedding_dim, config=config
             )
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -839,6 +811,7 @@ if __name__ == "__main__":
 
     # Split data to get validation set
     from .utils import split_training_data
+
     _, val_data, _ = split_training_data(training_data, train_ratio=0.7, random_seed=42)
 
     # Sample validation data for analysis
@@ -876,14 +849,16 @@ if __name__ == "__main__":
         # Calculate MAP@3
         score = calculate_map_at_3(row.prediction, predictions)
 
-        results.append({
-            "row_id": row.row_id,
-            "question_id": row.question_id,
-            "is_correct": is_correct,
-            "ground_truth": f"{row.prediction.category.value}:{row.misconception}",
-            "prediction_1": f"{predictions[0].category.value}:{predictions[0].misconception}",
-            "map_score": score
-        })
+        results.append(
+            {
+                "row_id": row.row_id,
+                "question_id": row.question_id,
+                "is_correct": is_correct,
+                "ground_truth": f"{row.prediction.category.value}:{row.misconception}",
+                "prediction_1": f"{predictions[0].category.value}:{predictions[0].misconception}",
+                "map_score": score,
+            }
+        )
 
     # Calculate statistics
     map_scores = [r["map_score"] for r in results]
@@ -892,20 +867,20 @@ if __name__ == "__main__":
     partial = sum(1 for s in map_scores if 0 < s < 1)
     misses = sum(1 for s in map_scores if s == 0)
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info("PERFORMANCE ANALYSIS RESULTS")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
     logger.info(f"Total samples analyzed: {len(results)}")
     logger.info(f"Average MAP@3: {avg_map:.4f}")
-    logger.info(f"Perfect predictions (MAP=1.0): {perfect} ({perfect/len(results)*100:.1f}%)")
-    logger.info(f"Partial hits (0<MAP<1): {partial} ({partial/len(results)*100:.1f}%)")
-    logger.info(f"Complete misses (MAP=0): {misses} ({misses/len(results)*100:.1f}%)")
-    logger.info(f"Correctness prefix errors: {correctness_errors} ({correctness_errors/len(results)*100:.1f}%)")
+    logger.info(f"Perfect predictions (MAP=1.0): {perfect} ({perfect / len(results) * 100:.1f}%)")
+    logger.info(f"Partial hits (0<MAP<1): {partial} ({partial / len(results) * 100:.1f}%)")
+    logger.info(f"Complete misses (MAP=0): {misses} ({misses / len(results) * 100:.1f}%)")
+    logger.info(f"Correctness prefix errors: {correctness_errors} ({correctness_errors / len(results) * 100:.1f}%)")
 
     # Analyze model weights
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info("MODEL WEIGHT ANALYSIS")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     mlp_model = model.model
     for i, layer in enumerate(mlp_model.trunk):

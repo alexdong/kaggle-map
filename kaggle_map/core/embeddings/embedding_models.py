@@ -93,6 +93,7 @@ def get_tokenizer(
     # If device not specified, use the get_device utility
     if device is None:
         from kaggle_map.strategies.utils import get_device
+
         device = str(get_device())
 
     # Load model to CPU first to avoid meta tensor issues in parallel processes

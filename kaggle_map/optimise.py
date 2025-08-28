@@ -40,8 +40,9 @@ class OptimiseManager:
             ),
         )
 
-
-    def objective_function(self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None) -> float:
+    def objective_function(
+        self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None
+    ) -> float:
         """Objective function for hyperparameter optimization."""
 
         # Get hyperparameters from strategy
@@ -50,6 +51,7 @@ class OptimiseManager:
         # Add train_csv_path if provided
         if train_data_path:
             from pathlib import Path
+
             hyperparams["train_csv_path"] = Path(train_data_path)
 
         # Add trial information to wandb run name
@@ -121,6 +123,7 @@ class OptimiseManager:
         finally:
             # Always ensure wandb is properly closed to free file handles
             import wandb
+
             if wandb.run is not None:
                 wandb.finish()
 
@@ -134,7 +137,7 @@ class OptimiseManager:
         n_trials: int,
         n_jobs: int,
         timeout: int | None = None,
-        train_data_path: str | None = None
+        train_data_path: str | None = None,
     ) -> optuna.Study:
         """Run hyperparameter search for a strategy."""
 
@@ -168,12 +171,16 @@ class OptimiseManager:
         best_config_path.parent.mkdir(parents=True, exist_ok=True)
 
         with best_config_path.open("w") as f:
-            json.dump({
-                "study_name": study.study_name,
-                "best_value": study.best_value,
-                "best_params": study.best_params,
-                "n_trials": len(study.trials),
-            }, f, indent=2)
+            json.dump(
+                {
+                    "study_name": study.study_name,
+                    "best_value": study.best_value,
+                    "best_params": study.best_params,
+                    "n_trials": len(study.trials),
+                },
+                f,
+                indent=2,
+            )
 
         logger.info(f"Best configuration saved to {best_config_path}")
 
@@ -197,10 +204,7 @@ class OptimiseManager:
         table.add_column("Progress", style="blue")
 
         for summary in sorted(study_summaries, key=lambda x: x.study_name):
-            study = optuna.load_study(
-                study_name=summary.study_name,
-                storage=self.storage
-            )
+            study = optuna.load_study(study_name=summary.study_name, storage=self.storage)
 
             # Check trial states properly
             running_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.RUNNING]
@@ -223,10 +227,10 @@ class OptimiseManager:
 
             # For newer studies, be more conservative but allow recently started studies
             looks_like_active_study = (
-                running_count > 1 or  # Multiple running trials = definitely active
-                (running_count == 1 and completed_count == 0 and total_trials == 1) or  # Brand new study
-                (running_count == 1 and has_substantial_progress) or  # Study with lots of progress
-                (running_count == 1 and total_trials <= 5 and completed_count >= 1)  # Small active studies
+                running_count > 1  # Multiple running trials = definitely active
+                or (running_count == 1 and completed_count == 0 and total_trials == 1)  # Brand new study
+                or (running_count == 1 and has_substantial_progress)  # Study with lots of progress
+                or (running_count == 1 and total_trials <= 5 and completed_count >= 1)  # Small active studies
             )
 
             has_real_activity = looks_like_active_study
@@ -245,13 +249,7 @@ class OptimiseManager:
             # Safely get best value from completed trials
             best_value = f"{max(t.value for t in completed_trials):.4f}" if completed_trials else "N/A"
 
-            table.add_row(
-                summary.study_name,
-                str(len(study.trials)),
-                best_value,
-                status,
-                progress_bar
-            )
+            table.add_row(summary.study_name, str(len(study.trials)), best_value, status, progress_bar)
 
         console.print(table)
 
@@ -291,18 +289,17 @@ class OptimiseManager:
 
             # Format key parameters for display
             best_params = study.best_params
-            key_param_str = ", ".join([
-                f"lr={best_params.get('learning_rate', 'N/A'):.1e}",
-                f"bs={best_params.get('batch_size', 'N/A')}",
-                f"do={best_params.get('dropout', 'N/A'):.2f}",
-                f"arch={best_params.get('architecture_size', 'N/A')}"
-            ])
+            key_param_str = ", ".join(
+                [
+                    f"lr={best_params.get('learning_rate', 'N/A'):.1e}",
+                    f"bs={best_params.get('batch_size', 'N/A')}",
+                    f"do={best_params.get('dropout', 'N/A'):.2f}",
+                    f"arch={best_params.get('architecture_size', 'N/A')}",
+                ]
+            )
 
             table.add_row(
-                name,
-                f"{study.best_value:.4f}" if study.best_value else "N/A",
-                str(len(study.trials)),
-                key_param_str
+                name, f"{study.best_value:.4f}" if study.best_value else "N/A", str(len(study.trials)), key_param_str
             )
 
         console.print(table)
@@ -348,8 +345,10 @@ class OptimiseManager:
             values = [t.value for t in completed_trials]
             console.print("\n[bold]Trial Statistics:[/bold]")
             console.print(f"  Completed: {len(completed_trials)}/{len(study.trials)}")
-            console.print(f"  Mean: {sum(values)/len(values):.4f}")
-            console.print(f"  Std: {(sum((v - sum(values)/len(values))**2 for v in values) / len(values))**0.5:.4f}")
+            console.print(f"  Mean: {sum(values) / len(values):.4f}")
+            console.print(
+                f"  Std: {(sum((v - sum(values) / len(values)) ** 2 for v in values) / len(values)) ** 0.5:.4f}"
+            )
             console.print(f"  Min: {min(values):.4f}")
             console.print(f"  Max: {max(values):.4f}")
 
@@ -440,14 +439,16 @@ class OptimiseManager:
                 f.write("|--------------|------------|---------|-------|-----|\n")
                 for arch, vals in sorted(arch_performance.items()):
                     vals_array = np.array(vals)
-                    f.write(f"| {arch} | {vals_array.mean():.4f} | {vals_array.std():.4f} | {len(vals)} | {vals_array.max():.4f} |\n")
+                    f.write(
+                        f"| {arch} | {vals_array.mean():.4f} | {vals_array.std():.4f} | {len(vals)} | {vals_array.max():.4f} |\n"
+                    )
 
             # Learning rate analysis
             lr_ranges = {
                 "very_low (<1e-4)": (0, 1e-4),
                 "low (1e-4 to 1e-3)": (1e-4, 1e-3),
                 "medium (1e-3 to 5e-3)": (1e-3, 5e-3),
-                "high (>5e-3)": (5e-3, 1)
+                "high (>5e-3)": (5e-3, 1),
             }
             lr_performance = {k: [] for k in lr_ranges}
 
@@ -492,7 +493,9 @@ class OptimiseManager:
             lr_with_data = [(k, v) for k, v in lr_performance.items() if v]
             if lr_with_data:
                 best_lr_range = max(lr_with_data, key=lambda x: np.mean(x[1]))
-                f.write(f"- **Optimal learning rate range**: {best_lr_range[0]} (mean MAP@3: {np.mean(best_lr_range[1]):.4f})\n")
+                f.write(
+                    f"- **Optimal learning rate range**: {best_lr_range[0]} (mean MAP@3: {np.mean(best_lr_range[1]):.4f})\n"
+                )
 
             # Parameter correlation insights
             if study.best_params.get("dropout"):
