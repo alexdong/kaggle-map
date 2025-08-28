@@ -52,9 +52,7 @@ def cli() -> None:
 @click.option("--model-path", type=click.Path(), help="Path to saved model file")
 @click.option("--output-path", type=click.Path(), help="Path for output files")
 @click.option(
-    "--train-data",
-    type=click.Path(exists=True),
-    help="Path to training data CSV (default: datasets/train.csv)"
+    "--train-data", type=click.Path(exists=True), help="Path to training data CSV (default: datasets/train.csv)"
 )
 def run(
     strategy: str,
@@ -244,6 +242,7 @@ def _load_model_for_eval(
             strategy, strategy_class, console, model_file, train_split, random_seed
         )
         return model, updated_train_split, updated_random_seed
+
     # For MLP, try to use checkpoint if no model file exists
     if strategy == "mlp":
         console.print("Model file not found, looking for checkpoints...")
