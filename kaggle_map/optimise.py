@@ -41,11 +41,16 @@ class OptimiseManager:
         )
 
 
-    def objective_function(self, trial: optuna.Trial, strategy_class: type) -> float:
+    def objective_function(self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None) -> float:
         """Objective function for hyperparameter optimization."""
 
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
+        
+        # Add train_csv_path if provided
+        if train_data_path:
+            from pathlib import Path
+            hyperparams["train_csv_path"] = Path(train_data_path)
 
         # Add trial information to wandb run name
         trial_num = trial.number
@@ -108,24 +113,42 @@ class OptimiseManager:
             # Return very poor score to avoid this configuration
             return 0.0
 
+        except Exception as e:
+            # Log any other exceptions and ensure cleanup
+            logger.error(f"Trial {trial.number} failed with error: {e}")
+            raise
+
+        finally:
+            # Always ensure wandb is properly closed to free file handles
+            import wandb
+            if wandb.run is not None:
+                wandb.finish()
+
+            # Clear GPU memory after each trial
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
     def run_search(
         self,
         strategy_name: str,
         n_trials: int,
         n_jobs: int,
-        timeout: int | None = None
+        timeout: int | None = None,
+        train_data_path: str | None = None
     ) -> optuna.Study:
         """Run hyperparameter search for a strategy."""
 
         logger.info(f"Starting hyperparameter search for {strategy_name}")
         logger.info(f"Trials: {n_trials}, Jobs: {n_jobs}, Timeout: {timeout}s")
+        if train_data_path:
+            logger.info(f"Using training data: {train_data_path}")
 
         strategy_class = get_strategy(strategy_name)
         study = self.create_study(strategy_name)
 
-        # Create objective with bound strategy class
+        # Create objective with bound strategy class and train data path
         def objective(trial: optuna.Trial) -> float:
-            return self.objective_function(trial, strategy_class)
+            return self.objective_function(trial, strategy_class, train_data_path)
 
         logger.info(f"Starting optimization with study: {study.study_name}")
 
@@ -171,6 +194,7 @@ class OptimiseManager:
         table.add_column("Trials", style="yellow")
         table.add_column("Best Value", style="green")
         table.add_column("Status", style="magenta")
+        table.add_column("Progress", style="blue")
 
         for summary in sorted(study_summaries, key=lambda x: x.study_name):
             study = optuna.load_study(
@@ -178,20 +202,52 @@ class OptimiseManager:
                 storage=self.storage
             )
 
-            completed_trials = [t for t in study.trials if t.value is not None]
-            status = "COMPLETED" if completed_trials else "EMPTY"
+            # Check trial states properly
+            running_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.RUNNING]
+            completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            [t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]
 
-            # Safely get best value
+            # Determine status
+            if running_trials:
+                status = "RUNNING"
+                # Create progress bar for running studies
+                total_trials = len(study.trials)
+                completed_count = len(completed_trials)
+                progress_bar = self._create_progress_bar(completed_count, total_trials)
+            elif completed_trials:
+                status = "COMPLETED"
+                progress_bar = "✓ Done"
+            else:
+                status = "EMPTY"
+                progress_bar = "—"
+
+            # Safely get best value from completed trials
             best_value = f"{max(t.value for t in completed_trials):.4f}" if completed_trials else "N/A"
 
             table.add_row(
                 summary.study_name,
                 str(len(study.trials)),
                 best_value,
-                status
+                status,
+                progress_bar
             )
 
         console.print(table)
+
+    def _create_progress_bar(self, completed: int, total: int) -> str:
+        """Create a text-based progress bar for running studies."""
+        if total == 0:
+            return "—"
+
+        # Calculate percentage
+        percentage = (completed / total) * 100
+
+        # Create a simple text progress bar
+        bar_width = 20
+        filled = int((completed / total) * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+
+        return f"{bar} {completed}/{total} ({percentage:.1f}%)"
 
     def compare_studies(self, study_names: list[str]) -> None:
         """Compare multiple optimization studies."""
@@ -447,10 +503,11 @@ def cli() -> None:
 @click.option("--trials", default=100, help="Number of trials to run")
 @click.option("--jobs", default=3, help="Number of parallel jobs")
 @click.option("--timeout", default=None, type=int, help="Timeout in seconds")
-def search(strategy: str, trials: int, jobs: int, timeout: int | None) -> None:
+@click.option("--train-data", default=None, help="Path to training data CSV")
+def search(strategy: str, trials: int, jobs: int, timeout: int | None, train_data: str | None) -> None:
     """Run hyperparameter search for a strategy."""
     manager = OptimiseManager()
-    study = manager.run_search(strategy, trials, jobs, timeout)
+    study = manager.run_search(strategy, trials, jobs, timeout, train_data)
 
     print("\nSearch completed!")
     print(f"Study name: {study.study_name}")

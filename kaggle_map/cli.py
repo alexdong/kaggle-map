@@ -36,6 +36,11 @@ def cli() -> None:
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed model information")
 @click.option("--model-path", type=click.Path(), help="Path to saved model file")
 @click.option("--output-path", type=click.Path(), help="Path for output files")
+@click.option(
+    "--train-data",
+    type=click.Path(exists=True),
+    help="Path to training data CSV (default: datasets/train.csv)"
+)
 def run(
     strategy: str,
     action: str,
@@ -44,6 +49,7 @@ def run(
     verbose: bool,
     model_path: str | None,
     output_path: str | None,
+    train_data: str | None,
 ) -> None:
     """Run a strategy with the specified action.
 
@@ -56,10 +62,19 @@ def run(
         strategy_class = get_strategy(strategy)
         logger.info(f"Using strategy: {strategy} - {strategy_class}")
 
+        # Convert train_data to Path if provided
+        train_csv_path = Path(train_data) if train_data else Path("datasets/train.csv")
+
         if action == "fit":
-            _handle_fit(strategy, strategy_class, console, train_split, random_seed, verbose, output_path)
+            _handle_fit(
+                strategy, strategy_class, console, train_split, random_seed,
+                verbose, output_path, train_csv_path
+            )
         elif action == "eval":
-            _handle_eval(strategy, strategy_class, console, train_split, random_seed, model_path, verbose)
+            _handle_eval(
+                strategy, strategy_class, console, train_split, random_seed,
+                model_path, verbose, train_csv_path
+            )
         elif action == "predict":
             _handle_predict(strategy, strategy_class, console, model_path, output_path)
 
@@ -110,11 +125,12 @@ def _handle_fit(
     random_seed: int,
     verbose: bool,
     output_path: str | None,
+    train_csv_path: Path,
 ) -> None:
     """Handle the fit action."""
-    with console.status(f"[bold green]Fitting {strategy} strategy..."):
+    with console.status(f"[bold green]Fitting {strategy} strategy using {train_csv_path}..."):
         # Fit the model with parameters
-        model = strategy_class.fit(train_split=train_split, random_seed=random_seed)
+        model = strategy_class.fit(train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path)
 
     console.print(f"✅ [bold green]{strategy.title()} strategy completed successfully![/bold green]")
 
@@ -137,7 +153,7 @@ def _handle_fit(
 
     # Create model parameters for saving
     # Get the actual data size from the training data
-    all_data = parse_training_data(Path("datasets/train.csv"))
+    all_data = parse_training_data(train_csv_path)
     train_indices, val_indices, test_indices = get_split_indices(
         len(all_data), train_ratio=train_split, random_seed=random_seed
     )
@@ -166,6 +182,7 @@ def _handle_eval(
     random_seed: int,
     model_path: str | None,
     verbose: bool,
+    train_csv_path: Path,
 ) -> None:
     """Handle the eval action."""
     # Determine model path
@@ -181,12 +198,21 @@ def _handle_eval(
     if model_file.exists():
         with console.status(f"[bold blue]Loading {strategy} model..."):
             # Load model and parameters
-            model = strategy_class.load(model_file)
-            if hasattr(model, "parameters") and model.parameters:
-                params = model.parameters
-                console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
-                train_split = params.train_split
-                random_seed = params.random_seed
+            loaded_result = strategy_class.load(model_file)
+            # Handle different return types from load method
+            if isinstance(loaded_result, tuple):
+                model, params = loaded_result
+                if params:
+                    console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
+                    train_split = params.train_split
+                    random_seed = params.random_seed
+            else:
+                model = loaded_result
+                if hasattr(model, "parameters") and model.parameters:
+                    params = model.parameters
+                    console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
+                    train_split = params.train_split
+                    random_seed = params.random_seed
         console.print(f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]")
     # For MLP, try to use checkpoint if no model file exists
     elif strategy == "mlp":
@@ -199,7 +225,7 @@ def _handle_eval(
 
     assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
 
-    eval_results = strategy_class.evaluate_on_split(model, train_split=train_split, random_seed=random_seed)
+    eval_results = strategy_class.evaluate_on_split(model, train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path)
 
     console.print("\n[bold]Evaluation results:[/bold]")
     for key, value in eval_results.items():
