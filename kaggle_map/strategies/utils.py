@@ -170,9 +170,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-import wandb
 from torch import nn
 from torch.utils.data import DataLoader
+
+import wandb
 
 
 @dataclass
@@ -613,7 +614,7 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
     # Finish any previous run before starting a new one
     if wandb.run is not None:
         wandb.finish()
-    
+
     wandb.init(
         project=config.wandb_project,
         name=config.wandb_run_name,

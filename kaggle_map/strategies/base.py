@@ -85,6 +85,7 @@ class Strategy(ABC):
         *,
         train_split: float = 0.7,
         random_seed: int = 42,
+        train_csv_path: Path = Path("datasets/train.csv"),
     ) -> dict[str, float]:
         """Evaluate model on validation split.
 
@@ -92,6 +93,7 @@ class Strategy(ABC):
             model: Fitted strategy instance to evaluate
             train_split: Fraction of data used for training (rest for validation)
             random_seed: Random seed for reproducible split
+            train_csv_path: Path to training CSV file
 
         Returns:
             Dictionary with evaluation metrics

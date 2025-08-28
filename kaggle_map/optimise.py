@@ -41,11 +41,16 @@ class OptimiseManager:
         )
 
 
-    def objective_function(self, trial: optuna.Trial, strategy_class: type) -> float:
+    def objective_function(self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None) -> float:
         """Objective function for hyperparameter optimization."""
 
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
+        
+        # Add train_csv_path if provided
+        if train_data_path:
+            from pathlib import Path
+            hyperparams["train_csv_path"] = Path(train_data_path)
 
         # Add trial information to wandb run name
         trial_num = trial.number
@@ -128,19 +133,22 @@ class OptimiseManager:
         strategy_name: str,
         n_trials: int,
         n_jobs: int,
-        timeout: int | None = None
+        timeout: int | None = None,
+        train_data_path: str | None = None
     ) -> optuna.Study:
         """Run hyperparameter search for a strategy."""
 
         logger.info(f"Starting hyperparameter search for {strategy_name}")
         logger.info(f"Trials: {n_trials}, Jobs: {n_jobs}, Timeout: {timeout}s")
+        if train_data_path:
+            logger.info(f"Using training data: {train_data_path}")
 
         strategy_class = get_strategy(strategy_name)
         study = self.create_study(strategy_name)
 
-        # Create objective with bound strategy class
+        # Create objective with bound strategy class and train data path
         def objective(trial: optuna.Trial) -> float:
-            return self.objective_function(trial, strategy_class)
+            return self.objective_function(trial, strategy_class, train_data_path)
 
         logger.info(f"Starting optimization with study: {study.study_name}")
 
@@ -495,10 +503,11 @@ def cli() -> None:
 @click.option("--trials", default=100, help="Number of trials to run")
 @click.option("--jobs", default=3, help="Number of parallel jobs")
 @click.option("--timeout", default=None, type=int, help="Timeout in seconds")
-def search(strategy: str, trials: int, jobs: int, timeout: int | None) -> None:
+@click.option("--train-data", default=None, help="Path to training data CSV")
+def search(strategy: str, trials: int, jobs: int, timeout: int | None, train_data: str | None) -> None:
     """Run hyperparameter search for a strategy."""
     manager = OptimiseManager()
-    study = manager.run_search(strategy, trials, jobs, timeout)
+    study = manager.run_search(strategy, trials, jobs, timeout, train_data)
 
     print("\nSearch completed!")
     print(f"Study name: {study.study_name}")

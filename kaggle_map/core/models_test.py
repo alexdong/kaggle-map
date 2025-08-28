@@ -287,13 +287,13 @@ def sample_test_data():
 def temp_training_csv():
     """Create temporary training CSV file."""
     training_data = {
-        "row_id": [1, 2, 3, 4],
-        "QuestionId": [100, 100, 101, 101],
-        "QuestionText": ["What is 2+2?", "What is 2+2?", "What is 3+3?", "What is 3+3?"],
-        "MC_Answer": ["4", "5", "6", "7"],
-        "StudentExplanation": ["Correct", "Wrong", "Right", "Mistake"],
-        "Category": ["True_Correct", "False_Misconception", "True_Correct", "False_Neither"],
-        "Misconception": [None, "Adding_across", None, None]
+        "row_id": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "QuestionId": [100, 100, 100, 100, 101, 101, 101, 102, 102, 102],
+        "QuestionText": ["What is 2+2?"] * 4 + ["What is 3+3?"] * 3 + ["What is 5+5?"] * 3,
+        "MC_Answer": ["4", "5", "3", "4", "6", "9", "6", "10", "11", "10"],
+        "StudentExplanation": ["It's four", "I think it's five", "Three", "Four", "Six", "Maybe nine", "It's six", "Ten", "Eleven", "Ten"],
+        "Category": ["True_Correct", "False_Misconception", "False_Neither", "True_Correct", "True_Correct", "False_Neither", "True_Correct", "True_Correct", "False_Misconception", "True_Correct"],
+        "Misconception": [None, "Adding_across", None, None, None, None, None, None, "Off_by_one", None]
     }
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
@@ -309,15 +309,18 @@ def temp_training_csv():
 
 def test_model_fit_extracts_correct_answers_from_training_data(temp_training_csv):
     """Model extracts correct answer for each question from True_Correct entries."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
-    expected_answers = {100: "4", 101: "6"}
-    assert model.correct_answers == expected_answers
+    # Check that the model found correct answers from the training split
+    # The exact questions depend on the random split, so we check what was found
+    assert len(model.correct_answers) >= 2, "Should find at least 2 questions with correct answers"
+    assert 100 in model.correct_answers, "Question 100 should have correct answer"
+    assert model.correct_answers[100] == "4", "Question 100's correct answer should be 4"
 
 
 def test_model_fit_builds_category_patterns_by_answer_correctness(temp_training_csv):
     """Model builds category frequency patterns based on answer correctness."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     # Question 100: student answered "4" (correct) -> True_Correct, student answered "5" (wrong) -> False_Misconception
     assert Category.TRUE_CORRECT in model.category_frequencies[100][True]
@@ -326,7 +329,7 @@ def test_model_fit_builds_category_patterns_by_answer_correctness(temp_training_
 
 def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_csv):
     """Model identifies the most common misconception for each question."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     assert model.common_misconceptions[100] == "Adding_across"
     # Question 101 has no misconceptions, so it won't be in the dictionary
@@ -335,7 +338,7 @@ def test_model_fit_finds_most_common_misconceptions_per_question(temp_training_c
 
 def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv, sample_test_data):
     """Model predictions contain at most 3 categories per test row."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     predictions = [model.predict(row) for row in sample_test_data]
     
     for prediction in predictions:
@@ -345,7 +348,7 @@ def test_model_predict_returns_up_to_three_predictions_per_row(temp_training_csv
 
 def test_model_predict_applies_misconceptions_to_misconception_categories(temp_training_csv):
     """Model applies misconception tags to misconception categories in predictions."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     # Test with incorrect answer to trigger misconception categories
     test_row = EvaluationRow(
@@ -365,7 +368,7 @@ def test_model_predict_applies_misconceptions_to_misconception_categories(temp_t
 
 def test_model_predict_uses_category_frequencies_for_ordering(temp_training_csv):
     """Model orders predictions by frequency from training data."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     test_row = EvaluationRow(
         row_id=9999,
@@ -403,7 +406,7 @@ def test_model_fit_handles_training_data_without_misconceptions():
         temp_path = Path(f.name)
         
         try:
-            model = BaselineStrategy.fit(temp_path)
+            model = BaselineStrategy.fit(train_csv_path=temp_path)
             # No misconceptions means the question won't be in the dictionary
             assert 100 not in model.common_misconceptions or model.common_misconceptions[100] == "NA"
         finally:
@@ -428,7 +431,7 @@ def test_model_fit_uses_first_correct_answer_when_multiple_exist():
         
         try:
             # Should not raise an error, just use the first correct answer
-            strategy = BaselineStrategy.fit(temp_path)
+            strategy = BaselineStrategy.fit(train_csv_path=temp_path)
             assert isinstance(strategy, BaselineStrategy), "Should return a BaselineStrategy instance"
         finally:
             temp_path.unlink()
@@ -452,14 +455,14 @@ def test_model_fit_requires_at_least_one_correct_answer():
         
         try:
             with pytest.raises(AssertionError, match="Must find at least one correct answer"):
-                BaselineStrategy.fit(temp_path)
+                BaselineStrategy.fit(train_csv_path=temp_path)
         finally:
             temp_path.unlink()
 
 
 def test_model_predict_handles_questions_not_in_training_data(temp_training_csv):
     """Model handles test questions that weren't in training data."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     # Test with question ID not in training data
     test_row = EvaluationRow(
@@ -476,7 +479,7 @@ def test_model_predict_handles_questions_not_in_training_data(temp_training_csv)
 
 def test_model_predict_handles_empty_test_data_gracefully(temp_training_csv):
     """Model can be used with empty test data by not calling predict."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     test_data = []
     predictions = [model.predict(row) for row in test_data]
     
@@ -490,7 +493,7 @@ def test_model_predict_handles_empty_test_data_gracefully(temp_training_csv):
 
 def test_model_serialization_round_trip_preserves_all_data(temp_training_csv):
     """Model serialization and deserialization preserves all model data."""
-    original_model = BaselineStrategy.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     # Serialize to dict and back
     model_dict = original_model.to_dict()
@@ -503,7 +506,7 @@ def test_model_serialization_round_trip_preserves_all_data(temp_training_csv):
 
 def test_model_to_dict_creates_json_serializable_format(temp_training_csv):
     """Model to_dict creates format that can be JSON serialized."""
-    model = BaselineStrategy.fit(temp_training_csv)
+    model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     model_dict = model.to_dict()
     
     # Should be JSON serializable without errors
@@ -514,7 +517,7 @@ def test_model_to_dict_creates_json_serializable_format(temp_training_csv):
 
 def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
     """Model from_dict recreates functionally equivalent model."""
-    original_model = BaselineStrategy.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     # Create test data
     test_row = EvaluationRow(
@@ -547,7 +550,7 @@ def test_model_from_dict_recreates_equivalent_model(temp_training_csv):
 
 def test_save_load_model_round_trip_with_temp_file(temp_training_csv):
     """Save and load model preserves all functionality."""
-    original_model = BaselineStrategy.fit(temp_training_csv)
+    original_model = BaselineStrategy.fit(train_csv_path=temp_training_csv, train_split=0.5)
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         temp_model_path = Path(f.name)
@@ -555,7 +558,9 @@ def test_save_load_model_round_trip_with_temp_file(temp_training_csv):
         try:
             # Save and load
             original_model.save(temp_model_path)
-            loaded_model = BaselineStrategy.load(temp_model_path)
+            loaded_result = BaselineStrategy.load(temp_model_path)
+            # BaselineStrategy.load returns a tuple (model, params) 
+            loaded_model = loaded_result[0] if isinstance(loaded_result, tuple) else loaded_result
             
             # Verify equivalence
             assert loaded_model.correct_answers == original_model.correct_answers

@@ -1,4 +1,4 @@
-.PHONY: dev test test-all fit eval search search-grid compare list-studies analyze
+.PHONY: dev test test-all fit eval search search-balanced compare list-studies analyze
 
 dev:
 	uv run ruff check . --fix --unsafe-fixes
@@ -14,31 +14,50 @@ test-all:
 	uv run --only-dev -m pytest
 
 # Generic fit and eval commands that take strategy as parameter
+# Examples:
+#   make fit STRATEGY=baseline                                          # Train baseline with original dataset
+#   make fit STRATEGY=mlp                                               # Train MLP with original dataset  
+#   make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv  # Train MLP with synthetic dataset
 fit:
 	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make fit STRATEGY=<strategy_name>"; \
+		echo "Usage: make fit STRATEGY=<strategy_name> [DATASET=<path>]"; \
 		echo "Example: make fit STRATEGY=baseline"; \
+		echo "Example: make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.cli run $(STRATEGY) fit
+	@if [ -n "$(DATASET)" ]; then \
+		uv run -m kaggle_map.cli run $(STRATEGY) fit --train-data $(DATASET); \
+	else \
+		uv run -m kaggle_map.cli run $(STRATEGY) fit; \
+	fi
 
+# Examples:
+#   make eval STRATEGY=baseline                                         # Evaluate baseline with original dataset
+#   make eval STRATEGY=mlp                                              # Evaluate MLP with original dataset
+#   make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv  # Evaluate MLP with synthetic dataset
 eval:
 	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make eval STRATEGY=<strategy_name>"; \
+		echo "Usage: make eval STRATEGY=<strategy_name> [DATASET=<path>]"; \
 		echo "Example: make eval STRATEGY=baseline"; \
+		echo "Example: make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.cli run $(STRATEGY) eval
+	@if [ -n "$(DATASET)" ]; then \
+		uv run -m kaggle_map.cli run $(STRATEGY) eval --train-data $(DATASET); \
+	else \
+		uv run -m kaggle_map.cli run $(STRATEGY) eval; \
+	fi
 
 # Hyperparameter search commands for 4-8 hours blocks
 search:
 	@echo "========================================="
-	@echo "Starting 4-Hour Focused Search"
+	@echo "Starting 4-Hour Focused Search (Original Dataset)"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
 	@echo ""
 	@echo "Configuration:"
 	@echo "- Strategy: mlp"
+	@echo "- Dataset: datasets/train.csv (original)"
 	@echo "- Estimated trials: ~80-100 (4 hours)"
 	@echo "- Parallel jobs: 1 (single-threaded for stability)"
 	@echo "- Stage: Exploitation focus"
@@ -49,6 +68,39 @@ search:
 		--trials 500 \
 		--jobs 1 \
 		--timeout 14400
+
+search-balanced:
+	@echo "========================================="
+	@echo "Starting 4-Hour Focused Search (Balanced 10x Dataset)"
+	@echo "Start time: $$(date)"
+	@echo "========================================="
+	@echo ""
+	@echo "Configuration:"
+	@echo "- Strategy: mlp"
+	@echo "- Dataset: datasets/synth_median_balanced_354210_total.csv (10x balanced)"
+	@echo "- Estimated trials: ~60-80 (4 hours, slower due to larger dataset)"
+	@echo "- Parallel jobs: 1 (single-threaded for stability)"
+	@echo "- Starting with best known params and exploring nearby"
+	@echo ""
+	@echo "Best Known Parameters (MAP@3: 0.9114):"
+	@echo "  learning_rate: 0.0002126932668569146"
+	@echo "  batch_size: 384"
+	@echo "  dropout: 0.30108955018524314"
+	@echo "  architecture_size: xlarge"
+	@echo "  optimizer: adamw"
+	@echo "  weight_decay: 0.003225818218347925"
+	@echo "  activation: silu"
+	@echo "  scheduler: none"
+	@echo "  patience: 17"
+	@echo "  epochs: 36"
+	@echo ""
+	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
+	@echo ""
+	uv run -m kaggle_map.optimise search mlp \
+		--trials 500 \
+		--jobs 1 \
+		--timeout 14400 \
+		--train-data datasets/synth_median_balanced_354210_total.csv
 
 # Compare and analyze optimization results
 list-studies:
