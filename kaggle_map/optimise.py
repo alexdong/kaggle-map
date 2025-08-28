@@ -47,17 +47,9 @@ class OptimiseManager:
         # Get hyperparameters from strategy
         hyperparams = strategy_class.get_hyperparameter_search_space(trial)
 
-        # Determine which stage we're in based on trial number
-        trial_num = trial.number
-        if trial_num < 1000:
-            stage = "stage1_exploitation"
-        elif trial_num < 1500:
-            stage = "stage2_exploration"
-        else:
-            stage = "stage3_extreme"
-
         # Add trial information to wandb run name
-        trial_info = f"trial_{trial.number}"
+        trial_num = trial.number
+        trial_info = f"trial_{trial_num}"
         key_params = []
 
         # Include key parameters in run name for easy identification
@@ -74,9 +66,8 @@ class OptimiseManager:
         hyperparams["wandb_run_name"] = wandb_run_name
 
         # Add metadata for wandb tracking
-        hyperparams["wandb_tags"] = [stage, f"study_{trial.study.study_name}", f"trial_{trial_num}"]
+        hyperparams["wandb_tags"] = [f"study_{trial.study.study_name}", f"trial_{trial_num}", "4hour_focused"]
         hyperparams["study_id"] = trial.study.study_name
-        hyperparams["stage"] = stage
         hyperparams["trial_number"] = trial_num
 
         # Clear GPU memory before training

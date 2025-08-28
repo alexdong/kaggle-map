@@ -30,50 +30,25 @@ eval:
 	fi
 	uv run -m kaggle_map.cli run $(STRATEGY) eval
 
-# Hyperparameter search commands
+# Hyperparameter search commands for 4-8 hours blocks
 search:
-	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make search STRATEGY=<strategy_name> [TRIALS=100] [JOBS=3]"; \
-		echo "Example: make search STRATEGY=mlp TRIALS=50 JOBS=3"; \
-		exit 1; \
-	fi
-	uv run -m kaggle_map.optimise search $(STRATEGY) \
-		--trials $(or $(TRIALS),100) \
-		--jobs $(or $(JOBS),3) \
-		$(if $(TIMEOUT),--timeout $(TIMEOUT))
-
-search-quick:
-	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make search-quick STRATEGY=<strategy_name>"; \
-		echo "Example: make search-quick STRATEGY=mlp"; \
-		echo "Runs 20 trials for quick exploration"; \
-		exit 1; \
-	fi
-	uv run -m kaggle_map.optimise search $(STRATEGY) \
-		--trials 20 \
-		--jobs $(or $(JOBS),2)
-
-# Comprehensive 5-day search
-search-comprehensive:
 	@echo "========================================="
-	@echo "Starting 5-Day Comprehensive Search"
+	@echo "Starting 4-Hour Focused Search"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
 	@echo ""
 	@echo "Configuration:"
 	@echo "- Strategy: mlp"
-	@echo "- Total trials: 2500"  
-	@echo "- Parallel jobs: 4"
-	@echo "- Stage 1 (0-999): Exploitation"
-	@echo "- Stage 2 (1000-1499): Exploration"
-	@echo "- Stage 3 (1500+): Extreme"
+	@echo "- Estimated trials: ~80-100 (4 hours)"
+	@echo "- Parallel jobs: 1 (single-threaded for stability)"
+	@echo "- Stage: Exploitation focus"
 	@echo ""
 	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
 	@echo ""
 	uv run -m kaggle_map.optimise search mlp \
-		--trials 2500 \
-		--jobs 4 \
-		--timeout 432000
+		--trials 500 \
+		--jobs 1 \
+		--timeout 14400
 
 # Compare and analyze optimization results
 list-studies:
