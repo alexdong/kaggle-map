@@ -1,17 +1,17 @@
 {
-  "study_name": "mlp_20250828_125657",
-  "best_value": 0.7653524709302325,
+  "study_name": "mlp_20250828_162757",
+  "best_value": 0.9116703003875969,
   "best_params": {
-    "learning_rate": 0.0037230218381653054,
-    "batch_size": 128,
-    "dropout": 0.08006436222367008,
+    "learning_rate": 0.00027928161963256416,
+    "batch_size": 224,
+    "dropout": 0.3240270191385778,
     "architecture_size": "xlarge",
-    "optimizer": "adam",
-    "weight_decay": 4.620396869563978e-05,
-    "activation": "gelu",
-    "scheduler": "onecycle",
-    "patience": 17,
-    "epochs": 12
+    "optimizer": "adamw",
+    "weight_decay": 0.006467856505481093,
+    "activation": "silu",
+    "scheduler": "cosine",
+    "patience": 19,
+    "epochs": 35
   },
-  "n_trials": 1
+  "n_trials": 500
 }
