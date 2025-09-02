@@ -28,6 +28,7 @@ dependencies = [
     "wandb>=0.21.1",
     "optuna>=3.6.0",
     "optuna-dashboard>=0.15.0",
+    "accelerate>=0.25.0",
 ]
 
 [project.scripts]
