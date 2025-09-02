@@ -10,16 +10,23 @@ def normalize_latex_answer(s: str) -> str:
     if not s:
         return ""
     s = s.replace(r"\(", "").replace(r"\)", "").strip()
-    m = _FRAC_RE.search(s)
-    if m:
-        num, den = m.group(1), m.group(2)
-        # Validate that numerator and denominator are valid integers
-        assert num.isdigit() or (num.startswith("-") and num[1:].isdigit()), f"Invalid numerator in fraction: {num}"
-        assert den.isdigit() or (den.startswith("-") and den[1:].isdigit()), f"Invalid denominator in fraction: {den}"
 
-        n, d = int(num), int(den)
-        assert d != 0, f"Denominator cannot be zero in fraction: {num}/{den}"
-        return f"{n}/{d}"
+    # Process all fractions in the string
+    def replace_frac(match) -> str:
+        num, den = match.group(1).strip(), match.group(2).strip()
+        # Check if both parts are numeric (integers)
+        if (num.isdigit() or (num.startswith("-") and num[1:].isdigit())) and \
+           (den.isdigit() or (den.startswith("-") and den[1:].isdigit())):
+            # Numeric fraction - simplify if possible
+            n, d = int(num), int(den)
+            if d == 0:
+                return f"{num}/{den}"  # Keep original for zero denominator
+            return f"{n}/{d}"
+        # Contains variables - keep as is
+        return f"{num}/{den}"
+
+    s = _FRAC_RE.sub(replace_frac, s)
+
     s = re.sub(r"\\[a-zA-Z]+", " ", s)  # remove LaTeX commands like \textbf
     s = s.replace("{", "").replace("}", "")  # drop leftover braces
     s = s.replace("\\", "")  # drop stray backslashes

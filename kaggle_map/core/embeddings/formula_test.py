@@ -17,6 +17,10 @@ from kaggle_map.core.embeddings.formula import (
         (r"Not enough information", "Not enough information"),
         (r"\\frac{2}{15}", "2/15"),
         (r"Some \\textbf{bold} thing", "Some bold thing"),
+        # Test cases with variables in fractions
+        (r"\( \frac{A}{10}=\frac{9}{15} \) What is the value of \( A \) ?", "A/10=9/15 What is the value of A ?"),
+        (r"\( \frac{x}{5} = 2 \)", "x/5 = 2"),
+        (r"Find \( \frac{n}{12} \) when n = 6", "Find n/12 when n = 6"),
     ],
 )
 def test_normalize_latex_answer(inp: str, expected: str) -> None:
