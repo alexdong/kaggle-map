@@ -11,12 +11,12 @@ from typing import Any, Protocol
 
 import numpy as np
 import torch
+import wandb
 from loguru import logger
 from pydantic import BaseModel
 from torch import nn
 from torch.utils.data import DataLoader
 
-import wandb
 from kaggle_map.core.models import TrainingRow
 
 # Data split constants

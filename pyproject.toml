@@ -29,6 +29,8 @@ dependencies = [
     "optuna>=3.6.0",
     "optuna-dashboard>=0.15.0",
     "accelerate>=0.25.0",
+    "llama-cpp-python>=0.2.0",
+    "huggingface-hub>=0.20.0",
 ]
 
 [project.scripts]

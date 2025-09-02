@@ -155,6 +155,26 @@ compare:
 	fi
 	uv run -m kaggle_map.optimise compare $(STUDIES)
 
+search-llm-models:
+	@echo "========================================="
+	@echo "Comparing LLM GGUF Quantization Options"
+	@echo "Start time: $$(date)"
+	@echo "========================================="
+	@echo ""
+	@echo "Testing quantizations:"
+	@echo "  IQ4_XS  (6.55 GB) - Smallest 4-bit"
+	@echo "  IQ4_NL  (6.89 GB) - Non-linear 4-bit"
+	@echo "  Q4_0    (6.91 GB) - Original 4-bit"
+	@echo "  Q4_1    (7.56 GB) - 4-bit with importance"
+	@echo "  Q4_K_S  (6.94 GB) - K-quant small"
+	@echo "  Q4_K_M  (7.30 GB) - K-quant medium (recommended)"
+	@echo "  Q4_K_XL (7.43 GB) - K-quant extra large"
+	@echo ""
+	@echo "This will evaluate each quantization with 100 samples"
+	@echo "and compare MAP@3 accuracy vs inference speed."
+	@echo ""
+	uv run -m kaggle_map.optimise_llm --sample-size 100
+
 analyze:
 	@if [ -z "$(STUDY)" ]; then \
 		echo "Usage: make analyze STUDY=<study_name>"; \

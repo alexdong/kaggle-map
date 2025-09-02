@@ -214,8 +214,23 @@ def _save_trained_model(model: Strategy, params: CLIParams) -> Path:
 
 def _handle_eval(params: CLIParams) -> None:
     """Handle the eval action."""
-    model, updated_params = _load_model_for_eval(params)
-    _run_evaluation(model, updated_params)
+    model, updated_train_split, updated_random_seed = _load_model_for_eval(
+        strategy=params.strategy,
+        strategy_class=params.strategy_class,
+        console=params.console,
+        model_path=params.model_path,
+        train_split=params.train_split,
+        random_seed=params.random_seed,
+    )
+    _run_evaluation(
+        strategy=params.strategy,
+        strategy_class=params.strategy_class,
+        console=params.console,
+        model=model,
+        train_split=updated_train_split,
+        random_seed=updated_random_seed,
+        train_csv_path=params.train_csv_path,
+    )
 
 
 def _load_model_for_eval(

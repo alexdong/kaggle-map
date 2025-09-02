@@ -1,16 +1,16 @@
-"""LLM-based strategy for student misconception prediction using local models.
+"""LLM-based strategy using GGUF quantized models with llama-cpp-python.
 
-This strategy uses google/gemma-3-12b with 4-bit quantization for efficient
-local inference. It processes predictions in batches and uses XML-structured
-prompts with context from training data.
+This strategy uses quantized GGUF models (e.g., gemma-3-12b-it Q4_K_M) for
+efficient local inference. It processes predictions in batches and uses
+XML-structured prompts with context from training data.
 """
 
 import re
+import time
 from pathlib import Path
 
-import torch
+from llama_cpp import Llama
 from loguru import logger
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from kaggle_map.core.dataset import (
     extract_correct_answers,
@@ -28,7 +28,7 @@ from kaggle_map.core.models import (
 )
 
 from .base import Strategy
-from .utils import TRAIN_RATIO, get_device, split_training_data
+from .utils import TRAIN_RATIO, split_training_data
 
 # XML-structured prompt template
 PROMPT_TEMPLATE = """<task>
@@ -73,13 +73,16 @@ Category:Misconception
 
 
 class LLMStrategy(Strategy):
-    """LLM-based misconception prediction using local transformer models."""
+    """LLM-based misconception prediction using GGUF quantized models."""
 
-    def __init__(self) -> None:
-        """Initialize strategy with lazy model loading."""
-        self.device = get_device()
-        self.model = None
-        self.tokenizer = None
+    def __init__(self, model_path: str | None = None) -> None:
+        """Initialize strategy with lazy model loading.
+
+        Args:
+            model_path: Path to GGUF model file. If None, uses default Q4_K_M model.
+        """
+        self.model_path = model_path or "models/gguf/gemma-3-12b-it-Q4_K_M.gguf"
+        self.llm = None
         self.correct_answers: dict[QuestionId, Answer] = {}
         self.misconceptions_by_question: dict[QuestionId, list[Misconception]] = {}
 
@@ -89,62 +92,30 @@ class LLMStrategy(Strategy):
 
     @property
     def description(self) -> str:
-        return "LLM-based prediction using google/gemma-3-12b-it with batch processing"
+        return f"LLM-based prediction using GGUF model: {Path(self.model_path).name}"
 
     def _load_model(self) -> None:
-        """Lazy load the model with optional quantization."""
-        if self.model is not None:
+        """Lazy load the GGUF model."""
+        if self.llm is not None:
             return
 
-        logger.info(f"Loading gemma-3-12b model on device: {self.device}")
+        logger.info(f"Loading GGUF model from {self.model_path}")
 
-        # Load tokenizer
-        logger.info("Loading tokenizer for google/gemma-3-12b-it")
-        self.tokenizer = AutoTokenizer.from_pretrained("google/gemma-3-12b-it")
+        # Check if model file exists
+        model_file = Path(self.model_path)
+        assert model_file.exists(), f"Model file not found: {self.model_path}"
 
-        # Set padding token if not set
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        # Load with llama-cpp-python
+        self.llm = Llama(
+            model_path=str(model_file),
+            n_ctx=4096,  # Context window
+            n_batch=512,  # Batch size for prompt processing
+            n_gpu_layers=-1,  # Use all GPU layers (Metal on Mac, CUDA on GPU)
+            verbose=False,  # Quiet mode
+            n_threads=8,  # Number of CPU threads
+        )
 
-        # For M2 Pro and other Apple Silicon, use fp16
-        # bitsandbytes doesn't support Apple Silicon yet
-        if str(self.device).startswith("mps"):
-            logger.info("Loading model with fp16 for Apple Silicon")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                "google/gemma-3-12b-it",
-                device_map="auto",
-                low_cpu_mem_usage=True,
-                torch_dtype=torch.float16,
-            )
-            logger.info("Model loaded successfully with fp16 precision")
-        else:
-            # For CUDA devices, try to use 4-bit quantization
-            try:
-                from transformers import BitsAndBytesConfig
-
-                logger.info("Loading model with 4-bit quantization for CUDA")
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_use_double_quant=True
-                )
-
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    "google/gemma-3-12b-it",
-                    quantization_config=quantization_config,
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                )
-                logger.info("Model loaded successfully with 4-bit quantization")
-            except ImportError:
-                logger.warning("bitsandbytes not available, loading with fp16")
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    "google/gemma-3-12b-it",
-                    device_map="auto",
-                    low_cpu_mem_usage=True,
-                    torch_dtype=torch.float16,
-                )
-                logger.info("Model loaded successfully with fp16 precision")
+        logger.info(f"Model loaded successfully: {model_file.name}")
 
     def _build_prompt(self, row: EvaluationRow) -> str:
         """Build XML-structured prompt with training context."""
@@ -163,7 +134,6 @@ class LLMStrategy(Strategy):
             student_answer=row.mc_answer,
             student_explanation=row.student_explanation,
         )
-
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
         """Parse LLM response with comprehensive error logging."""
@@ -209,34 +179,27 @@ class LLMStrategy(Strategy):
 
             logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} samples)")
 
-            # Build prompts for batch
-            prompts = [self._build_prompt(row) for row in batch]
+            # Process each prompt in the batch
+            for row in batch:
+                prompt = self._build_prompt(row)
 
-            # Tokenize all prompts
-            inputs = self.tokenizer(
-                prompts, return_tensors="pt", padding=True, truncation=True, max_length=512
-            )
-
-            # Move to device
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-            # Generate predictions
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    inputs["input_ids"],
-                    attention_mask=inputs.get("attention_mask"),
-                    max_new_tokens=30,  # Just enough for "Category:Misconception"
+                # Generate prediction
+                start_time = time.time()
+                output = self.llm(
+                    prompt,
+                    max_tokens=30,  # Just enough for "Category:Misconception"
                     temperature=0.3,
-                    do_sample=False,  # Deterministic output
-                    pad_token_id=self.tokenizer.pad_token_id,
+                    stop=["</instructions>", "\n\n"],
+                    echo=False,  # Don't include prompt in output
                 )
+                inference_time = time.time() - start_time
 
-            # Decode only the generated tokens (not the input)
-            generated_tokens = outputs[:, inputs["input_ids"].shape[1] :]
-            responses = self.tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+                logger.debug(f"Inference time for row {row.row_id}: {inference_time:.2f}s")
 
-            # Parse each response
-            for row, response in zip(batch, responses, strict=False):
+                # Extract response text
+                response = output["choices"][0]["text"].strip()
+
+                # Parse response
                 try:
                     prediction = self._parse_response(response, row)
                     results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[prediction]))
@@ -257,6 +220,7 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
+        model_path: str | None = None,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
         logger.info("Fitting LLM strategy")
@@ -279,8 +243,8 @@ class LLMStrategy(Strategy):
         misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
         logger.info(f"Extracted misconceptions for {len(misconceptions_by_question)} questions")
 
-        # Create instance (model not loaded yet)
-        strategy = cls()
+        # Create instance with optional model path
+        strategy = cls(model_path=model_path)
         strategy.correct_answers = correct_answers
         strategy.misconceptions_by_question = misconceptions_by_question
 
@@ -299,10 +263,11 @@ class LLMStrategy(Strategy):
 
         logger.info(f"Saving LLM strategy state to {filepath}")
 
-        # Save only the extracted knowledge, not the model
+        # Save only the extracted knowledge and model path
         state = {
             "correct_answers": self.correct_answers,
             "misconceptions_by_question": self.misconceptions_by_question,
+            "model_path": self.model_path,
         }
 
         with filepath.open("wb") as f:
@@ -318,7 +283,7 @@ class LLMStrategy(Strategy):
         with filepath.open("rb") as f:
             state = pickle.load(f)
 
-        strategy = cls()
+        strategy = cls(model_path=state.get("model_path"))
         strategy.correct_answers = state["correct_answers"]
         strategy.misconceptions_by_question = state["misconceptions_by_question"]
 
@@ -338,7 +303,7 @@ class LLMStrategy(Strategy):
         logger.info("Evaluating LLM strategy on validation split")
 
         # Ensure model is loaded
-        if model.model is None:
+        if model.llm is None:
             model._load_model()
 
         # Parse all training data
