@@ -11,6 +11,37 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRe
 from kaggle_map.core.embeddings.formula import normalize_latex_answer
 
 
+def compare_labels(actual: str, predicted: str) -> bool:
+    """Compare two labels, handling case and format differences.
+
+    Handles:
+    - Case differences in category (TRUE vs True, FALSE vs False)
+    - Case sensitivity in misconception names
+    - Category prefix removal
+    """
+    # Normalize the actual label
+    actual_normalized = actual.replace("Category.", "")
+    actual_normalized = actual_normalized.replace("TRUE_", "True_")
+    actual_normalized = actual_normalized.replace("FALSE_", "False_")
+    actual_normalized = actual_normalized.replace("CORRECT", "Correct")
+    actual_normalized = actual_normalized.replace("NEITHER", "Neither")
+    actual_normalized = actual_normalized.replace("MISCONCEPTION", "Misconception")
+
+    # For misconception values, make case-insensitive comparison
+    actual_parts = actual_normalized.split(":")
+    pred_parts = predicted.split(":")
+
+    if len(actual_parts) != 2 or len(pred_parts) != 2:
+        return actual_normalized == predicted
+
+    # Compare category (exact match after normalization)
+    if actual_parts[0] != pred_parts[0]:
+        return False
+
+    # Compare misconception value (case-insensitive)
+    return actual_parts[1].lower() == pred_parts[1].lower()
+
+
 def rerank_predictions(
     question: str,
     answer: str,
@@ -94,6 +125,7 @@ def process_dataframe(df: pd.DataFrame, sample_size: int = 100) -> pd.DataFrame:
     df_sample["LLM_top_1"] = ""
     df_sample["LLM_top_3_predictions"] = ""
     df_sample["LLM_correct"] = ""  # New column for emoji indicator
+    # Keep the actual label as-is from the original data
     df_sample["actual_label"] = df_sample.apply(
         lambda row: f"{row['Category']}:{row['actual_misconception'] if pd.notna(row['actual_misconception']) and row['actual_misconception'] else 'NA'}",
         axis=1,
@@ -131,9 +163,9 @@ def process_dataframe(df: pd.DataFrame, sample_size: int = 100) -> pd.DataFrame:
                 llm_top_1 = original_labels[0] if original_labels else ""
                 df_sample.at[idx, "LLM_top_1"] = llm_top_1
 
-            # Add emoji indicator for correctness
+            # Add emoji indicator for correctness using proper comparison
             actual_label = df_sample.at[idx, "actual_label"]
-            df_sample.at[idx, "LLM_correct"] = "✅" if llm_top_1 == actual_label else "❌"
+            df_sample.at[idx, "LLM_correct"] = "✅" if compare_labels(actual_label, llm_top_1) else "❌"
 
             progress.update(task, advance=1)
 
