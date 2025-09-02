@@ -18,6 +18,7 @@ def rerank_predictions(
     predictions: str,
 ) -> str:
     """Rerank predictions using LLM via basic HTTP request."""
+
     normalized_question = normalize_latex_answer(question)
     normalized_answer = normalize_latex_answer(answer)
 
@@ -78,12 +79,22 @@ Only return the labels in a single line. Nothing else."""
         return predictions  # Return original if error
 
 
-def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Process the dataframe with LLM reranking."""
+def process_dataframe(df: pd.DataFrame, sample_size: int = 100) -> pd.DataFrame:
+    """Process the dataframe with LLM reranking.
+
+    Args:
+        df: Input dataframe to process
+        sample_size: Number of random rows to process (default: 100)
+    """
+    # Sample random rows
+    logger.info(f"Sampling {sample_size} random rows from {len(df)} total rows")
+    df_sample = df.sample(n=min(sample_size, len(df)), random_state=42)
+
     # Add new columns
-    df["LLM_top_1"] = ""
-    df["LLM_top_3_predictions"] = ""
-    df["actual_label"] = df.apply(
+    df_sample["LLM_top_1"] = ""
+    df_sample["LLM_top_3_predictions"] = ""
+    df_sample["LLM_correct"] = ""  # New column for emoji indicator
+    df_sample["actual_label"] = df_sample.apply(
         lambda row: f"{row['Category']}:{row['actual_misconception'] if pd.notna(row['actual_misconception']) and row['actual_misconception'] else 'NA'}",
         axis=1,
     )
@@ -96,9 +107,9 @@ def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeRemainingColumn(),
     ) as progress:
-        task = progress.add_task("Reranking predictions...", total=len(df))
+        task = progress.add_task(f"Reranking {len(df_sample)} predictions...", total=len(df_sample))
 
-        for idx, row in df.iterrows():
+        for counter, (idx, row) in enumerate(df_sample.iterrows(), 1):
             # Rerank predictions
             reranked = rerank_predictions(
                 row["QuestionText"],
@@ -110,22 +121,29 @@ def process_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             # Parse reranked results
             if reranked and "|" in reranked:
                 labels = [label.strip() for label in reranked.split("|")]
-                df.at[idx, "LLM_top_1"] = labels[0] if labels else ""
-                df.at[idx, "LLM_top_3_predictions"] = reranked
+                llm_top_1 = labels[0] if labels else ""
+                df_sample.at[idx, "LLM_top_1"] = llm_top_1
+                df_sample.at[idx, "LLM_top_3_predictions"] = reranked
             else:
                 # Fallback to original if parsing fails
-                df.at[idx, "LLM_top_3_predictions"] = row["top_3_predictions_formatted"]
+                df_sample.at[idx, "LLM_top_3_predictions"] = row["top_3_predictions_formatted"]
                 original_labels = [label.strip() for label in row["top_3_predictions_formatted"].split("|")]
-                df.at[idx, "LLM_top_1"] = original_labels[0] if original_labels else ""
+                llm_top_1 = original_labels[0] if original_labels else ""
+                df_sample.at[idx, "LLM_top_1"] = llm_top_1
+
+            # Add emoji indicator for correctness
+            actual_label = df_sample.at[idx, "actual_label"]
+            df_sample.at[idx, "LLM_correct"] = "✅" if llm_top_1 == actual_label else "❌"
 
             progress.update(task, advance=1)
 
-    return df
+    return df_sample
 
 
 def main() -> None:
     """Main entry point for reranking error predictions."""
     csv_path = Path("datasets/error_prediction.csv")
+    output_path = Path("datasets/error_prediction_llm_reranked_sample.csv")
 
     if not csv_path.exists():
         logger.error(f"Error prediction file not found: {csv_path}")
@@ -134,19 +152,36 @@ def main() -> None:
     logger.info(f"Loading error predictions from {csv_path}")
     df = pd.read_csv(csv_path)
 
-    logger.info(f"Processing {len(df)} rows...")
-    df = process_dataframe(df)
+    logger.info(f"Total rows in dataset: {len(df)}")
+    df_sample = process_dataframe(df, sample_size=100)
 
-    # Save the updated dataframe
-    logger.info(f"Saving reranked predictions to {csv_path}")
-    df.to_csv(csv_path, index=False)
+    # Save the sampled and reranked dataframe
+    logger.info(f"Saving reranked sample to {output_path}")
+    df_sample.to_csv(output_path, index=False)
 
-    logger.success(f"Successfully processed and saved {len(df)} rows")
+    logger.success(f"Successfully processed and saved {len(df_sample)} rows")
 
-    # Show sample results
-    logger.info("Sample reranked results:")
-    sample_cols = ["row_id", "actual_label", "top_3_predictions_formatted", "LLM_top_1", "LLM_top_3_predictions"]
-    print(df[sample_cols].head())
+    # Calculate and show accuracy statistics
+    correct_count = (df_sample["LLM_correct"] == "✅").sum()
+    total_count = len(df_sample)
+    accuracy = correct_count / total_count * 100
+
+    logger.info(f"LLM Reranking Accuracy: {correct_count}/{total_count} ({accuracy:.2f}%)")
+    logger.info(f"✅ Correct: {correct_count}")
+    logger.info(f"❌ Incorrect: {total_count - correct_count}")
+
+    # Show sample results with emojis
+    logger.info("\n=== Sample Reranked Results with Emoji Indicators ===")
+    sample_cols = ["row_id", "actual_label", "LLM_top_1", "LLM_correct"]
+    
+    # Display the first 20 rows to show the emoji indicators
+    print("\nFirst 20 results:")
+    print(df_sample[sample_cols].head(20).to_string())
+    
+    # Also show a summary of correct vs incorrect
+    print("\n" + "="*60)
+    print("Summary by Correctness:")
+    print(df_sample["LLM_correct"].value_counts().to_string())
 
 
 if __name__ == "__main__":
