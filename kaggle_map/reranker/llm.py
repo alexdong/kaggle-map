@@ -109,7 +109,7 @@ def process_dataframe(df: pd.DataFrame, sample_size: int = 100) -> pd.DataFrame:
     ) as progress:
         task = progress.add_task(f"Reranking {len(df_sample)} predictions...", total=len(df_sample))
 
-        for counter, (idx, row) in enumerate(df_sample.iterrows(), 1):
+        for _counter, (idx, row) in enumerate(df_sample.iterrows(), 1):
             # Rerank predictions
             reranked = rerank_predictions(
                 row["QuestionText"],
@@ -173,11 +173,11 @@ def main() -> None:
     # Show sample results with emojis
     logger.info("\n=== Sample Reranked Results with Emoji Indicators ===")
     sample_cols = ["row_id", "actual_label", "LLM_top_1", "LLM_correct"]
-    
+
     # Display the first 20 rows to show the emoji indicators
     print("\nFirst 20 results:")
     print(df_sample[sample_cols].head(20).to_string())
-    
+
     # Also show a summary of correct vs incorrect
     print("\n" + "="*60)
     print("Summary by Correctness:")
