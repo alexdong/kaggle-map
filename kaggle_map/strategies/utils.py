@@ -11,12 +11,12 @@ from typing import Any, Protocol
 
 import numpy as np
 import torch
-import wandb
 from loguru import logger
 from pydantic import BaseModel
 from torch import nn
 from torch.utils.data import DataLoader
 
+import wandb
 from kaggle_map.core.models import TrainingRow
 
 # Data split constants
@@ -630,9 +630,7 @@ def _ensure_wandb_run_name(config: TorchConfig) -> None:
         )
 
 
-def _build_wandb_config(
-    config: TorchConfig, extra_config: dict[str, Any] | None
-) -> dict[str, Any]:
+def _build_wandb_config(config: TorchConfig, extra_config: dict[str, Any] | None) -> dict[str, Any]:
     """Build wandb configuration dictionary."""
     wandb_config = {
         "train_split": config.train_split,
@@ -812,9 +810,7 @@ def train_torch_model(
                     batch_callback=train_batch_fn,
                 )
             else:
-                avg_train_loss = train_epoch(
-                    model, train_loader, optimizer, criterion, device, scheduler=scheduler
-                )
+                avg_train_loss = train_epoch(model, train_loader, optimizer, criterion, device, scheduler=scheduler)
 
             # Validation
             if val_batch_fn:

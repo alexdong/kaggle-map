@@ -124,9 +124,7 @@ class LLMStrategy(Strategy):
 
                 logger.info("Loading model with 4-bit quantization for CUDA")
                 quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16,
-                    bnb_4bit_use_double_quant=True
+                    load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16, bnb_4bit_use_double_quant=True
                 )
 
                 self.model = AutoModelForCausalLM.from_pretrained(
@@ -163,7 +161,6 @@ class LLMStrategy(Strategy):
             student_answer=row.mc_answer,
             student_explanation=row.student_explanation,
         )
-
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
         """Parse LLM response with comprehensive error logging."""
@@ -213,9 +210,7 @@ class LLMStrategy(Strategy):
             prompts = [self._build_prompt(row) for row in batch]
 
             # Tokenize all prompts
-            inputs = self.tokenizer(
-                prompts, return_tensors="pt", padding=True, truncation=True, max_length=512
-            )
+            inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=512)
 
             # Move to device
             inputs = {k: v.to(self.device) for k, v in inputs.items()}

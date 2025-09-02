@@ -41,8 +41,11 @@ class OptimiseManager:
         )
 
     def objective_function(
-        self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None,
-        search_type: str = "regular"
+        self,
+        trial: optuna.Trial,
+        strategy_class: type,
+        train_data_path: str | None = None,
+        search_type: str = "regular",
     ) -> float:
         """Objective function for hyperparameter optimization."""
 
@@ -580,7 +583,7 @@ def search_embeddings(strategy: str, trials: int, jobs: int, timeout: int, train
     logger.info(f"Strategy: {strategy}")
     logger.info(f"Trials: {trials} (7 models x ~10 configs each)")
     logger.info(f"Parallel jobs: {jobs}")
-    logger.info(f"Timeout: {timeout}s ({timeout/3600:.1f} hours)")
+    logger.info(f"Timeout: {timeout}s ({timeout / 3600:.1f} hours)")
     logger.info("")
     logger.info("Models to test:")
     logger.info("  - MINI_LM (384 dim) - baseline")

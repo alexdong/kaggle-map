@@ -48,13 +48,13 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
@@ -371,15 +371,18 @@ class MLPStrategy(Strategy):
         }
 
         # Embedding model selection - must use consistent choices across all trials
-        embedding_model = trial.suggest_categorical("embedding_model", [
-            "MINI_LM",        # 384 dims - baseline
-            "E5_BASE",        # 768 dims - strong balanced
-            "INSTRUCTOR_BASE", # 768 dims - task-specific
-            "BGE_BASE",       # 768 dims - modern efficient
-            "CONTRIEVER",     # 768 dims - Facebook model
-            "SENTENCE_T5_BASE", # 768 dims - T5-based
-            "MINI_LM_L12",    # 384 dims - deeper MiniLM
-        ])
+        embedding_model = trial.suggest_categorical(
+            "embedding_model",
+            [
+                "MINI_LM",  # 384 dims - baseline
+                "E5_BASE",  # 768 dims - strong balanced
+                "INSTRUCTOR_BASE",  # 768 dims - task-specific
+                "BGE_BASE",  # 768 dims - modern efficient
+                "CONTRIEVER",  # 768 dims - Facebook model
+                "SENTENCE_T5_BASE",  # 768 dims - T5-based
+                "MINI_LM_L12",  # 384 dims - deeper MiniLM
+            ],
+        )
 
         # Determine embedding dimensions
         embedding_dim = 384 if embedding_model in ["MINI_LM", "MINI_LM_L12"] else 768
@@ -470,7 +473,7 @@ class MLPStrategy(Strategy):
                     trunk_layers = [input_size, (input_size + output_size) // 2, output_size]
                 elif num_layers == 4:
                     step = (input_size - output_size) // 3
-                    trunk_layers = [input_size, input_size - step, input_size - 2*step, output_size]
+                    trunk_layers = [input_size, input_size - step, input_size - 2 * step, output_size]
                 else:  # num_layers == 5
                     trunk_layers = arch_config["trunk_layers"]  # Use default 5-layer config
                 arch_config["trunk_layers"] = trunk_layers
@@ -487,6 +490,10 @@ class MLPStrategy(Strategy):
         # Store embedding model as an attribute for later use
         if embedding_model:
             config.embedding_model = embedding_model  # type: ignore
+
+        # CRITICAL: Store trunk_layers from arch_config so it's accessible in fit()
+        # This is needed because trunk_layers is not a TorchConfig field
+        config.trunk_layers = arch_config["trunk_layers"]  # type: ignore
 
         return config
 
@@ -602,7 +609,9 @@ class MLPStrategy(Strategy):
         # Extract embedding model if present
         embedding_model_name = getattr(config, "embedding_model", None) or kwargs.get("embedding_model", "MINI_LM")
 
-        logger.info(f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}, embedding={embedding_model_name}")
+        logger.info(
+            f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}, embedding={embedding_model_name}"
+        )
 
         # Get trunk_layers from config if available (from architecture scaling)
         trunk_layers = getattr(config, "trunk_layers", [800, 1024, 512, 256, 192])
@@ -636,7 +645,9 @@ class MLPStrategy(Strategy):
             from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
 
             embedding_model = getattr(EmbeddingModel, embedding_model_name)
-            logger.info(f"Computing embeddings with {embedding_model_name} (dim={embedding_model.dim}) on device: {device}")
+            logger.info(
+                f"Computing embeddings with {embedding_model_name} (dim={embedding_model.dim}) on device: {device}"
+            )
             tokenizer = get_tokenizer(model=embedding_model, device=str(device))
 
             # Prepare texts for batch encoding

@@ -211,7 +211,7 @@ def main() -> None:
     print(df_sample[sample_cols].head(20).to_string())
 
     # Also show a summary of correct vs incorrect
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Summary by Correctness:")
     print(df_sample["LLM_correct"].value_counts().to_string())
 

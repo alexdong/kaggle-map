@@ -17,6 +17,7 @@ from .strategies.utils import TRAIN_RATIO, ModelParameters, get_split_indices
 @dataclass
 class CLIParams:
     """CLI parameters for strategy operations."""
+
     strategy: str
     strategy_class: type[Strategy]
     console: Console
@@ -158,9 +159,7 @@ def _train_model(params: CLIParams) -> Strategy:
     status_msg = f"[bold green]Fitting {params.strategy} strategy using {params.train_csv_path}..."
     with params.console.status(status_msg):
         model = params.strategy_class.fit(
-            train_split=params.train_split,
-            random_seed=params.random_seed,
-            train_csv_path=params.train_csv_path
+            train_split=params.train_split, random_seed=params.random_seed, train_csv_path=params.train_csv_path
         )
     success_msg = f"✅ [bold green]{params.strategy.title()} strategy completed successfully![/bold green]"
     params.console.print(success_msg)
@@ -282,14 +281,10 @@ def _load_existing_model(
     # Handle different return types from load method
     if isinstance(loaded_result, tuple):
         model, params = loaded_result
-        updated_train_split, updated_random_seed = _extract_params_from_tuple(
-            params, console, train_split, random_seed
-        )
+        updated_train_split, updated_random_seed = _extract_params_from_tuple(params, console, train_split, random_seed)
     else:
         model = loaded_result
-        updated_train_split, updated_random_seed = _extract_params_from_model(
-            model, console, train_split, random_seed
-        )
+        updated_train_split, updated_random_seed = _extract_params_from_model(model, console, train_split, random_seed)
 
     console.print(f"✅ [bold green]Loaded {strategy} model from {model_file}[/bold green]")
     return model, updated_train_split, updated_random_seed
@@ -303,10 +298,7 @@ def _extract_params_from_tuple(
 ) -> tuple[float, int]:
     """Extract parameters from tuple result."""
     if params:
-        console.print(
-            f"Using saved parameters: train_split={params.train_split}, "
-            f"random_seed={params.random_seed}"
-        )
+        console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
         return params.train_split, params.random_seed
     return train_split, random_seed
 
@@ -320,10 +312,7 @@ def _extract_params_from_model(
     """Extract parameters from model object."""
     if hasattr(model, "parameters") and model.parameters:
         params = model.parameters
-        console.print(
-            f"Using saved parameters: train_split={params.train_split}, "
-            f"random_seed={params.random_seed}"
-        )
+        console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
         return params.train_split, params.random_seed
     return train_split, random_seed
 
@@ -338,9 +327,7 @@ def _run_evaluation(
     train_csv_path: Path,
 ) -> None:
     """Run evaluation and display results."""
-    assert hasattr(strategy_class, "evaluate_on_split"), (
-        f"Strategy {strategy} does not support evaluation"
-    )
+    assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
 
     eval_results = strategy_class.evaluate_on_split(
         model, train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
@@ -368,9 +355,7 @@ def _handle_predict(params: CLIParams) -> None:
     params.console.print("[dim]This would generate predictions for test.csv[/dim]")
 
 
-def _determine_model_file_for_predict(
-    strategy: str, model_path: str | None, console: Console
-) -> Path:
+def _determine_model_file_for_predict(strategy: str, model_path: str | None, console: Console) -> Path:
     """Determine the model file path for prediction."""
     model_file = Path(model_path) if model_path else Path(f"models/{strategy}.json")
     if not model_file.exists() and strategy == "mlp":

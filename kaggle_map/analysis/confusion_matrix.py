@@ -16,9 +16,7 @@ def load_predictions(csv_path: Path) -> pd.DataFrame:
     """Load error predictions from CSV file."""
     logger.debug(f"Loading predictions from {csv_path}")
     predictions_df = pd.read_csv(csv_path)
-    logger.info(
-        f"Loaded {len(predictions_df)} predictions covering {predictions_df['QuestionId'].nunique()} questions"
-    )
+    logger.info(f"Loaded {len(predictions_df)} predictions covering {predictions_df['QuestionId'].nunique()} questions")
     return predictions_df
 
 
@@ -37,13 +35,13 @@ def extract_prediction_components(prediction_str: str) -> tuple[str, str]:
 
 
 def build_misconception_matrix(
-    actual_misconceptions: list[str],
-    predicted_misconceptions: list[str]
+    actual_misconceptions: list[str], predicted_misconceptions: list[str]
 ) -> tuple[np.ndarray | None, list[str]]:
     """Build confusion matrix for misconceptions."""
     # Filter out NA pairs
     pairs = [
-        (a, p) for a, p in zip(actual_misconceptions, predicted_misconceptions, strict=False)
+        (a, p)
+        for a, p in zip(actual_misconceptions, predicted_misconceptions, strict=False)
         if a != "NA" or p != "NA"  # Include if at least one is not NA
     ]
 
@@ -80,10 +78,7 @@ def format_confusion_matrix(matrix: np.ndarray | None, labels: list[str]) -> str
 
     # Prepare label display (truncate if too long)
     max_label_len = 20
-    display_labels = [
-        label[:max_label_len] if len(label) <= max_label_len else label[:17] + "..."
-        for label in labels
-    ]
+    display_labels = [label[:max_label_len] if len(label) <= max_label_len else label[:17] + "..." for label in labels]
 
     # Find max width needed for numbers
     max_val = np.max(matrix)
@@ -139,7 +134,7 @@ def analyze_question(df_question: pd.DataFrame) -> dict:
         "question_text": question_text,
         "n_samples": len(df_question),
         "matrix": matrix,
-        "labels": labels
+        "labels": labels,
     }
 
 
@@ -163,7 +158,7 @@ def main() -> None:
         result = analyze_question(df_question)
 
         # Display results
-        logger.info(f"\n{'='*80}")
+        logger.info(f"\n{'=' * 80}")
         logger.info(f"QuestionId: {result['question_id']}")
         logger.info(f"Samples: {result['n_samples']}")
 

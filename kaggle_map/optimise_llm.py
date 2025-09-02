@@ -15,12 +15,12 @@ from rich.table import Table
 
 # Quantization options to test
 QUANTIZATION_OPTIONS = [
-    "IQ4_XS",   # 6.55 GB - Smallest 4-bit
-    "IQ4_NL",   # 6.89 GB - Non-linear 4-bit
-    "Q4_0",     # 6.91 GB - Original 4-bit
-    "Q4_1",     # 7.56 GB - 4-bit with importance
-    "Q4_K_S",   # 6.94 GB - K-quant small
-    "Q4_K_M",   # 7.3 GB - K-quant medium (recommended)
+    "IQ4_XS",  # 6.55 GB - Smallest 4-bit
+    "IQ4_NL",  # 6.89 GB - Non-linear 4-bit
+    "Q4_0",  # 6.91 GB - Original 4-bit
+    "Q4_1",  # 7.56 GB - 4-bit with importance
+    "Q4_K_S",  # 6.94 GB - K-quant small
+    "Q4_K_M",  # 7.3 GB - K-quant medium (recommended)
     "Q4_K_XL",  # 7.43 GB - K-quant extra large
 ]
 
@@ -45,10 +45,7 @@ def download_model_if_needed(quantization: str) -> Path:
     from huggingface_hub import hf_hub_download
 
     downloaded_path = hf_hub_download(
-        repo_id=MODEL_BASE,
-        filename=model_name,
-        local_dir=model_dir,
-        local_dir_use_symlinks=False
+        repo_id=MODEL_BASE, filename=model_name, local_dir=model_dir, local_dir_use_symlinks=False
     )
 
     logger.info(f"Downloaded to {downloaded_path}")
@@ -70,13 +67,16 @@ def evaluate_quantization(quantization: str, sample_size: int = 100) -> dict:
 
     # Load training data for fit
     from kaggle_map.core.dataset import parse_training_data
+
     training_data = parse_training_data(Path("datasets/train.csv"))
 
     # Fit the strategy (loads correct answers and misconceptions)
     from kaggle_map.strategies.utils import split_training_data
+
     train_data, _, _ = split_training_data(training_data, train_ratio=0.7, random_seed=42)
 
     from kaggle_map.core.dataset import extract_correct_answers, extract_misconceptions_by_popularity
+
     strategy.correct_answers = extract_correct_answers(train_data)
     strategy.misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
 
@@ -84,12 +84,7 @@ def evaluate_quantization(quantization: str, sample_size: int = 100) -> dict:
     start_time = time.time()
 
     # Evaluate on validation split
-    results = strategy.evaluate_on_split(
-        model=strategy,
-        train_split=0.7,
-        random_seed=42,
-        sample_size=sample_size
-    )
+    results = strategy.evaluate_on_split(model=strategy, train_split=0.7, random_seed=42, sample_size=sample_size)
 
     evaluation_time = time.time() - start_time
 
@@ -187,13 +182,15 @@ def display_results(study: optuna.Study, console: Console) -> None:
     results = []
     for trial in study.trials:
         if trial.state == optuna.trial.TrialState.COMPLETE:
-            results.append({
-                "quantization": trial.params["quantization"],
-                "model_size_gb": trial.user_attrs["model_size_gb"],
-                "map_at_3": -trial.values[0],  # Negate back to positive
-                "evaluation_time": trial.values[1],
-                "samples_per_second": trial.user_attrs["samples_per_second"],
-            })
+            results.append(
+                {
+                    "quantization": trial.params["quantization"],
+                    "model_size_gb": trial.user_attrs["model_size_gb"],
+                    "map_at_3": -trial.values[0],  # Negate back to positive
+                    "evaluation_time": trial.values[1],
+                    "samples_per_second": trial.user_attrs["samples_per_second"],
+                }
+            )
 
     # Sort by MAP@3 descending
     results.sort(key=lambda x: x["map_at_3"], reverse=True)
@@ -215,11 +212,7 @@ def display_results(study: optuna.Study, console: Console) -> None:
     pareto_front = study.best_trials
 
     for trial in pareto_front[:3]:  # Show top 3 Pareto optimal
-        console.print(
-            f"  • {trial.params['quantization']}: "
-            f"MAP@3={-trial.values[0]:.4f}, "
-            f"Time={trial.values[1]:.2f}s"
-        )
+        console.print(f"  • {trial.params['quantization']}: MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s")
 
     # Best trade-off recommendation
     if results:
@@ -227,8 +220,10 @@ def display_results(study: optuna.Study, console: Console) -> None:
         q4_k_m = next((r for r in results if r["quantization"] == "Q4_K_M"), None)
         if q4_k_m:
             console.print("\n[bold green]Recommended: Q4_K_M[/bold green]")
-            console.print(f"  Good balance of quality ({q4_k_m['map_at_3']:.4f} MAP@3) "
-                         f"and speed ({q4_k_m['samples_per_second']:.2f} samples/s)")
+            console.print(
+                f"  Good balance of quality ({q4_k_m['map_at_3']:.4f} MAP@3) "
+                f"and speed ({q4_k_m['samples_per_second']:.2f} samples/s)"
+            )
 
     # Save results to CSV
     df = pd.DataFrame(results)

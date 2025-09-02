@@ -15,8 +15,9 @@ def normalize_latex_answer(s: str) -> str:
     def replace_frac(match) -> str:
         num, den = match.group(1).strip(), match.group(2).strip()
         # Check if both parts are numeric (integers)
-        if (num.isdigit() or (num.startswith("-") and num[1:].isdigit())) and \
-           (den.isdigit() or (den.startswith("-") and den[1:].isdigit())):
+        if (num.isdigit() or (num.startswith("-") and num[1:].isdigit())) and (
+            den.isdigit() or (den.startswith("-") and den[1:].isdigit())
+        ):
             # Numeric fraction - simplify if possible
             n, d = int(num), int(den)
             if d == 0:
