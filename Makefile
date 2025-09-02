@@ -1,4 +1,4 @@
-.PHONY: dev test test-all fit eval search search-balanced compare list-studies analyze
+.PHONY: dev test test-all fit eval search search-balanced search-embeddings compare list-studies analyze
 
 dev:
 	uv run ruff check . --fix --unsafe-fixes
@@ -68,6 +68,34 @@ search:
 		--trials 500 \
 		--jobs 1 \
 		--timeout 14400
+
+search-embeddings:
+	@echo "========================================="
+	@echo "EMBEDDING MODEL COMPARISON STUDY"
+	@echo "Start time: $$(date)"
+	@echo "========================================="
+	@echo ""
+	@echo "Configuration:"
+	@echo "- Strategy: mlp"
+	@echo "- Dataset: datasets/train.csv (original)"
+	@echo "- Trials: 70 (7 models x ~10 configs)"
+	@echo "- Timeout: 6 hours"
+	@echo ""
+	@echo "Models to compare:"
+	@echo "  1. MiniLM-L6-v2 (384 dim) - baseline"
+	@echo "  2. E5-base-v2 (768 dim)"
+	@echo "  3. Instructor-base (768 dim)"
+	@echo "  4. BGE-base-en-v1.5 (768 dim)"
+	@echo "  5. Contriever (768 dim)"
+	@echo "  6. Sentence-T5-base (768 dim)"
+	@echo "  7. MiniLM-L12-v2 (384 dim)"
+	@echo ""
+	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
+	@echo ""
+	uv run -m kaggle_map.optimise search-embeddings mlp \
+		--trials 70 \
+		--jobs 1 \
+		--timeout 21600
 
 search-balanced:
 	@echo "========================================="

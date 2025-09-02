@@ -48,13 +48,13 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
@@ -347,28 +347,148 @@ class MLPStrategy(Strategy):
         return None
 
     @classmethod
-    def _get_architecture_config(cls, size: str) -> dict[str, Any]:
-        """Get architecture configuration for different model sizes."""
+    def get_embedding_search_space(cls, trial) -> dict[str, Any]:
+        """Embedding model comparison search space.
+
+        Tests different embedding models with fixed best hyperparameters
+        from previous studies. Varies embedding model, architecture size,
+        and layer configuration to find optimal combination.
+        """
+        if optuna is None:
+            msg = "Optuna is required for hyperparameter search"
+            raise ImportError(msg)
+
+        # Fixed best parameters from previous optimization
+        base_params = {
+            "learning_rate": 0.00028,
+            "dropout": 0.32,
+            "optimizer": "adamw",
+            "weight_decay": 0.0065,
+            "activation": "silu",
+            "scheduler": "cosine",
+            "early_stopping_patience": 19,
+            "epochs": 35,
+        }
+
+        # Embedding model selection - must use consistent choices across all trials
+        embedding_model = trial.suggest_categorical("embedding_model", [
+            "MINI_LM",        # 384 dims - baseline
+            "E5_BASE",        # 768 dims - strong balanced
+            "INSTRUCTOR_BASE", # 768 dims - task-specific
+            "BGE_BASE",       # 768 dims - modern efficient
+            "CONTRIEVER",     # 768 dims - Facebook model
+            "SENTENCE_T5_BASE", # 768 dims - T5-based
+            "MINI_LM_L12",    # 384 dims - deeper MiniLM
+        ])
+
+        # Determine embedding dimensions
+        embedding_dim = 384 if embedding_model in ["MINI_LM", "MINI_LM_L12"] else 768
+
+        # Batch size selection - all possible values must be consistent
+        # We'll adjust actual batch size based on embedding dim in fit()
+        batch_size_idx = trial.suggest_int("batch_size_idx", 0, 2)
+        batch_sizes_384 = [192, 256, 320]
+        batch_sizes_768 = [128, 192, 256]
+
+        # Select batch size based on embedding dimensions
+        if embedding_dim == 384:
+            batch_size = batch_sizes_384[batch_size_idx]
+        else:
+            # For larger embeddings, use more conservative sizes
+            batch_size = batch_sizes_768[batch_size_idx]
+
+        # Architecture size - suggest index to keep choices consistent
+        arch_size_idx = trial.suggest_int("arch_size_idx", 0, 2)
+        arch_sizes_384 = ["small", "medium", "large"]
+        arch_sizes_768 = ["tiny", "small", "medium"]
+
+        architecture_size = arch_sizes_384[arch_size_idx] if embedding_dim == 384 else arch_sizes_768[arch_size_idx]
+
+        # Number of layers - affects model capacity
+        num_layers = trial.suggest_int("num_layers", 3, 5)
+
+        return {
+            **base_params,
+            "embedding_model": embedding_model,
+            "batch_size": batch_size,
+            "architecture_size": architecture_size,
+            "num_layers": num_layers,
+        }
+
+    @classmethod
+    def _get_architecture_config(cls, size: str, embedding_dim: int = 384) -> dict[str, Any]:
+        """Get architecture configuration for different model sizes.
+
+        Args:
+            size: Architecture size (tiny, small, medium, large, xlarge, xxlarge)
+            embedding_dim: Dimension of the embedding model (384 or 768)
+        """
+        # Input dimension is 2 * embedding_dim + 32 (correctness embedding)
+        input_dim = 2 * embedding_dim + 32
+
         configs = {
-            "small": {"hidden_dim": 256, "trunk_layers": [800, 512, 256, 128, 96]},
-            "medium": {"hidden_dim": 512, "trunk_layers": [800, 1024, 512, 256, 192]},
-            "large": {"hidden_dim": 768, "trunk_layers": [800, 1536, 768, 384, 256]},
-            "xlarge": {"hidden_dim": 1024, "trunk_layers": [800, 2048, 1024, 512, 384]},
-            "xxlarge": {"hidden_dim": 1536, "trunk_layers": [800, 2560, 1536, 768, 512]},
+            "tiny": {"hidden_dim": 192, "trunk_layers": [input_dim, 384, 192, 96]},
+            "small": {"hidden_dim": 256, "trunk_layers": [input_dim, 512, 256, 128, 96]},
+            "medium": {"hidden_dim": 512, "trunk_layers": [input_dim, 1024, 512, 256, 192]},
+            "large": {"hidden_dim": 768, "trunk_layers": [input_dim, 1536, 768, 384, 256]},
+            "xlarge": {"hidden_dim": 1024, "trunk_layers": [input_dim, 2048, 1024, 512, 384]},
+            "xxlarge": {"hidden_dim": 1536, "trunk_layers": [input_dim, 2560, 1536, 768, 512]},
         }
         return configs[size]
 
     @classmethod
     def create_config_from_hyperparams(cls, hyperparams: dict[str, Any], **base_params: Any) -> TorchConfig:
         """Convert hyperparameters to TorchConfig, including architecture scaling."""
-        # Extract architecture size and get config
-        arch_size = hyperparams.pop("architecture_size", "medium")
-        arch_config = cls._get_architecture_config(arch_size)
+        # Make a copy to avoid modifying original
+        params = hyperparams.copy()
+
+        # Extract embedding model first to determine dimensions
+        embedding_model = params.get("embedding_model", "MINI_LM")
+        # Import here to avoid circular dependencies
+
+        # Get embedding dimensions
+        if embedding_model in ["MINI_LM", "MINI_LM_L12"]:
+            embedding_dim = 384
+        else:
+            # Most other models are 768-dim
+            embedding_dim = 768
+
+        # Extract architecture size and get config with correct embedding dimensions
+        arch_size = params.pop("architecture_size", "medium")
+        arch_config = cls._get_architecture_config(arch_size, embedding_dim)
+
+        # Handle num_layers if present - adjusts trunk_layers
+        if "num_layers" in params:
+            num_layers = params.pop("num_layers")
+            # Adjust trunk_layers to have the specified number of layers
+            trunk_layers = arch_config["trunk_layers"]
+            if len(trunk_layers) != num_layers + 1:  # +1 for input layer
+                # Interpolate layer sizes
+                input_size = trunk_layers[0]
+                output_size = trunk_layers[-1]
+                if num_layers == 3:
+                    trunk_layers = [input_size, (input_size + output_size) // 2, output_size]
+                elif num_layers == 4:
+                    step = (input_size - output_size) // 3
+                    trunk_layers = [input_size, input_size - step, input_size - 2*step, output_size]
+                else:  # num_layers == 5
+                    trunk_layers = arch_config["trunk_layers"]  # Use default 5-layer config
+                arch_config["trunk_layers"] = trunk_layers
+
+        # Extract embedding model if present (not a TorchConfig field)
+        embedding_model = params.pop("embedding_model", None)
 
         # Merge architecture config with hyperparameters
-        config_params = {**hyperparams, **arch_config, **base_params}
+        config_params = {**params, **arch_config, **base_params}
 
-        return TorchConfig(**{k: v for k, v in config_params.items() if hasattr(TorchConfig, k)})
+        # Create config with only valid TorchConfig fields
+        config = TorchConfig(**{k: v for k, v in config_params.items() if hasattr(TorchConfig, k)})
+
+        # Store embedding model as an attribute for later use
+        if embedding_model:
+            config.embedding_model = embedding_model  # type: ignore
+
+        return config
 
     @staticmethod
     def process_mlp_batch_train(
@@ -471,23 +591,31 @@ class MLPStrategy(Strategy):
             kwargs["batch_size"] = 256  # Larger batch for GPU
             logger.info(f"Using batch_size=256 for {device} (override with batch_size parameter)")
 
-        # Use create_config_from_hyperparams if architecture_size is provided (hyperparameter search)
-        if "architecture_size" in kwargs:
+        # Use create_config_from_hyperparams if architecture_size or embedding_model is provided (hyperparameter search)
+        if "architecture_size" in kwargs or "embedding_model" in kwargs:
             config = cls.create_config_from_hyperparams(kwargs, wandb_project="kaggle-map-mlp")
         else:
             config = TorchConfig(
                 wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
             )
-        logger.info(f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}")
+
+        # Extract embedding model if present
+        embedding_model_name = getattr(config, "embedding_model", None) or kwargs.get("embedding_model", "MINI_LM")
+
+        logger.info(f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}, embedding={embedding_model_name}")
+
+        # Get trunk_layers from config if available (from architecture scaling)
+        trunk_layers = getattr(config, "trunk_layers", [800, 1024, 512, 256, 192])
 
         extra_config = {
             "architecture": "improved_mlp_with_correctness",
-            "trunk_layers": [800, 1024, 512, 256, 192],
+            "trunk_layers": trunk_layers,
             "correctness_embedding_dim": 32,
             "include_question": True,
             "loss_function": "ListMLE",
             "layer_norm": True,
             "dropout": config.dropout,
+            "embedding_model": embedding_model_name,
         }
         init_wandb(config, extra_config)
 
@@ -504,8 +632,12 @@ class MLPStrategy(Strategy):
         question_predictions = extract_question_predictions(training_data)
 
         def compute_embeddings(data):
-            logger.info(f"Computing separate question and answer embeddings on device: {device}")
-            tokenizer = get_tokenizer(device=str(device))
+            # Get the embedding model enum
+            from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
+
+            embedding_model = getattr(EmbeddingModel, embedding_model_name)
+            logger.info(f"Computing embeddings with {embedding_model_name} (dim={embedding_model.dim}) on device: {device}")
+            tokenizer = get_tokenizer(model=embedding_model, device=str(device))
 
             # Prepare texts for batch encoding
             question_texts = []
@@ -523,7 +655,11 @@ class MLPStrategy(Strategy):
 
             # Batch encode all texts at once for better GPU utilization
             logger.info(f"Batch encoding {len(question_texts)} questions and answers...")
-            batch_size = 64 if str(device) != "cpu" else 32
+            # Adjust batch size based on embedding dimensions to avoid OOM
+            if embedding_model.dim > 384:
+                batch_size = 32 if str(device) != "cpu" else 16  # Conservative for 768-dim models
+            else:
+                batch_size = 64 if str(device) != "cpu" else 32  # Can be larger for 384-dim models
 
             # Encode questions in batches
             question_embeddings = tokenizer.encode(question_texts, batch_size=batch_size, show_progress_bar=True)

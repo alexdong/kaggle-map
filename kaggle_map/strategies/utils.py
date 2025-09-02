@@ -11,12 +11,12 @@ from typing import Any, Protocol
 
 import numpy as np
 import torch
-import wandb
 from loguru import logger
 from pydantic import BaseModel
 from torch import nn
 from torch.utils.data import DataLoader
 
+import wandb
 from kaggle_map.core.models import TrainingRow
 
 # Data split constants
@@ -803,10 +803,18 @@ def train_torch_model(
             # Training
             if train_batch_fn:
                 avg_train_loss = train_epoch(
-                    model, train_loader, optimizer, criterion, device, scheduler, batch_callback=train_batch_fn
+                    model,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    device,
+                    scheduler=scheduler,
+                    batch_callback=train_batch_fn,
                 )
             else:
-                avg_train_loss = train_epoch(model, train_loader, optimizer, criterion, device, scheduler)
+                avg_train_loss = train_epoch(
+                    model, train_loader, optimizer, criterion, device, scheduler=scheduler
+                )
 
             # Validation
             if val_batch_fn:
@@ -841,7 +849,7 @@ def train_torch_model(
             # Save best model and check early stopping
             metrics = {"train_loss": avg_train_loss, "val_loss": avg_val_loss}
             if (
-                checkpoint_manager.save_best_model(model, optimizer, epoch + 1, avg_val_loss, metrics, config)
+                checkpoint_manager.save_best_model(model, optimizer, epoch + 1, avg_val_loss, metrics, config=config)
                 and wandb.run is not None
             ):
                 wandb.log({"best_val_loss": avg_val_loss})

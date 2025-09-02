@@ -26,6 +26,13 @@ class EmbeddingModel(Enum):
     GTE_SMALL = "thenlper/gte-small"
     GTE_BASE = "Alibaba-NLP/gte-base-en-v1.5"
     BGE_SMALL = "BAAI/bge-small-en-v1.5"
+    # Additional models for embedding search
+    E5_BASE = "intfloat/e5-base-v2"
+    INSTRUCTOR_BASE = "hkunlp/instructor-base"
+    BGE_BASE = "BAAI/bge-base-en-v1.5"
+    CONTRIEVER = "facebook/contriever"
+    SENTENCE_T5_BASE = "sentence-transformers/sentence-t5-base"
+    MINI_LM_L12 = "sentence-transformers/all-MiniLM-L12-v2"
 
     @property
     def spec(self) -> EmbeddingSpec:
@@ -62,6 +69,42 @@ class EmbeddingModel(Enum):
                 dim=512,
                 recommended_max_seq=512,
                 notes="Strong small model; slightly larger vectors than MiniLM.",
+            ),
+            EmbeddingModel.E5_BASE: EmbeddingSpec(
+                model_id="intfloat/e5-base-v2",
+                dim=768,
+                recommended_max_seq=512,
+                notes="Strong balanced model with instruction following capabilities.",
+            ),
+            EmbeddingModel.INSTRUCTOR_BASE: EmbeddingSpec(
+                model_id="hkunlp/instructor-base",
+                dim=768,
+                recommended_max_seq=512,
+                notes="Task-specific instruction embeddings for better domain adaptation.",
+            ),
+            EmbeddingModel.BGE_BASE: EmbeddingSpec(
+                model_id="BAAI/bge-base-en-v1.5",
+                dim=768,
+                recommended_max_seq=512,
+                notes="Modern efficient architecture with strong performance.",
+            ),
+            EmbeddingModel.CONTRIEVER: EmbeddingSpec(
+                model_id="facebook/contriever",
+                dim=768,
+                recommended_max_seq=512,
+                notes="Facebook's unsupervised dense retrieval model.",
+            ),
+            EmbeddingModel.SENTENCE_T5_BASE: EmbeddingSpec(
+                model_id="sentence-transformers/sentence-t5-base",
+                dim=768,
+                recommended_max_seq=512,
+                notes="T5-based sentence embeddings with strong generalization.",
+            ),
+            EmbeddingModel.MINI_LM_L12: EmbeddingSpec(
+                model_id="sentence-transformers/all-MiniLM-L12-v2",
+                dim=384,
+                recommended_max_seq=512,
+                notes="Deeper MiniLM variant with 12 layers for better representations.",
             ),
         }
         return specs[self]

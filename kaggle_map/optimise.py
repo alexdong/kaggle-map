@@ -41,12 +41,22 @@ class OptimiseManager:
         )
 
     def objective_function(
-        self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None
+        self, trial: optuna.Trial, strategy_class: type, train_data_path: str | None = None,
+        search_type: str = "regular"
     ) -> float:
         """Objective function for hyperparameter optimization."""
 
-        # Get hyperparameters from strategy
-        hyperparams = strategy_class.get_hyperparameter_search_space(trial)
+        # Get hyperparameters from strategy based on search type
+        if search_type == "embedding":
+            # Use embedding-specific search space
+            if hasattr(strategy_class, "get_embedding_search_space"):
+                hyperparams = strategy_class.get_embedding_search_space(trial)
+            else:
+                msg = f"Strategy {strategy_class.__name__} does not support embedding search"
+                raise ValueError(msg)
+        else:
+            # Use regular hyperparameter search space
+            hyperparams = strategy_class.get_hyperparameter_search_space(trial)
 
         # Add train_csv_path if provided
         if train_data_path:
@@ -60,6 +70,8 @@ class OptimiseManager:
         key_params = []
 
         # Include key parameters in run name for easy identification
+        if "embedding_model" in hyperparams:
+            key_params.append(f"emb_{hyperparams['embedding_model']}")
         if "learning_rate" in hyperparams:
             key_params.append(f"lr_{hyperparams['learning_rate']:.1e}")
         if "batch_size" in hyperparams:
@@ -68,6 +80,8 @@ class OptimiseManager:
             key_params.append(f"do_{hyperparams['dropout']:.2f}")
         if "architecture_size" in hyperparams:
             key_params.append(f"arch_{hyperparams['architecture_size']}")
+        if "num_layers" in hyperparams:
+            key_params.append(f"layers_{hyperparams['num_layers']}")
 
         wandb_run_name = f"hypersearch_{trial_info}_{'_'.join(key_params)}"
         hyperparams["wandb_run_name"] = wandb_run_name
@@ -138,20 +152,26 @@ class OptimiseManager:
         n_jobs: int,
         timeout: int | None = None,
         train_data_path: str | None = None,
+        search_type: str = "regular",
     ) -> optuna.Study:
         """Run hyperparameter search for a strategy."""
 
-        logger.info(f"Starting hyperparameter search for {strategy_name}")
+        search_desc = "embedding model comparison" if search_type == "embedding" else "hyperparameter"
+        logger.info(f"Starting {search_desc} search for {strategy_name}")
         logger.info(f"Trials: {n_trials}, Jobs: {n_jobs}, Timeout: {timeout}s")
         if train_data_path:
             logger.info(f"Using training data: {train_data_path}")
 
         strategy_class = get_strategy(strategy_name)
-        study = self.create_study(strategy_name)
 
-        # Create objective with bound strategy class and train data path
+        # Use different study name for embedding searches
+        study_name = f"{strategy_name}_embedding" if search_type == "embedding" else strategy_name
+
+        study = self.create_study(study_name)
+
+        # Create objective with bound strategy class, train data path, and search type
         def objective(trial: optuna.Trial) -> float:
-            return self.objective_function(trial, strategy_class, train_data_path)
+            return self.objective_function(trial, strategy_class, train_data_path, search_type)
 
         logger.info(f"Starting optimization with study: {study.study_name}")
 
@@ -542,6 +562,47 @@ def search(strategy: str, trials: int, jobs: int, timeout: int | None, train_dat
     manager.generate_study_summary(study.study_name)
 
 
+@click.command("search-embeddings")
+@click.argument("strategy")
+@click.option("--trials", default=70, help="Number of trials to run (default: 70)")
+@click.option("--jobs", default=1, help="Number of parallel jobs (default: 1)")
+@click.option("--timeout", default=21600, type=int, help="Timeout in seconds (default: 6 hours)")
+@click.option("--train-data", default=None, help="Path to training data CSV")
+def search_embeddings(strategy: str, trials: int, jobs: int, timeout: int, train_data: str | None) -> None:
+    """Run embedding model comparison search for a strategy.
+
+    Tests different embedding models with fixed hyperparameters to find
+    the best embedding model for the task.
+    """
+    logger.info("=" * 60)
+    logger.info("EMBEDDING MODEL COMPARISON STUDY")
+    logger.info("=" * 60)
+    logger.info(f"Strategy: {strategy}")
+    logger.info(f"Trials: {trials} (7 models x ~10 configs each)")
+    logger.info(f"Parallel jobs: {jobs}")
+    logger.info(f"Timeout: {timeout}s ({timeout/3600:.1f} hours)")
+    logger.info("")
+    logger.info("Models to test:")
+    logger.info("  - MINI_LM (384 dim) - baseline")
+    logger.info("  - E5_BASE (768 dim)")
+    logger.info("  - INSTRUCTOR_BASE (768 dim)")
+    logger.info("  - BGE_BASE (768 dim)")
+    logger.info("  - CONTRIEVER (768 dim)")
+    logger.info("  - SENTENCE_T5_BASE (768 dim)")
+    logger.info("  - MINI_LM_L12 (384 dim)")
+    logger.info("=" * 60)
+
+    manager = OptimiseManager()
+    manager.run_search(
+        strategy_name=strategy,
+        n_trials=trials,
+        n_jobs=jobs,
+        timeout=timeout,
+        train_data_path=train_data,
+        search_type="embedding",
+    )
+
+
 @click.command("list-studies")
 def list_studies_cmd() -> None:
     """List all optimization studies."""
@@ -567,6 +628,7 @@ def analyze(study: str) -> None:
 
 # Add commands to CLI
 cli.add_command(search)
+cli.add_command(search_embeddings)
 cli.add_command(list_studies_cmd)
 cli.add_command(compare)
 cli.add_command(analyze)
