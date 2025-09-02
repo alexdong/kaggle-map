@@ -1,4 +1,10 @@
-.PHONY: dev test test-all fit eval search search-balanced search-embeddings compare list-studies analyze
+# Default target when just running 'make'
+.DEFAULT_GOAL := help
+
+# ============================================================================
+# Development Commands
+# ============================================================================
+.PHONY: dev test test-all
 
 dev:
 	uv run ruff check . --fix --unsafe-fixes
@@ -13,16 +19,28 @@ test-all:
 	# Run all tests including slow integration tests
 	uv run --only-dev -m pytest
 
-# Generic fit and eval commands that take strategy as parameter
-# Examples:
-#   make fit STRATEGY=baseline                                          # Train baseline with original dataset
-#   make fit STRATEGY=mlp                                               # Train MLP with original dataset  
-#   make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv  # Train MLP with synthetic dataset
+# ============================================================================
+# Model Training & Evaluation
+# ============================================================================
+.PHONY: fit eval
+
+# Train a strategy model
+# Usage:
+#   make fit STRATEGY=baseline                    # Train baseline with default dataset
+#   make fit STRATEGY=mlp                         # Train MLP with default dataset  
+#   make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
 fit:
 	@if [ -z "$(STRATEGY)" ]; then \
 		echo "Usage: make fit STRATEGY=<strategy_name> [DATASET=<path>]"; \
-		echo "Example: make fit STRATEGY=baseline"; \
-		echo "Example: make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
+		echo ""; \
+		echo "Available strategies:"; \
+		echo "  baseline - Baseline strategy using misconception frequency"; \
+		echo "  mlp      - Multi-layer perceptron with embeddings"; \
+		echo "  llm      - Large language model approach"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make fit STRATEGY=baseline"; \
+		echo "  make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi
 	@if [ -n "$(DATASET)" ]; then \
@@ -31,15 +49,23 @@ fit:
 		uv run -m kaggle_map.cli run $(STRATEGY) fit; \
 	fi
 
-# Examples:
-#   make eval STRATEGY=baseline                                         # Evaluate baseline with original dataset
-#   make eval STRATEGY=mlp                                              # Evaluate MLP with original dataset
-#   make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv  # Evaluate MLP with synthetic dataset
+# Evaluate a trained model
+# Usage:
+#   make eval STRATEGY=baseline                   # Evaluate baseline
+#   make eval STRATEGY=mlp                        # Evaluate MLP
+#   make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
 eval:
 	@if [ -z "$(STRATEGY)" ]; then \
 		echo "Usage: make eval STRATEGY=<strategy_name> [DATASET=<path>]"; \
-		echo "Example: make eval STRATEGY=baseline"; \
-		echo "Example: make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
+		echo ""; \
+		echo "Available strategies:"; \
+		echo "  baseline - Baseline strategy using misconception frequency"; \
+		echo "  mlp      - Multi-layer perceptron with embeddings"; \
+		echo "  llm      - Large language model approach"; \
+		echo ""; \
+		echo "Examples:"; \
+		echo "  make eval STRATEGY=baseline"; \
+		echo "  make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi
 	@if [ -n "$(DATASET)" ]; then \
@@ -48,137 +74,153 @@ eval:
 		uv run -m kaggle_map.cli run $(STRATEGY) eval; \
 	fi
 
-# Hyperparameter search commands for 4-8 hours blocks
+# ============================================================================
+# Hyperparameter Optimization - MLP
+# ============================================================================
+.PHONY: search search-balanced search-embeddings
+
+# Standard hyperparameter search (4-hour session)
 search:
 	@echo "========================================="
-	@echo "Starting 4-Hour Focused Search (Original Dataset)"
+	@echo "MLP Hyperparameter Search (4-hour session)"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
 	@echo ""
 	@echo "Configuration:"
 	@echo "- Strategy: mlp"
 	@echo "- Dataset: datasets/train.csv (original)"
-	@echo "- Estimated trials: ~80-100 (4 hours)"
-	@echo "- Parallel jobs: 1 (single-threaded for stability)"
-	@echo "- Stage: Exploitation focus"
+	@echo "- Max trials: 500 (or 4 hours)"
+	@echo "- Parallel jobs: 1"
 	@echo ""
-	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
+	@echo "Monitor at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
 	@echo ""
-	uv run -m kaggle_map.optimise search mlp \
+	uv run -m kaggle_map.optimise mlp search \
 		--trials 500 \
 		--jobs 1 \
 		--timeout 14400
 
-search-embeddings:
-	@echo "========================================="
-	@echo "EMBEDDING MODEL COMPARISON STUDY"
-	@echo "Start time: $$(date)"
-	@echo "========================================="
-	@echo ""
-	@echo "Configuration:"
-	@echo "- Strategy: mlp"
-	@echo "- Dataset: datasets/train.csv (original)"
-	@echo "- Trials: 70 (7 models x ~10 configs)"
-	@echo "- Timeout: 6 hours"
-	@echo ""
-	@echo "Models to compare:"
-	@echo "  1. MiniLM-L6-v2 (384 dim) - baseline"
-	@echo "  2. E5-base-v2 (768 dim)"
-	@echo "  3. Instructor-base (768 dim)"
-	@echo "  4. BGE-base-en-v1.5 (768 dim)"
-	@echo "  5. Contriever (768 dim)"
-	@echo "  6. Sentence-T5-base (768 dim)"
-	@echo "  7. MiniLM-L12-v2 (384 dim)"
-	@echo ""
-	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
-	@echo ""
-	uv run -m kaggle_map.optimise search-embeddings mlp \
-		--trials 70 \
-		--jobs 1 \
-		--timeout 21600
-
+# Search with balanced synthetic dataset
 search-balanced:
 	@echo "========================================="
-	@echo "Starting 4-Hour Focused Search (Balanced 10x Dataset)"
+	@echo "MLP Search with Balanced Dataset (4-hour session)"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
 	@echo ""
 	@echo "Configuration:"
 	@echo "- Strategy: mlp"
-	@echo "- Dataset: datasets/synth_median_balanced_354210_total.csv (10x balanced)"
-	@echo "- Estimated trials: ~60-80 (4 hours, slower due to larger dataset)"
-	@echo "- Parallel jobs: 1 (single-threaded for stability)"
-	@echo "- Starting with best known params and exploring nearby"
+	@echo "- Dataset: datasets/synth_median_balanced_354210_total.csv"
+	@echo "- Max trials: 500 (or 4 hours)"
+	@echo "- Parallel jobs: 1"
 	@echo ""
-	@echo "Best Known Parameters (MAP@3: 0.9114):"
-	@echo "  learning_rate: 0.0002126932668569146"
-	@echo "  batch_size: 384"
-	@echo "  dropout: 0.30108955018524314"
-	@echo "  architecture_size: xlarge"
-	@echo "  optimizer: adamw"
-	@echo "  weight_decay: 0.003225818218347925"
-	@echo "  activation: silu"
-	@echo "  scheduler: none"
-	@echo "  patience: 17"
-	@echo "  epochs: 36"
+	@echo "Monitor at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
 	@echo ""
-	@echo "Monitor progress at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
-	@echo ""
-	uv run -m kaggle_map.optimise search mlp \
+	uv run -m kaggle_map.optimise mlp search \
 		--trials 500 \
 		--jobs 1 \
 		--timeout 14400 \
 		--train-data datasets/synth_median_balanced_354210_total.csv
 
-# Compare and analyze optimization results
-#  - Use make list-studies for listing all studies
-#  - Use make analyze STUDY=<study_name> for individual analysis
-#  - Use make compare STUDIES='study1 study2 study3' to compare multiple studies
-list-studies:
-	@echo "Press Ctrl+C to exit auto-refresh"
-	@while true; do \
-		clear; \
-		echo "=== Studies List (Auto-refreshing every 5 seconds) ==="; \
-		echo "Last updated: $$(date)"; \
-		echo ""; \
-		uv run -m kaggle_map.optimise list-studies; \
-		echo ""; \
-		echo "Press Ctrl+C to exit..."; \
-		sleep 5; \
-	done
-
-compare:
-	@if [ -z "$(STUDIES)" ]; then \
-		echo "Usage: make compare STUDIES='study1 study2 study3'"; \
-		echo "Example: make compare STUDIES='mlp_20240101_120000 mlp_20240102_140000'"; \
-		exit 1; \
-	fi
-	uv run -m kaggle_map.optimise compare $(STUDIES)
-
-search-llm-models:
+# Compare different embedding models
+search-embeddings:
 	@echo "========================================="
-	@echo "Comparing LLM GGUF Quantization Options"
+	@echo "Embedding Model Comparison (6-hour session)"
+	@echo "Start time: $$(date)"
+	@echo "========================================="
+	@echo ""
+	@echo "Testing 7 embedding models:"
+	@echo "  - MiniLM-L6-v2 (384 dim)"
+	@echo "  - E5-base-v2 (768 dim)"
+	@echo "  - Instructor-base (768 dim)"
+	@echo "  - BGE-base-en-v1.5 (768 dim)"
+	@echo "  - Contriever (768 dim)"
+	@echo "  - Sentence-T5-base (768 dim)"
+	@echo "  - MiniLM-L12-v2 (384 dim)"
+	@echo ""
+	uv run -m kaggle_map.optimise mlp search-embeddings \
+		--trials 70 \
+		--jobs 1 \
+		--timeout 21600
+
+# ============================================================================
+# Hyperparameter Optimization - LLM
+# ============================================================================
+.PHONY: search-llm
+
+# Compare LLM quantization options
+search-llm:
+	@echo "========================================="
+	@echo "LLM GGUF Quantization Comparison"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
 	@echo ""
 	@echo "Testing quantizations:"
-	@echo "  IQ4_XS  (6.55 GB) - Smallest 4-bit"
-	@echo "  IQ4_NL  (6.89 GB) - Non-linear 4-bit"
-	@echo "  Q4_0    (6.91 GB) - Original 4-bit"
-	@echo "  Q4_1    (7.56 GB) - 4-bit with importance"
-	@echo "  Q4_K_S  (6.94 GB) - K-quant small"
-	@echo "  Q4_K_M  (7.30 GB) - K-quant medium (recommended)"
-	@echo "  Q4_K_XL (7.43 GB) - K-quant extra large"
+	@echo "  IQ4_XS  (6.55 GB)"
+	@echo "  IQ4_NL  (6.89 GB)"
+	@echo "  Q4_0    (6.91 GB)"
+	@echo "  Q4_1    (7.56 GB)"
+	@echo "  Q4_K_S  (6.94 GB)"
+	@echo "  Q4_K_M  (7.30 GB) - recommended"
+	@echo "  Q4_K_XL (7.43 GB)"
 	@echo ""
-	@echo "This will evaluate each quantization with 100 samples"
-	@echo "and compare MAP@3 accuracy vs inference speed."
-	@echo ""
-	uv run -m kaggle_map.optimise_llm --sample-size 100
+	uv run -m kaggle_map.optimise llm compare --sample-size 100
 
+# ============================================================================
+# Study Analysis & Visualization
+# ============================================================================
+.PHONY: list-studies dashboard analyze
+
+# List all optimization studies
+list-studies:
+	@uv run -m kaggle_map.optimise list-studies
+
+# Launch interactive Optuna dashboard
+dashboard:
+	@echo "Launching Optuna Dashboard..."
+	@echo "Open http://127.0.0.1:8080 in your browser"
+	@echo "Press Ctrl+C to stop"
+	@echo ""
+	@uv run -m kaggle_map.optimise dashboard
+
+# Analyze a specific study
+# Usage: make analyze STUDY=mlp_20240101_120000
 analyze:
 	@if [ -z "$(STUDY)" ]; then \
 		echo "Usage: make analyze STUDY=<study_name>"; \
-		echo "Example: make analyze STUDY=mlp_20240101_120000"; \
+		echo ""; \
+		echo "First run 'make list-studies' to see available studies"; \
+		echo ""; \
+		echo "Example:"; \
+		echo "  make analyze STUDY=mlp_20240101_120000"; \
 		exit 1; \
 	fi
-	uv run -m kaggle_map.optimise analyze $(STUDY)
+	@uv run -m kaggle_map.optimise mlp analyze $(STUDY)
+
+# ============================================================================
+# Help
+# ============================================================================
+.PHONY: help
+
+help:
+	@echo "Kaggle MAP Competition - Makefile Commands"
+	@echo ""
+	@echo "Development:"
+	@echo "  make dev          - Run linting and type checking"
+	@echo "  make test         - Run fast tests only"
+	@echo "  make test-all     - Run all tests including slow ones"
+	@echo ""
+	@echo "Training & Evaluation:"
+	@echo "  make fit STRATEGY=<name>   - Train a strategy"
+	@echo "  make eval STRATEGY=<name>  - Evaluate a strategy"
+	@echo ""
+	@echo "Hyperparameter Optimization:"
+	@echo "  make search              - MLP hyperparameter search (4h)"
+	@echo "  make search-balanced     - MLP search with balanced dataset (4h)"
+	@echo "  make search-embeddings   - Compare embedding models (6h)"
+	@echo "  make search-llm          - Compare LLM quantizations"
+	@echo ""
+	@echo "Analysis & Visualization:"
+	@echo "  make list-studies        - List all optimization studies"
+	@echo "  make dashboard           - Launch Optuna dashboard"
+	@echo "  make analyze STUDY=<id>  - Analyze specific study"
+	@echo ""
+	@echo "Run 'make <target> STRATEGY=?' for available strategies"
