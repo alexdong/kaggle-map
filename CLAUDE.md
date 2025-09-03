@@ -2,27 +2,20 @@
 @Python.md
 @Makefile
 
-When you are asked to plan, produce a unique PLAN-{descriptive-slug}.md file in `plans` folder. 
-Make sure you include the design decisions, sections and use `[ ]` in front of the TODO items.
-It's often a good idea to list files you plan to change or create, key data structures involved
-and the signatures of key functions. Review @.claude/agents/datastructure.md for guidance.
-When you finish the planning, use osx's `say` command to announce "Plan is ready for review".
+### Development Principles
 
-When you start making modifications, it's important to do so incrementally and test your changes thoroughly.
-Review @.claude/agents/test.md for guidance. Whenever possible, create a failing test before implementing your changes.
-When you finish this step, use `say` to announce "initial implementation complete, now I'll carefully 
-rewrite the code according to your style guidelines".
+Please carefully consider the following principles. They are very different from mainstream software development practices but they are CRITICAL in long term maintainability of the code base. Follow them diligently.
 
-After your code changes have passed testing, don't stop there. Follow the guidelines with one Task each:
-- @.claude/agents/debuggability.md
-- @.claude/agents/observability.md
-- @.claude/agents/pythonic.md
-- @.claude/agents/readability.md
-- @.claude/agents/technicalwriter.md
+#### 1. **Fail Early and Noisily**
+- Use `assert` statements liberally - never try/except or throw
+- Instead of comments, use detailed `loguru` logging to capture flow and variable states.
 
-After incorporating all the feedback from the previous Tasks, always run `make dev`. 
-If there are outstanding issues, use `say` to announce "There are outstanding issues from linting and type checker. 
-I'll carefully consider each issue and ultrathink about how I can fix them properly." 
-Then go ahead and fix the issues. DO NOT attempt to add `# noqa`, `ignore` or even modify the `pyproject.toml` file.
+#### 2. **Can you make it simpler?**
+- After your generate code changes, always rewrite it a few times until you can't make it simpler.
+- Ultrathink about the types and how they flow through functions. 
+- Defensive programming is the main reason for code bloat. Avoid `| None` whenever possible.
 
-Always run `make test` after you've made changes. 
+#### 3. **Test and Type Safety**
+- Use Python 3.13+ features. Avoid deprecated features.
+- 100% type annotations with Pydantic. Parse, don't validate. Let Pydantic handles validation at boundaries
+- Write tests before code. Write tests before fixing bugs. Before working on any task, start with a test.
