@@ -39,6 +39,7 @@ class BaselineStrategy(Strategy):
     correct_answers: dict[QuestionId, Answer]
     category_frequencies: dict[QuestionId, dict[bool, list[Category]]]
     common_misconceptions: dict[QuestionId, Misconception]
+    parameters: ModelParameters | None = None
 
     @property
     def name(self) -> str:

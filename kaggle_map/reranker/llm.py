@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 # Configure structured logging for observability [LG4][LG5][LG6]
 def setup_logging() -> None:
     """Configure structured logging with rich debugging and platform-appropriate paths."""
-    log_dir = Path(PlatformDirs().site_log_dir) / "kaggle_map"
+    log_dir = Path(PlatformDirs(appname="kaggle_map").user_log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "llm_reranker.log"
 
@@ -493,6 +493,8 @@ Only return the labels in a single line. Nothing else."""
 
     # [FE1] Circuit breaker pattern for API resilience
     global _circuit_breaker
+    
+    api_url = "http://localhost:1234/v1/chat/completions"
 
     if not _circuit_breaker.should_attempt_request():
         error_msg = f"Circuit breaker OPEN - skipping API call (failures: {_circuit_breaker.failure_count})"
@@ -500,7 +502,6 @@ Only return the labels in a single line. Nothing else."""
         return RerankingResult(False, [], original_labels, error_msg)
 
     try:
-        api_url = "http://localhost:1234/v1/chat/completions"
         request_logger.debug("Sending LLM API request",
                            api_url=api_url,
                            model=request.model,
@@ -733,7 +734,7 @@ async def process_dataframe_async(df: pd.DataFrame, sample_size: int = 100,
 
         # Create tasks for all rows
         tasks = [
-            process_row_with_semaphore(idx, row)
+            process_row_with_semaphore(int(idx) if not isinstance(idx, int) else idx, row)
             for idx, row in df_sample.iterrows()
         ]
 

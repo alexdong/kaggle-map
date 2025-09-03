@@ -89,8 +89,6 @@ QUANTIZATION_OPTIONS: dict[QuantizationType, float] = {
 
 MODEL_OPTIONS: dict[ModelType, str] = {
     "gemma-3-12b-it": "gemma-3-12b-it",
-    "llama-3.1-8b-instruct": "llama-3.1-8b-instruct",
-    "qwen-2.5-14b-instruct": "qwen-2.5-14b-instruct",
 }
 
 
@@ -210,6 +208,7 @@ class LLMStrategy(Strategy):
                 prompt = self._build_prompt(row)
 
                 start_time = time.time()
+                assert self.llm is not None, "LLM model not loaded"
                 output = self.llm(
                     prompt,
                     max_tokens=30,  # Just enough for "Category:Misconception"
@@ -221,7 +220,9 @@ class LLMStrategy(Strategy):
 
                 logger.debug(f"Inference time for row {row.row_id}: {inference_time:.2f}s")
 
-                response = output["choices"][0]["text"].strip()
+                # Cast to dict to access fields (llama-cpp-python returns iterator/dict)
+                output_dict = dict(output) if hasattr(output, '__iter__') else output  # type: ignore
+                response = output_dict["choices"][0]["text"].strip()
 
                 try:
                     prediction = self._parse_response(response, row)
