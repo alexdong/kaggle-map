@@ -493,7 +493,7 @@ Only return the labels in a single line. Nothing else."""
 
     # [FE1] Circuit breaker pattern for API resilience
     global _circuit_breaker
-    
+
     api_url = "http://localhost:1234/v1/chat/completions"
 
     if not _circuit_breaker.should_attempt_request():

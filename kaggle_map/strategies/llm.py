@@ -77,29 +77,27 @@ type QuantizationType = str
 type ModelType = str
 
 # Type -> size_gb
+# https://huggingface.co/unsloth/gemma-3-12b-it-GGUF
 QUANTIZATION_OPTIONS: dict[QuantizationType, float] = {
-    "IQ4_XS": 6.55,
-    "IQ4_NL": 6.89,
-    "Q4_0": 6.91,
-    "Q4_1": 7.56,
     "Q4_K_S": 6.94,
     "Q4_K_M": 7.30,
     "Q4_K_XL": 7.43,
+    "Q5_K_XL": 8.46,
+    "Q6_K_XL": 10.60,
 }
 
-MODEL_OPTIONS: dict[ModelType, str] = {
-    "gemma-3-12b-it": "gemma-3-12b-it",
-}
+MODEL_OPTIONS: list[ModelType] = [
+    "gemma-3-12b-it",
+]
 
 
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
     def __init__(
-        self, 
+        self,
         model_type: ModelType = "gemma-3-12b-it",
         quantization_type: QuantizationType = "Q4_K_M",
-        model_path: str | None = None
     ) -> None:
         """Initialize strategy with lazy model loading.
 
@@ -108,12 +106,8 @@ class LLMStrategy(Strategy):
             quantization_type: Quantization type (e.g., "Q4_K_M")
             model_path: Explicit path to GGUF model file. If provided, overrides model_type and quantization_type.
         """
-        if model_path is not None:
-            self.model_path = model_path
-        else:
-            model_name = MODEL_OPTIONS.get(model_type, model_type)
-            self.model_path = f"models/gguf/{model_name}-{quantization_type}.gguf"
-        
+        self.model_path = f"models/gguf/{model_type}-{quantization_type}.gguf"
+
         self.model_type = model_type
         self.quantization_type = quantization_type
         self.llm: Llama | None = None
@@ -221,19 +215,17 @@ class LLMStrategy(Strategy):
                 logger.debug(f"Inference time for row {row.row_id}: {inference_time:.2f}s")
 
                 # Cast to dict to access fields (llama-cpp-python returns iterator/dict)
-                output_dict = dict(output) if hasattr(output, '__iter__') else output  # type: ignore
+                output_dict = dict(output) if hasattr(output, "__iter__") else output  # type: ignore
                 response = output_dict["choices"][0]["text"].strip()
 
-                try:
-                    prediction = self._parse_response(response, row)
-                    pred_obj = Prediction(category_misconception=prediction)
-                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[pred_obj]))
-                except ValueError as e:
-                    logger.error(f"Failed to parse response for row {row.row_id}: {e}")
-                    fallback = "False_Misconception:Unknown"
-                    logger.warning(f"Using fallback prediction for row {row.row_id}: {fallback}")
-                    fallback_pred = Prediction(category_misconception=fallback)
-                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[fallback_pred]))
+                prediction = self._parse_response(response, row)
+                # Parse category and misconception from "Category:Misconception" format
+                if ":" in prediction:
+                    category, misconception = prediction.split(":", 1)
+                else:
+                    category, misconception = prediction, "NA"
+                pred_obj = Prediction(category=category, misconception=misconception)
+                results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[pred_obj]))
 
         logger.info(f"Completed batch processing of {len(results)} predictions")
         return results
@@ -245,9 +237,8 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
-        model_type: ModelType = "gemma-3-12b-it",
-        quantization_type: QuantizationType = "Q4_K_M",
-        model_path: str | None = None,
+        model_type: str = "gemma-3-12b-it",
+        quantization_type: str = "Q4_K_M"
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
         logger.info("Fitting LLM strategy")
@@ -269,8 +260,7 @@ class LLMStrategy(Strategy):
 
         strategy = cls(
             model_type=model_type,
-            quantization_type=quantization_type,
-            model_path=model_path
+            quantization_type=quantization_type
         )
         strategy.correct_answers = correct_answers
         strategy.misconceptions_by_question = misconceptions_by_question
@@ -309,9 +299,10 @@ class LLMStrategy(Strategy):
 
         strategy = cls(
             model_type=state.get("model_type", "gemma-3-12b-it"),
-            quantization_type=state.get("quantization_type", "Q4_K_M"),
-            model_path=state.get("model_path")
+            quantization_type=state.get("quantization_type", "Q4_K_M")
         )
+        if "model_path" in state:
+            strategy.model_path = state["model_path"]
         strategy.correct_answers = state["correct_answers"]
         strategy.misconceptions_by_question = state["misconceptions_by_question"]
 
