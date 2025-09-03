@@ -10,6 +10,7 @@ dev:
 	uv run ruff check . --fix --unsafe-fixes
 	uv run ruff format .
 	uv run ty check .
+	uv run pyrefly check
 
 test:
 	# Run fast tests only (excludes slow integration tests)
