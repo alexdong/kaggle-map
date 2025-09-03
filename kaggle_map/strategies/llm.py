@@ -24,6 +24,7 @@ from kaggle_map.core.models import (
     Answer,
     EvaluationRow,
     Misconception,
+    Prediction,
     QuestionId,
     SubmissionRow,
 )
@@ -73,6 +74,7 @@ Category:Misconception
 
 
 type QuantizationType = str
+type ModelType = str
 
 # Type -> size_gb
 QUANTIZATION_OPTIONS: dict[QuantizationType, float] = {
@@ -85,19 +87,38 @@ QUANTIZATION_OPTIONS: dict[QuantizationType, float] = {
     "Q4_K_XL": 7.43,
 }
 
+MODEL_OPTIONS: dict[ModelType, str] = {
+    "gemma-3-12b-it": "gemma-3-12b-it",
+    "llama-3.1-8b-instruct": "llama-3.1-8b-instruct",
+    "qwen-2.5-14b-instruct": "qwen-2.5-14b-instruct",
+}
 
 
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
-    def __init__(self, model_path: str | None = None) -> None:
+    def __init__(
+        self, 
+        model_type: ModelType = "gemma-3-12b-it",
+        quantization_type: QuantizationType = "Q4_K_M",
+        model_path: str | None = None
+    ) -> None:
         """Initialize strategy with lazy model loading.
 
         Args:
-            model_path: Path to GGUF model file. If None, uses default Q4_K_M model.
+            model_type: Type of model to use (e.g., "gemma-3-12b-it")
+            quantization_type: Quantization type (e.g., "Q4_K_M")
+            model_path: Explicit path to GGUF model file. If provided, overrides model_type and quantization_type.
         """
-        self.model_path = model_path or "models/gguf/gemma-3-12b-it-Q4_K_M.gguf"
-        self.llm = None
+        if model_path is not None:
+            self.model_path = model_path
+        else:
+            model_name = MODEL_OPTIONS.get(model_type, model_type)
+            self.model_path = f"models/gguf/{model_name}-{quantization_type}.gguf"
+        
+        self.model_type = model_type
+        self.quantization_type = quantization_type
+        self.llm: Llama | None = None
         self.correct_answers: dict[QuestionId, Answer] = {}
         self.misconceptions_by_question: dict[QuestionId, list[Misconception]] = {}
 
@@ -204,12 +225,14 @@ class LLMStrategy(Strategy):
 
                 try:
                     prediction = self._parse_response(response, row)
-                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[prediction]))
+                    pred_obj = Prediction(category_misconception=prediction)
+                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[pred_obj]))
                 except ValueError as e:
                     logger.error(f"Failed to parse response for row {row.row_id}: {e}")
                     fallback = "False_Misconception:Unknown"
                     logger.warning(f"Using fallback prediction for row {row.row_id}: {fallback}")
-                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[fallback]))
+                    fallback_pred = Prediction(category_misconception=fallback)
+                    results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[fallback_pred]))
 
         logger.info(f"Completed batch processing of {len(results)} predictions")
         return results
@@ -221,6 +244,8 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
+        model_type: ModelType = "gemma-3-12b-it",
+        quantization_type: QuantizationType = "Q4_K_M",
         model_path: str | None = None,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
@@ -241,7 +266,11 @@ class LLMStrategy(Strategy):
         misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
         logger.info(f"Extracted misconceptions for {len(misconceptions_by_question)} questions")
 
-        strategy = cls(model_path=model_path)
+        strategy = cls(
+            model_type=model_type,
+            quantization_type=quantization_type,
+            model_path=model_path
+        )
         strategy.correct_answers = correct_answers
         strategy.misconceptions_by_question = misconceptions_by_question
 
@@ -262,6 +291,8 @@ class LLMStrategy(Strategy):
             "correct_answers": self.correct_answers,
             "misconceptions_by_question": self.misconceptions_by_question,
             "model_path": self.model_path,
+            "model_type": self.model_type,
+            "quantization_type": self.quantization_type,
         }
 
         with filepath.open("wb") as f:
@@ -275,7 +306,11 @@ class LLMStrategy(Strategy):
         with filepath.open("rb") as f:
             state = pickle.load(f)
 
-        strategy = cls(model_path=state.get("model_path"))
+        strategy = cls(
+            model_type=state.get("model_type", "gemma-3-12b-it"),
+            quantization_type=state.get("quantization_type", "Q4_K_M"),
+            model_path=state.get("model_path")
+        )
         strategy.correct_answers = state["correct_answers"]
         strategy.misconceptions_by_question = state["misconceptions_by_question"]
 
@@ -284,7 +319,7 @@ class LLMStrategy(Strategy):
     @classmethod
     def evaluate_on_split(
         cls,
-        model: "LLMStrategy",
+        model: Strategy,
         *,
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,

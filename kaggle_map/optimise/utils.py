@@ -116,12 +116,13 @@ def get_trial_statistics(study: optuna.Study) -> dict:
         return {}
 
     values = [t.value for t in completed_trials]
+    values_array = np.array(values, dtype=np.float64)
 
     return {
         "n_completed": len(completed_trials),
         "n_total": len(study.trials),
-        "mean": np.mean(values),
-        "std": np.std(values),
+        "mean": float(np.mean(values_array)),
+        "std": float(np.std(values_array)),
         "min": min(values),
         "max": max(values),
     }

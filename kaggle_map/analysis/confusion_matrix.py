@@ -54,7 +54,7 @@ def build_misconception_matrix(
         all_misconceptions.add(actual)
         all_misconceptions.add(pred)
 
-    labels = sorted(all_misconceptions)
+    labels: list[str] = sorted(all_misconceptions)
     label_to_idx = {label: idx for idx, label in enumerate(labels)}
 
     # Build matrix

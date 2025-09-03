@@ -103,7 +103,7 @@ class BaselineStrategy(Strategy):
                 json.dump(parameters.model_dump(), f, indent=2)
 
     @classmethod
-    def load(cls, filepath: Path) -> tuple["BaselineStrategy", ModelParameters | None]:
+    def load(cls, filepath: Path) -> "BaselineStrategy":
         """Load model and its parameters if available."""
         logger.info(f"Loading baseline model from {filepath}")
         assert filepath.exists(), f"Model file not found: {filepath}"
@@ -113,17 +113,16 @@ class BaselineStrategy(Strategy):
         model = cls.from_dict(data)
 
         # Try to load parameters
-        params = None
         params_path = filepath.with_suffix(".params.json")
         if params_path.exists():
             logger.info(f"Loading model parameters from {params_path}")
             with params_path.open("r") as f:
                 params_data = json.load(f)
-                params = ModelParameters.model_validate(params_data)
+                model.parameters = ModelParameters.model_validate(params_data)
         else:
             logger.warning(f"No parameters file found at {params_path}")
 
-        return model, params
+        return model
 
     # Implementation methods
 
@@ -143,7 +142,7 @@ class BaselineStrategy(Strategy):
     @classmethod
     def evaluate_on_split(
         cls,
-        model: "BaselineStrategy",
+        model: Strategy,
         *,
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
@@ -194,10 +193,10 @@ class BaselineStrategy(Strategy):
 
         return results
 
-    def _apply_misconception_suffix(self, categories: list[Category], misconception: Misconception) -> list[Prediction]:
+    def _apply_misconception_suffix(self, categories: list[Category], misconception: Misconception | None) -> list[Prediction]:
         result = []
         for category in categories:
-            if category.is_misconception and misconception != "NA":
+            if category.is_misconception and misconception and misconception != "NA":
                 # Misconception categories get the actual misconception name
                 result.append(Prediction(category=category, misconception=misconception))
             else:

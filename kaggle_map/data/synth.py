@@ -16,7 +16,7 @@ import requests
 from jinja2 import Template
 from loguru import logger
 from rich.console import Console
-from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TaskID, TextColumn, TimeRemainingColumn
 
 # Constants
 DEBUG_ROW_LIMIT = 5
@@ -193,7 +193,7 @@ class SynthDataGenerator:
     def _update_progress(
         self,
         current_row: int,
-        task: int,
+        task: TaskID,
         progress: Progress,
         total_output_rows: int,
         f: TextIO,
@@ -214,7 +214,7 @@ class SynthDataGenerator:
         original_rows: list[dict[str, str]],
         writer: csv.DictWriter,
         progress: Progress,
-        task: int,
+        task: TaskID,
         total_output_rows: int,
         f: TextIO,
     ) -> None:
