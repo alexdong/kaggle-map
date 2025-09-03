@@ -1,5 +1,3 @@
-"""Hyperparameter optimization for kaggle-map strategies."""
-
 import click
 from loguru import logger
 
@@ -8,12 +6,11 @@ from .utils import STORAGE_URL, list_all_studies
 
 @click.group()
 def cli() -> None:
-    """Hyperparameter optimization for kaggle-map strategies."""
+    pass
 
 
 @click.command("list-studies")
 def list_studies() -> None:
-    """List all optimization studies."""
     studies = list_all_studies()
 
     if not studies:
@@ -30,7 +27,6 @@ def list_studies() -> None:
 
 @click.command()
 def dashboard() -> None:
-    """Launch Optuna dashboard for interactive visualization."""
     import subprocess
     import sys
 
@@ -59,7 +55,7 @@ from . import llm, mlp
 # Register MLP commands
 @click.group("mlp")
 def mlp_group() -> None:
-    """MLP strategy optimization commands."""
+    pass
 
 
 mlp_group.add_command(mlp.search)
@@ -69,7 +65,7 @@ mlp_group.add_command(mlp.analyze)
 # Register LLM commands
 @click.group("llm")
 def llm_group() -> None:
-    """LLM strategy optimization commands."""
+    pass
 
 
 llm_group.add_command(llm.compare)
@@ -82,7 +78,6 @@ cli.add_command(dashboard)
 
 
 def main() -> None:
-    """Entry point for the optimise CLI."""
     cli()
 
 

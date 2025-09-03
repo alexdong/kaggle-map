@@ -48,13 +48,13 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
+import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
-import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
@@ -155,8 +155,13 @@ class QuestionSpecificMLP(nn.Module):
         # Use configurable trunk_layers if provided, otherwise use default scaling
         if hasattr(config, "trunk_layers") and config.trunk_layers:
             # Hyperparameter search case - use provided architecture
-            dims = config.trunk_layers
-            assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"
+            trunk_layers = config.trunk_layers
+            if isinstance(trunk_layers, list | tuple) and len(trunk_layers) > 0:
+                dims = list(trunk_layers)  # Ensure it's a list
+                assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"
+            else:
+                # Fallback if trunk_layers is not iterable or empty
+                dims = [input_dim, 1024, 512, 256, 192]
         # Default case - scale based on embedding dimension
         elif embedding_dim == 384:  # MINI_LM model
             dims = [input_dim, 512, 256, 192, 128]
@@ -293,7 +298,7 @@ class MLPStrategy(Strategy):
 
     model: QuestionSpecificMLP
     correct_answers: dict[QuestionId, Answer]
-    tokenizer: object  # SentenceTransformer instance
+    tokenizer: Any  # SentenceTransformer instance (avoid import for speed)
     device: torch.device
     parameters: ModelParameters | None = None
 
@@ -320,31 +325,29 @@ class MLPStrategy(Strategy):
             raise ImportError(msg)
 
         # Always use focused exploitation strategy for 4-hour run
-        if True:  # Keep structure for easy switching back later
-            return {
-                # Dense sampling around optimal LR range [8e-5, 3e-4]
-                "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
-                # Focus on proven batch sizes with fine gradations
-                "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
-                # Fine-grained dropout exploration around optimum
-                "dropout": trial.suggest_float("dropout", 0.30, 0.42),
-                # Heavy bias toward xlarge (85%), some large (10%), rare xxlarge (5%)
-                "architecture_size": trial.suggest_categorical(
-                    "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]
-                ),
-                # Both optimizers with AdamW preference
-                "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adamw", "adamw", "adam"]),
-                # Focus on promising weight decay range
-                "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-                # Test all successful activations
-                "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
-                # Focus on successful schedulers
-                "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
-                # Optimal patience range
-                "early_stopping_patience": trial.suggest_int("patience", 16, 22),
-                "epochs": trial.suggest_int("epochs", 28, 36),
-            }
-        return None
+        return {
+            # Dense sampling around optimal LR range [8e-5, 3e-4]
+            "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
+            # Focus on proven batch sizes with fine gradations
+            "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
+            # Fine-grained dropout exploration around optimum
+            "dropout": trial.suggest_float("dropout", 0.30, 0.42),
+            # Heavy bias toward xlarge (85%), some large (10%), rare xxlarge (5%)
+            "architecture_size": trial.suggest_categorical(
+                "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]
+            ),
+            # Both optimizers with AdamW preference
+            "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adamw", "adamw", "adam"]),
+            # Focus on promising weight decay range
+            "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
+            # Test all successful activations
+            "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
+            # Focus on successful schedulers
+            "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
+            # Optimal patience range
+            "early_stopping_patience": trial.suggest_int("patience", 16, 22),
+            "epochs": trial.suggest_int("epochs", 28, 36),
+        }
 
     @classmethod
     def get_embedding_search_space(cls, trial) -> dict[str, Any]:
@@ -539,6 +542,9 @@ class MLPStrategy(Strategy):
         if total_samples > 0:
             # Keep gradients for training
             loss = total_loss / total_samples
+            # Ensure loss is a tensor (total_loss is accumulated from tensor losses)
+            if not isinstance(loss, torch.Tensor):
+                loss = torch.tensor(loss, requires_grad=True)
             return loss, int(batch_embeddings.size(0))
         return None, 0
 
@@ -583,7 +589,9 @@ class MLPStrategy(Strategy):
 
         if total_samples > 0:
             # Detach for validation to save memory
-            loss = (total_loss / total_samples).detach()
+            loss = total_loss / total_samples
+            # Ensure loss is a tensor before calling detach
+            loss = loss.detach() if isinstance(loss, torch.Tensor) else torch.tensor(loss)
             return loss, int(batch_embeddings.size(0))
         return None, 0
 
@@ -795,6 +803,9 @@ class MLPStrategy(Strategy):
         # Finish wandb run
         wandb.finish()
 
+        # Ensure model is the correct type
+        assert isinstance(model, QuestionSpecificMLP), f"Expected QuestionSpecificMLP, got {type(model)}"
+
         return cls(
             model=model,
             correct_answers=correct_answers,
@@ -881,7 +892,7 @@ class MLPStrategy(Strategy):
                     raise ValueError(msg)
                 checkpoint_path = max(checkpoints, key=lambda p: p.stat().st_mtime)
 
-            checkpoint = torch.load(checkpoint_path, weights_only=False)
+            checkpoint = torch.load(str(checkpoint_path), weights_only=False)
             config = checkpoint["config"]
 
             # Get embedding dimension from saved model state dict

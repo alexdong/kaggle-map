@@ -155,6 +155,9 @@ def main() -> None:
 
     for question_id in sorted(predictions_df["QuestionId"].unique()):
         df_question = predictions_df[predictions_df["QuestionId"] == question_id]
+        # Ensure we have a DataFrame, not a Series
+        if not isinstance(df_question, pd.DataFrame):
+            continue
         result = analyze_question(df_question)
 
         # Display results

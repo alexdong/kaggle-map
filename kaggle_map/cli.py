@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import click
 from loguru import logger
@@ -312,6 +313,7 @@ def _extract_params_from_model(
     """Extract parameters from model object."""
     if hasattr(model, "parameters") and model.parameters:
         params = model.parameters
+        assert isinstance(params, ModelParameters), f"Expected ModelParameters, got {type(params)}"
         console.print(f"Using saved parameters: train_split={params.train_split}, random_seed={params.random_seed}")
         return params.train_split, params.random_seed
     return train_split, random_seed
@@ -329,9 +331,16 @@ def _run_evaluation(
     """Run evaluation and display results."""
     assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
 
-    eval_results = strategy_class.evaluate_on_split(
-        model, train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
-    )
+    if model is not None:
+        eval_results = strategy_class.evaluate_on_split(
+            model, train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
+        )
+    else:
+        # For MLP strategy, call with None model to use checkpoint loading
+        # Cast None to Strategy for type checking - MLP strategy accepts None
+        eval_results = strategy_class.evaluate_on_split(
+            cast("Strategy", None), train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
+        )
 
     console.print("\n[bold]Evaluation results:[/bold]")
     for key, value in eval_results.items():
@@ -343,7 +352,7 @@ def _run_evaluation(
 
 def _handle_predict(params: CLIParams) -> None:
     """Handle the predict action."""
-    model_file = _determine_model_file_for_predict(params)
+    model_file = _determine_model_file_for_predict(params.strategy, params.model_path, params.console)
 
     with params.console.status(f"[bold blue]Loading {params.strategy} model..."):
         params.strategy_class.load(model_file)

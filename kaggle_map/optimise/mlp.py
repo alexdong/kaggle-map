@@ -1,7 +1,6 @@
-"""MLP strategy hyperparameter optimization."""
-
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import click
 import optuna
@@ -25,21 +24,10 @@ from .utils import (
 
 def objective_function(
     trial: optuna.Trial,
-    strategy_class: type,
+    strategy_class: Any,  # Use Any to avoid type checking issues
     train_data_path: str | None = None,
     search_type: str = "regular"
 ) -> float:
-    """Objective function for MLP hyperparameter optimization.
-
-    Args:
-        trial: Optuna trial
-        strategy_class: Strategy class to optimize
-        train_data_path: Optional path to training data
-        search_type: Type of search ("regular" or "embedding")
-
-    Returns:
-        MAP@3 score for the trial
-    """
 
     # Get hyperparameters from strategy based on search type
     if search_type == "embedding":
@@ -99,6 +87,9 @@ def objective_function(
     finally:
         cleanup_after_trial()
 
+    # This should never be reached due to return/raise above, but pyrefly requires it
+    return 0.0
+
 
 def run_search(
     strategy_name: str,
@@ -108,19 +99,6 @@ def run_search(
     train_data_path: str | None = None,
     search_type: str = "regular",
 ) -> optuna.Study:
-    """Run hyperparameter search for MLP strategy.
-
-    Args:
-        strategy_name: Name of the strategy to optimize
-        n_trials: Number of trials to run
-        n_jobs: Number of parallel jobs
-        timeout: Optional timeout in seconds
-        train_data_path: Optional path to training data
-        search_type: Type of search ("regular" or "embedding")
-
-    Returns:
-        Completed Optuna study
-    """
 
     search_desc = "embedding model comparison" if search_type == "embedding" else "hyperparameter"
     logger.info(f"Starting {search_desc} search for {strategy_name}")
@@ -167,7 +145,7 @@ def run_search(
 
 @click.group()
 def cli() -> None:
-    """MLP hyperparameter optimization commands."""
+    pass
 
 
 @click.command()
@@ -176,7 +154,6 @@ def cli() -> None:
 @click.option("--timeout", default=None, type=int, help="Timeout in seconds")
 @click.option("--train-data", default=None, help="Path to training data CSV")
 def search(trials: int, jobs: int, timeout: int | None, train_data: str | None) -> None:
-    """Run hyperparameter search for MLP strategy."""
     study = run_search("mlp", trials, jobs, timeout, train_data, "regular")
 
     print("\nSearch completed!")
@@ -191,11 +168,6 @@ def search(trials: int, jobs: int, timeout: int | None, train_data: str | None) 
 @click.option("--timeout", default=21600, type=int, help="Timeout in seconds (default: 6 hours)")
 @click.option("--train-data", default=None, help="Path to training data CSV")
 def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | None) -> None:
-    """Run embedding model comparison search for MLP strategy.
-
-    Tests different embedding models with fixed hyperparameters to find
-    the best embedding model for the task.
-    """
     logger.info("=" * 60)
     logger.info("EMBEDDING MODEL COMPARISON STUDY")
     logger.info("=" * 60)
@@ -225,7 +197,6 @@ def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | No
 @click.command()
 @click.argument("study")
 def analyze(study: str) -> None:
-    """Analyze a single optimization study."""
     try:
         study_obj = optuna.load_study(study_name=study, storage=STORAGE_URL)
 
@@ -261,7 +232,6 @@ cli.add_command(analyze)
 
 
 def main() -> None:
-    """Entry point for MLP optimization CLI."""
     cli()
 
 

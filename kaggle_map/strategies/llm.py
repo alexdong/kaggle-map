@@ -6,6 +6,7 @@ XML-structured prompts with context from training data.
 """
 
 import pickle
+import random
 import re
 import time
 from pathlib import Path
@@ -23,7 +24,6 @@ from kaggle_map.core.models import (
     Answer,
     EvaluationRow,
     Misconception,
-    Prediction,
     QuestionId,
     SubmissionRow,
 )
@@ -270,8 +270,6 @@ class LLMStrategy(Strategy):
     @classmethod
     def load(cls, filepath: Path) -> "LLMStrategy":
         """Load strategy state from disk."""
-        import pickle
-
         logger.info(f"Loading LLM strategy state from {filepath}")
 
         with filepath.open("rb") as f:
@@ -306,7 +304,6 @@ class LLMStrategy(Strategy):
         )
 
         if sample_size is not None and sample_size < len(val_data):
-            import random
 
             random.seed(random_seed)
             val_data = random.sample(val_data, sample_size)
@@ -329,35 +326,6 @@ class LLMStrategy(Strategy):
 
         predicted = {pred.row_id: pred.predicted_categories for pred in predictions}
 
-        map_score = calculate_map_at_3(predicted, ground_truth)
-
-        logger.info(f"Evaluation complete - MAP@3: {map_score:.4f}")
-
-        return {"map_at_3": map_score, "num_samples": len(val_data)}
-            logger.info(f"Sampled {sample_size} validation rows for evaluation")
-
-        # Convert to evaluation rows
-        eval_rows = [
-            EvaluationRow(
-                row_id=row.row_id,
-                question_id=row.question_id,
-                question_text=row.question_text,
-                mc_answer=row.mc_answer,
-                student_explanation=row.student_explanation,
-            )
-            for row in val_data
-        ]
-
-        # Make predictions in batches
-        predictions = model.predict_batch(eval_rows, batch_size=8)
-
-        # Extract ground truth
-        ground_truth = {row.row_id: str(row.prediction) for row in val_data}
-
-        # Convert predictions to format for metric calculation
-        predicted = {pred.row_id: pred.predicted_categories for pred in predictions}
-
-        # Calculate MAP@3
         map_score = calculate_map_at_3(predicted, ground_truth)
 
         logger.info(f"Evaluation complete - MAP@3: {map_score:.4f}")

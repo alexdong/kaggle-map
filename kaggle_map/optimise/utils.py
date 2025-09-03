@@ -1,5 +1,3 @@
-"""Common utilities for hyperparameter optimization."""
-
 import json
 from datetime import datetime
 from pathlib import Path
@@ -14,16 +12,6 @@ STORAGE_URL = "sqlite:///kaggle_map/optimise/optuna.db"
 
 
 def create_study(study_name: str, direction: str = "maximize", storage_url: str = STORAGE_URL) -> optuna.Study:
-    """Create or load an Optuna study with standard configuration.
-
-    Args:
-        study_name: Name for the study
-        direction: Optimization direction ("maximize" or "minimize")
-        storage_url: Database storage URL
-
-    Returns:
-        Configured Optuna study
-    """
     logger.info(f"Creating/loading study: {study_name}")
 
     return optuna.create_study(
@@ -40,18 +28,12 @@ def create_study(study_name: str, direction: str = "maximize", storage_url: str 
 
 
 def clear_gpu_memory() -> None:
-    """Clear GPU memory cache if CUDA is available."""
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
 
 
 def track_gpu_memory(trial: optuna.Trial) -> None:
-    """Track and log GPU memory usage for a trial.
-
-    Args:
-        trial: Optuna trial to track memory for
-    """
     if torch.cuda.is_available():
         peak_memory = torch.cuda.max_memory_allocated() / 1024**3
         trial.set_user_attr("peak_gpu_memory_gb", peak_memory)
@@ -59,15 +41,6 @@ def track_gpu_memory(trial: optuna.Trial) -> None:
 
 
 def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
-    """Handle Out of Memory errors during trial execution.
-
-    Args:
-        trial: Optuna trial that encountered OOM
-        error: The OOM exception
-
-    Returns:
-        Poor score (0.0) to avoid this configuration
-    """
     if torch.cuda.is_available():
         logger.error(f"Trial {trial.number} OOM: {error}")
         logger.error(f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f}GB")
@@ -81,7 +54,6 @@ def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
 
 
 def cleanup_after_trial() -> None:
-    """Clean up resources after a trial completes."""
     # Close wandb if it's running
     try:
         import wandb
@@ -95,15 +67,6 @@ def cleanup_after_trial() -> None:
 
 
 def build_wandb_run_name(trial: optuna.Trial, hyperparams: dict) -> str:
-    """Build a descriptive wandb run name from trial and hyperparameters.
-
-    Args:
-        trial: Optuna trial
-        hyperparams: Dictionary of hyperparameters
-
-    Returns:
-        Formatted wandb run name
-    """
     trial_num = trial.number
     trial_info = f"trial_{trial_num}"
     key_params = []
@@ -126,15 +89,6 @@ def build_wandb_run_name(trial: optuna.Trial, hyperparams: dict) -> str:
 
 
 def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
-    """Save the best configuration from a study to JSON.
-
-    Args:
-        study: Completed Optuna study
-        strategy_name: Name of the strategy
-
-    Returns:
-        Path to saved configuration file
-    """
     best_config_path = Path(f"models/{strategy_name}_best_config.json")
     best_config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -156,14 +110,6 @@ def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
 
 
 def get_trial_statistics(study: optuna.Study) -> dict:
-    """Get basic statistics from completed trials.
-
-    Args:
-        study: Optuna study to analyze
-
-    Returns:
-        Dictionary with statistics
-    """
     completed_trials = [t for t in study.trials if t.value is not None]
 
     if not completed_trials:
@@ -181,16 +127,7 @@ def get_trial_statistics(study: optuna.Study) -> dict:
     }
 
 
-def generate_study_summary(study: optuna.Study, output_dir: Path = Path("logs")) -> Path:
-    """Generate a markdown summary of the optimization study.
-
-    Args:
-        study: Optuna study to summarize
-        output_dir: Directory to save summary to
-
-    Returns:
-        Path to generated summary file
-    """
+def generate_study_summary(study: optuna.Study, output_dir: Path = Path("logs")) -> Path | None:
     if len(study.trials) == 0:
         logger.warning(f"Study {study.study_name} has no trials, skipping summary")
         return None
@@ -276,14 +213,6 @@ def generate_study_summary(study: optuna.Study, output_dir: Path = Path("logs"))
 
 
 def list_all_studies(storage_url: str = STORAGE_URL) -> list[str]:
-    """List all study names in the database.
-
-    Args:
-        storage_url: Database storage URL
-
-    Returns:
-        List of study names
-    """
     try:
         storage = optuna.storages.RDBStorage(url=storage_url)
         study_summaries = storage.get_all_studies()

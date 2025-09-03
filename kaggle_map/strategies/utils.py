@@ -11,12 +11,12 @@ from typing import Any, Protocol
 
 import numpy as np
 import torch
+import wandb
 from loguru import logger
 from pydantic import BaseModel
 from torch import nn
 from torch.utils.data import DataLoader
 
-import wandb
 from kaggle_map.core.models import TrainingRow
 
 # Data split constants
@@ -227,19 +227,11 @@ class TorchStrategy(Protocol):
 
     def save(self, filepath: Path) -> None:
         """Save the strategy."""
+        ...
 
     @classmethod
     def load(cls, filepath: Path) -> Any:
         """Load the strategy."""
-        """Called at the start of each epoch."""
-        ...
-
-    def on_epoch_end(self, epoch: int, metrics: dict[str, float]) -> None:
-        """Called at the end of each epoch with metrics."""
-        ...
-
-    def on_training_end(self) -> None:
-        """Called when training completes."""
         ...
 
 
@@ -287,7 +279,7 @@ class CheckpointManager:
         """Save a training checkpoint."""
         checkpoint_path = self.checkpoint_dir / f"{self.model_name}_checkpoint_epoch_{epoch}.pt"
 
-        checkpoint = {
+        checkpoint: dict[str, Any] = {
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
@@ -317,7 +309,7 @@ class CheckpointManager:
             self.best_metric = metric_value
             best_path = self.checkpoint_dir / f"{self.model_name}_best.pt"
 
-            checkpoint = {
+            checkpoint: dict[str, Any] = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
@@ -698,7 +690,7 @@ def extract_question_predictions(training_data: list) -> dict[int, list[str]]:
 def load_embeddings(
     embeddings_path: Path | None,
     training_data: list[Any],
-    train_df: object | None = None,
+    train_df: Any | None = None,  # Use Any instead of object to allow DataFrame methods
     compute_fn: Callable[[list[Any]], tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Load or compute embeddings for training data.
@@ -789,7 +781,7 @@ def train_torch_model(
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
 
     # Training history
-    history = {
+    history: dict[str, Any] = {
         "train_loss": [],
         "val_loss": [],
         "epochs": [],
@@ -910,11 +902,11 @@ def save_torch_strategy(
 
 
 def load_torch_strategy(
-    cls: type[TorchStrategy],
+    cls: type,  # Use generic type to avoid Protocol constraint
     filepath: Path,
     *,
     load_params: bool = True,
-) -> TorchStrategy:
+) -> Any:
     """Load a PyTorch-based strategy from disk.
 
     Args:
