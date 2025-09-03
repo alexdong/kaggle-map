@@ -9,11 +9,13 @@ Please carefully consider the following principles. They are very different from
 #### 1. **Fail Early and Noisily**
 - Use `assert` statements liberally - never try/except or throw
 - Instead of comments, use detailed `loguru` logging to capture flow and variable states.
+- Use `if ...: return` for early exits or crashes. Keep the code flat.
 
 #### 2. **Can you make it simpler?**
 - After your generate code changes, always rewrite it a few times until you can't make it simpler.
 - Ultrathink about the types and how they flow through functions. 
 - Defensive programming is the main reason for code bloat. Avoid `| None` whenever possible.
+- Use whitespace effectively to improve readability. Group related code blocks together.
 
 #### 3. **Test and Type Safety**
 - Use Python 3.13+ features. Avoid deprecated features.
