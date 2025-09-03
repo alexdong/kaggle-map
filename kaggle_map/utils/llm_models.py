@@ -1,0 +1,223 @@
+"""Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
+
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+
+from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
+from loguru import logger
+from rich.console import Console
+from rich.table import Table
+
+type QuantizationType = str
+type ModelType = str
+
+# Available quantization options
+QUANTIZATION_OPTIONS: list[QuantizationType] = [
+    "Q4_K_XL",
+    "Q5_K_XL",
+    "Q6_K_XL",
+]
+
+# Model configurations with their HuggingFace patterns
+MODEL_CONFIGS = {
+    "gemma-3-12b-it": {
+        "repo": "unsloth/gemma-3-12b-it-GGUF",
+        "filename_pattern": "gemma-3-12b-it-UD-{quant}.gguf",
+    },
+    "Qwen3-14B": {
+        "repo": "unsloth/Qwen3-14B-GGUF",
+        "filename_pattern": "Qwen3-14B-UD-{quant}.gguf",
+    },
+}
+
+# Available model options
+MODEL_OPTIONS: list[ModelType] = list(MODEL_CONFIGS.keys())
+
+
+@dataclass
+class LLMConfig:
+    """Configuration for LLM model loading and inference."""
+
+    model_type: ModelType
+    quantization_type: QuantizationType
+    n_ctx: int = 4096
+    n_batch: int = 512
+    n_gpu_layers: int = -1
+    n_threads: int = 8
+    verbose: bool = False
+
+
+def get_model_path(model_type: ModelType, quantization_type: QuantizationType) -> Path:
+    """Get the local path for a GGUF model file."""
+    return Path(f"models/gguf/{model_type}-{quantization_type}.gguf")
+
+
+def download_model(model_type: ModelType, quantization_type: QuantizationType) -> Path:
+    """Download GGUF model from Hugging Face Hub if it doesn't exist."""
+    model_path = get_model_path(model_type, quantization_type)
+
+    if model_path.exists():
+        logger.info(f"Model already exists: {model_path}")
+        return model_path
+
+    logger.info(f"Model not found locally: {model_path}")
+
+    # Get model configuration
+    config = MODEL_CONFIGS.get(model_type)
+    assert config, f"Unknown model type: {model_type}"
+
+    repo_id = config["repo"]
+    filename = config["filename_pattern"].format(quant=quantization_type)
+
+    logger.info(f"Downloading {filename} from {repo_id}")
+
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Download model
+    downloaded_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        local_dir=model_path.parent,
+        local_dir_use_symlinks=False,  # Copy file instead of symlink
+    )
+
+    # Move to expected location if needed
+    if downloaded_path != str(model_path):
+        Path(downloaded_path).rename(model_path)
+
+    logger.info(f"Model downloaded successfully: {model_path}")
+    return model_path
+
+
+@contextmanager
+def load_llm_model(config: LLMConfig) -> Iterator[Llama]:
+    """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
+    model_path = download_model(config.model_type, config.quantization_type)
+    logger.info(f"Loading GGUF model from {model_path}")
+    assert model_path.exists(), f"Model file not found after download: {model_path}"
+
+    llm = Llama(
+        model_path=str(model_path),
+        n_ctx=config.n_ctx,
+        n_batch=config.n_batch,
+        n_gpu_layers=config.n_gpu_layers,  # Use all GPU layers (Metal on Mac, CUDA on GPU)
+        verbose=config.verbose,
+        n_threads=config.n_threads,
+    )
+    logger.info(f"Model loaded successfully: {model_path.name}")
+
+    try:
+        yield llm
+    finally:
+        # Cleanup happens automatically when exiting the context
+        del llm
+        logger.info(f"Model cleanup completed: {model_path.name}")
+
+
+if __name__ == "__main__":
+    console = Console()
+
+    console.print("🚀 LLM Model Benchmarking Tool", style="bold cyan")
+    console.print("=" * 50)
+
+    # Test question
+    test_question = "Who is the Bosch in the Haber-Bosch process?"
+
+    # Results storage
+    results = []
+
+    # Download and benchmark all model variants
+    for model_type in MODEL_OPTIONS:
+        for quantization_type in QUANTIZATION_OPTIONS:
+            console.print(f"\n📦 Processing {model_type} - {quantization_type}", style="bold yellow")
+            console.print("-" * 40)
+
+            # Create config
+            config = LLMConfig(
+                model_type=model_type,
+                quantization_type=quantization_type,
+                n_ctx=2048,  # Smaller context for benchmarking
+                verbose=False,
+            )
+
+            # Download model
+            model_path = download_model(config.model_type, config.quantization_type)
+            console.print(f"✅ Model ready: {model_path.name}", style="green")
+
+            # Load model with context manager
+            start_load = time.time()
+            with load_llm_model(config) as llm:
+                load_time = time.time() - start_load
+
+                # Benchmark inference
+                console.print(f"🧪 Testing with: '{test_question}'")
+
+                start_inference = time.time()
+                output = llm(
+                    test_question,
+                    max_tokens=100,
+                    temperature=0.1,
+                    echo=False,
+                )
+                total_inference_time = time.time() - start_inference
+
+                # Extract response and calculate metrics
+                response = output["choices"][0]["text"].strip()  # type: ignore
+                tokens_generated = len(response.split())  # Rough token count
+
+                # Calculate time to first token (approximation)
+                time_to_first_token = (
+                    total_inference_time / tokens_generated if tokens_generated > 0 else total_inference_time
+                )
+                tokens_per_sec = tokens_generated / total_inference_time if total_inference_time > 0 else 0
+
+                # Store results
+                results.append(
+                    {
+                        "Model": f"{model_type}",
+                        "Quantization": quantization_type,
+                        "Load Time (s)": f"{load_time:.2f}",
+                        "Time to 1st Token (s)": f"{time_to_first_token:.3f}",
+                        "Tokens/sec": f"{tokens_per_sec:.1f}",
+                        "Response": response,
+                    }
+                )
+
+                console.print(
+                    f"⚡ Performance: {tokens_per_sec:.1f} tok/s, First token: {time_to_first_token:.3f}s", style="blue"
+                )
+                console.print(f"💬 Response: {response}...")
+
+    # Display results table
+    console.print("\n" + "=" * 80, style="bold")
+    console.print("📊 BENCHMARK RESULTS", style="bold cyan")
+    console.print("=" * 80, style="bold")
+
+    table = Table(title="Model Performance Comparison")
+
+    table.add_column("Model", style="cyan", no_wrap=True)
+    table.add_column("Quant", style="magenta")
+    table.add_column("Load (s)", style="green", justify="right")
+    table.add_column("1st Token (s)", style="yellow", justify="right")
+    table.add_column("Tok/s", style="red", justify="right")
+    table.add_column("Response Preview", style="white")
+
+    for r in results:
+        table.add_row(
+            r["Model"],
+            r["Quantization"],
+            r["Load Time (s)"],
+            r["Time to 1st Token (s)"],
+            r["Tokens/sec"],
+            r["Response Preview"],
+        )
+
+    console.print(table)
+
+    console.print(f"\n🎯 Test Question: '{test_question}'", style="bold")
+    console.print(f"📈 Benchmarked {len(results)} model variants", style="bold")
+    console.print(f"📈 Benchmarked {len(results)} model variants", style="bold")
