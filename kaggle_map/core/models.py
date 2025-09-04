@@ -22,9 +22,9 @@ Answer = str
 Question = str  # Question text from math problems
 Explanation = str  # Student's explanation of their reasoning
 Misconception = str  # Specific misconception identifier
+Label = str
 
 # LLM operation type aliases
-Label = str  # "True_Misconception:AddInsteadOfMultiply"
 PromptTemplate = str
 LLMResponse = str
 ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
@@ -79,10 +79,42 @@ class Prediction(BaseModel):
         misconception = misconception_part.strip() if misconception_part.strip() else "NA"
         return cls(category=category, misconception=misconception)
 
-    def __str__(self) -> str:
+    def __str__(self) -> Label:
         if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
+
+
+def normalize_label(label: Label) -> Label:
+    return label.replace("Category.", "").title()
+
+
+def compare_labels(actual: Label, predicted: Label) -> bool:
+    """Compare two labels with normalization."""
+    assert actual, f"Actual label cannot be empty: '{actual}'"
+    assert predicted, f"Predicted label cannot be empty: '{predicted}'"
+
+    # Fast path: exact match
+    if actual == predicted:
+        return True
+
+    # Normalize and compare
+    actual_norm = normalize_label(actual)
+    predicted_norm = normalize_label(predicted)
+
+    # Handle category:misconception format
+    if ":" in actual_norm and ":" in predicted_norm:
+        actual_parts = actual_norm.split(":", 1)
+        pred_parts = predicted_norm.split(":", 1)
+
+        # Category must match exactly
+        if actual_parts[0] != pred_parts[0]:
+            return False
+
+        # Misconception comparison (case-insensitive)
+        return actual_parts[1].lower() == pred_parts[1].lower()
+
+    return actual_norm == predicted_norm
 
 
 class EvaluationRow(BaseModel):

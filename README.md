@@ -10,8 +10,8 @@ This project implements machine learning strategies to predict student misconcep
 
 1. **Install dependencies**: `uv install`
 2. **List available strategies**: `uv run -m kaggle_map.cli list-strategies`
-3. **Train a model**: `uv run -m kaggle_map.cli run baseline fit`
-4. **Evaluate performance**: `uv run -m kaggle_map.cli run baseline eval`
+3. **Train a model**: `uv run -m kaggle_map.cli run mlp fit`
+4. **Evaluate performance**: `uv run -m kaggle_map.cli run mlp eval`
 
 ## Basic Commands
 

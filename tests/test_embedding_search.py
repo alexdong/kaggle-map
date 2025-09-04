@@ -5,6 +5,8 @@ import tempfile
 import optuna
 import pytest
 
+from kaggle_map.strategies.mlp import MLPStrategy
+
 
 def test_optuna_categorical_distribution_dynamic_values() -> None:
     """Test that demonstrates the Optuna CategoricalDistribution dynamic value space error."""
@@ -42,8 +44,6 @@ def test_optuna_categorical_distribution_dynamic_values() -> None:
 
 def test_embedding_search_space_consistency() -> None:
     """Test that embedding search space maintains consistent choices across trials."""
-    from kaggle_map.strategies.mlp import MLPStrategy
-
     # Create a mock trial
     with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
         storage = f"sqlite:///{tmp.name}"

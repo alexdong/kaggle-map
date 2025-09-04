@@ -12,53 +12,11 @@ from loguru import logger
 
 from kaggle_map.core.models import (
     EvaluationRow,
-    Label,
     LLMResponse,
     Prediction,
     PromptTemplate,
 )
 from kaggle_map.reranker.models import RerankingRequest
-
-
-def normalize_label(label: Label) -> Label:
-    """Normalize a label for comparison.
-
-    Handles case variations and common formatting differences.
-    """
-    normalized = label.replace("Category.", "")
-    normalized = normalized.replace("TRUE_", "True_")
-    normalized = normalized.replace("FALSE_", "False_")
-    normalized = normalized.replace("CORRECT", "Correct")
-    normalized = normalized.replace("NEITHER", "Neither")
-    return normalized.replace("MISCONCEPTION", "Misconception")
-
-
-def compare_labels(actual: Label, predicted: Label) -> bool:
-    """Compare two labels with normalization."""
-    assert actual, f"Actual label cannot be empty: '{actual}'"
-    assert predicted, f"Predicted label cannot be empty: '{predicted}'"
-
-    # Fast path: exact match
-    if actual == predicted:
-        return True
-
-    # Normalize and compare
-    actual_norm = normalize_label(actual)
-    predicted_norm = normalize_label(predicted)
-
-    # Handle category:misconception format
-    if ":" in actual_norm and ":" in predicted_norm:
-        actual_parts = actual_norm.split(":", 1)
-        pred_parts = predicted_norm.split(":", 1)
-
-        # Category must match exactly
-        if actual_parts[0] != pred_parts[0]:
-            return False
-
-        # Misconception comparison (case-insensitive)
-        return actual_parts[1].lower() == pred_parts[1].lower()
-
-    return actual_norm == predicted_norm
 
 
 def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:

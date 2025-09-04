@@ -156,12 +156,10 @@ class QuestionSpecificMLP(nn.Module):
         if hasattr(config, "trunk_layers") and config.trunk_layers:
             # Hyperparameter search case - use provided architecture
             trunk_layers = config.trunk_layers
-            if isinstance(trunk_layers, list | tuple) and len(trunk_layers) > 0:
-                dims = list(trunk_layers)  # Ensure it's a list
-                assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"
-            else:
-                # Fallback if trunk_layers is not iterable or empty
-                dims = [input_dim, 1024, 512, 256, 192]
+            assert isinstance(trunk_layers, list | tuple), f"trunk_layers must be list or tuple, got {type(trunk_layers)}"
+            assert len(trunk_layers) > 0, "trunk_layers must not be empty"
+            dims = list(trunk_layers)  # Ensure it's a list
+            assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"
         # Default case - scale based on embedding dimension
         elif embedding_dim == 384:  # MINI_LM model
             dims = [input_dim, 512, 256, 192, 128]
@@ -618,7 +616,8 @@ class MLPStrategy(Strategy):
         embedding_model_name = getattr(config, "embedding_model", None) or kwargs.get("embedding_model", "MINI_LM")
 
         logger.info(
-            f"Fitting MLP strategy from {config.train_csv_path} with batch_size={config.batch_size}, embedding={embedding_model_name}"
+            f"Fitting MLP strategy from {config.train_csv_path} with "
+            f"batch_size={config.batch_size}, embedding={embedding_model_name}"
         )
 
         # Get trunk_layers from config if available (from architecture scaling)

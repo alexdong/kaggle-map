@@ -6,10 +6,8 @@ from .core.models import (
     Prediction,
     TrainingRow,
 )
-from .strategies.baseline import BaselineStrategy
 
 __all__ = [
-    "BaselineStrategy",
     "Category",
     "EvaluationRow",
     "Prediction",

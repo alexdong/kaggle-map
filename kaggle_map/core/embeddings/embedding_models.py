@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer
+
+from kaggle_map.strategies.utils import get_device
 
 """Embedding model registry and metadata.
 
@@ -130,13 +130,8 @@ def get_tokenizer(
     model: EmbeddingModel = EmbeddingModel.MINI_LM,
     device: str | None = None,
 ) -> "SentenceTransformer":
-    # Move the import here to avoid slowing pytest down by importing the heavy module
-    from sentence_transformers import SentenceTransformer
-
     # If device not specified, use the get_device utility
     if device is None:
-        from kaggle_map.strategies.utils import get_device
-
         device = str(get_device())
 
     # Load model to CPU first to avoid meta tensor issues in parallel processes

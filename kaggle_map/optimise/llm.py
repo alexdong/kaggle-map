@@ -128,12 +128,12 @@ def save_results(study: optuna.Study) -> Path:
         {
             "quantization": trial.params["quantization"],
             "model_size_gb": trial.user_attrs["model_size_gb"],
-            "map_at_3": -trial.values[0] if trial.values else 0.0,  # Negate back to positive
-            "evaluation_time": trial.values[1] if trial.values else 0.0,
+            "map_at_3": -trial.values[0] if trial.values else 0.0,  # Negate back to positive  # noqa: PD011
+            "evaluation_time": trial.values[1] if trial.values else 0.0,  # noqa: PD011
             "samples_per_second": trial.user_attrs["samples_per_second"],
         }
         for trial in study.trials
-        if trial.state == optuna.trial.TrialState.COMPLETE and trial.values is not None
+        if trial.state == optuna.trial.TrialState.COMPLETE and trial.values is not None  # noqa: PD011
     ]
 
     # Sort by MAP@3 descending
@@ -156,8 +156,8 @@ def save_results(study: optuna.Study) -> Path:
     pareto_front = study.best_trials
     for trial in pareto_front[:3]:  # Show top 3 Pareto optimal
         # Check if trial has values (some trials might not have been completed)
-        if trial.values is not None:
-            print(f"  • {trial.params['quantization']}: MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s")
+        if trial.values is not None:  # noqa: PD011
+            print(f"  • {trial.params['quantization']}: MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s")  # noqa: PD011
 
     # Best trade-off recommendation
     if results:

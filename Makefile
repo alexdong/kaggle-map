@@ -27,7 +27,6 @@ test-all:
 
 # Train a strategy model
 # Usage:
-#   make fit STRATEGY=baseline                    # Train baseline with default dataset
 #   make fit STRATEGY=mlp                         # Train MLP with default dataset  
 #   make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
 fit:
@@ -35,12 +34,11 @@ fit:
 		echo "Usage: make fit STRATEGY=<strategy_name> [DATASET=<path>]"; \
 		echo ""; \
 		echo "Available strategies:"; \
-		echo "  baseline - Baseline strategy using misconception frequency"; \
 		echo "  mlp      - Multi-layer perceptron with embeddings"; \
 		echo "  llm      - Large language model approach"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  make fit STRATEGY=baseline"; \
+		echo "  make fit STRATEGY=mlp"; \
 		echo "  make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi
@@ -52,7 +50,6 @@ fit:
 
 # Evaluate a trained model
 # Usage:
-#   make eval STRATEGY=baseline                   # Evaluate baseline
 #   make eval STRATEGY=mlp                        # Evaluate MLP
 #   make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
 eval:
@@ -60,12 +57,11 @@ eval:
 		echo "Usage: make eval STRATEGY=<strategy_name> [DATASET=<path>]"; \
 		echo ""; \
 		echo "Available strategies:"; \
-		echo "  baseline - Baseline strategy using misconception frequency"; \
 		echo "  mlp      - Multi-layer perceptron with embeddings"; \
 		echo "  llm      - Large language model approach"; \
 		echo ""; \
 		echo "Examples:"; \
-		echo "  make eval STRATEGY=baseline"; \
+		echo "  make eval STRATEGY=mlp"; \
 		echo "  make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
 		exit 1; \
 	fi

@@ -31,23 +31,33 @@ CHECKPOINT_INTERVAL = 1000  # Save progress every N rows
 # Jinja2 template for rewriting
 REWRITE_TEMPLATE = Template(
     """
-Rewrite the following <original> sentence by keeping the meaning intact. A wrong answer often means they have a misconception. Make sure you identify the misconcept and keep it the same during your rewrite.
+Rewrite the following <original> sentence by keeping the meaning intact. A wrong answer often
+means they have a misconception. Make sure you identify the misconcept and keep it the same
+during your rewrite.
 
 The student was presented a math problem: {{ QuestionText }}
 The student's answer was: {{ MC_Answer }}
 
-This <original> sentence was when they were asked how they solved the problem (as a way to understand how they approach the solution.)
+This <original> sentence was when they were asked how they solved the problem (as a way to
+understand how they approach the solution.)
 
-The student doesn't know whether the answer is correct or not. They describe their thought process in the following <original> sentence.
+The student doesn't know whether the answer is correct or not. They describe their thought
+process in the following <original> sentence.
 
 REWRITE CONSTRAINTS:
 - Student age: {{ age }} years old
-- Writing style: {{ writing_style }} (casual=contractions/informal, formal=proper grammar, hesitant=uncertainty, confident=definitive, conversational=like talking to friend)
-- Focus on: {{ explanation_focus }} (process=steps taken, visual=what they see, reasoning=why they think it's right, comparison=compare to similar problems)
-- Detail level: {{ detail_level }} (brief=short, verbose=lots of explanation, rambling=goes off on tangents)
-- Math vocabulary: {{ math_vocabulary }} (simple=basic terms, mixed=some advanced/some basic, advanced=proper mathematical terminology)
-- Sentence structure: {{ sentence_structure }} (simple=short sentences, compound=longer connected sentences, fragments=incomplete thoughts like real student writing)
-- Personal references: {{ personal_references }} (include=add "my teacher said", "I learned", "like when we did"; exclude=keep purely about the problem)
+- Writing style: {{ writing_style }} (casual=contractions/informal, formal=proper grammar,
+  hesitant=uncertainty, confident=definitive, conversational=like talking to friend)
+- Focus on: {{ explanation_focus }} (process=steps taken, visual=what they see,
+  reasoning=why they think it's right, comparison=compare to similar problems)
+- Detail level: {{ detail_level }} (brief=short, verbose=lots of explanation,
+  rambling=goes off on tangents)
+- Math vocabulary: {{ math_vocabulary }} (simple=basic terms, mixed=some advanced/some basic,
+  advanced=proper mathematical terminology)
+- Sentence structure: {{ sentence_structure }} (simple=short sentences,
+  compound=longer connected sentences, fragments=incomplete thoughts like real student writing)
+- Personal references: {{ personal_references }} (include=add "my teacher said", "I learned",
+  "like when we did"; exclude=keep purely about the problem)
 
 Make it less than {{ char_limit }} characters.
 

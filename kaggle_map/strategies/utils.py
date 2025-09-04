@@ -111,8 +111,8 @@ def split_training_data(
     indices = np.arange(n_samples)
 
     # Set random seed for reproducibility
-    np.random.seed(random_seed)
-    np.random.shuffle(indices)
+    rng = np.random.Generator(np.random.PCG64(random_seed))
+    rng.shuffle(indices)
 
     # Calculate split points
     train_size = int(n_samples * train_ratio)
@@ -158,8 +158,8 @@ def get_split_indices(
     indices = np.arange(n_samples)
 
     # Set random seed for reproducibility
-    np.random.seed(random_seed)
-    np.random.shuffle(indices)
+    rng = np.random.Generator(np.random.PCG64(random_seed))
+    rng.shuffle(indices)
 
     # Calculate split points
     train_size = int(n_samples * train_ratio)
