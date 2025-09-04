@@ -1,3 +1,5 @@
+# ruff: noqa: PD011  # Optuna Trial.values is not a pandas operation
+
 import time
 from pathlib import Path
 
@@ -11,33 +13,17 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
-from kaggle_map.core.models import ModelLoadConfig, QuantizationLevel
+from kaggle_map.core.models import GGUF_MODELS, MODEL_OPTIONS, ModelLoadConfig, ModelName, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
-from kaggle_map.utils.llm import QUANTIZATION_OPTIONS, download_model
-
-# Model base URL on HuggingFace
-MODEL_BASE = "unsloth/gemma-3-12b-it-GGUF"
-
-# Model size lookup (approximate values in GB)
-MODEL_SIZE_GB = {
-    "Q4_K_XL": 7.5,
-    "Q5_K_XL": 9.0,
-    "Q6_K_XL": 10.5,
-}
 
 
-def download_model_if_needed(quantization: QuantizationLevel) -> Path:
-    """Download model if needed (wrapper for consistency)."""
-    return download_model("gemma-3-12b-it", quantization)
+def evaluate_quantization(model_name: ModelName, quantization: QuantizationLevel, sample_size: int = 100) -> dict:
+    logger.info(f"Evaluating model: {model_name}, quantization: {quantization}")
 
-
-def evaluate_quantization(quantization: QuantizationLevel, sample_size: int = 100) -> dict:
-    logger.info(f"Evaluating quantization: {quantization}")
-
-    # Create strategy with specific quantization
-    config = ModelLoadConfig(model_name="gemma-3-12b-it", quantization=quantization)
+    # Create strategy with specific model and quantization
+    config = ModelLoadConfig(model_name=model_name, quantization=quantization)
     strategy = LLMStrategy(config=config)
 
     # Load training data for fit
@@ -70,22 +56,28 @@ def evaluate_quantization(quantization: QuantizationLevel, sample_size: int = 10
     del strategy
 
     return {
+        "model_name": model_name,
         "quantization": quantization,
         "map_at_3": results["map_at_3"],
         "evaluation_time": evaluation_time,
         "samples_per_second": sample_size / evaluation_time,
-        "model_size_gb": MODEL_SIZE_GB.get(quantization),
     }
 
 
 def objective(trial: optuna.Trial) -> tuple[float, float]:
-    quantization: QuantizationLevel = trial.suggest_categorical("quantization", QUANTIZATION_OPTIONS)  # type: ignore[assignment]
+    # First sample the model
+    model_name: ModelName = trial.suggest_categorical("model_name", MODEL_OPTIONS)
+
+    # Get valid quantizations for this model
+    valid_quantizations = GGUF_MODELS[model_name].available_quantizations
+    quantization: QuantizationLevel = trial.suggest_categorical("quantization", valid_quantizations)
 
     # Evaluate
-    results = evaluate_quantization(quantization, sample_size=100)
+    results = evaluate_quantization(model_name, quantization, sample_size=100)
 
     # Log results
     logger.info(
+        f"Model: {model_name} | "
         f"Quantization: {quantization} | "
         f"MAP@3: {results['map_at_3']:.4f} | "
         f"Time: {results['evaluation_time']:.2f}s | "
@@ -93,16 +85,20 @@ def objective(trial: optuna.Trial) -> tuple[float, float]:
     )
 
     # Store additional metrics
+    trial.set_user_attr("model_name", model_name)
     trial.set_user_attr("evaluation_time", results["evaluation_time"])
     trial.set_user_attr("samples_per_second", results["samples_per_second"])
-    trial.set_user_attr("model_size_gb", results["model_size_gb"])
 
     # Return both objectives: maximize MAP@3, minimize time
     # Optuna minimizes by default, so negate MAP@3
     return -results["map_at_3"], results["evaluation_time"]
 
 
-def run_comparison(n_trials: int = len(QUANTIZATION_OPTIONS)) -> optuna.Study:
+def run_comparison(n_trials: int | None = None) -> optuna.Study:
+    # Calculate total combinations if n_trials not specified
+    if n_trials is None:
+        n_trials = sum(len(spec.available_quantizations) for spec in GGUF_MODELS.values())
+        logger.info(f"Testing all {n_trials} model+quantization combinations")
     # Create multi-objective study
     study = optuna.create_study(
         study_name=f"llm_quantization_{time.strftime('%Y%m%d_%H%M%S')}",
@@ -126,14 +122,14 @@ def save_results(study: optuna.Study) -> Path:
     # Collect all trials
     results = [
         {
+            "model_name": trial.params["model_name"],
             "quantization": trial.params["quantization"],
-            "model_size_gb": trial.user_attrs["model_size_gb"],
-            "map_at_3": -trial.values[0] if trial.values else 0.0,  # Negate back to positive  # noqa: PD011
-            "evaluation_time": trial.values[1] if trial.values else 0.0,  # noqa: PD011
+            "map_at_3": -trial.values[0] if trial.values else 0.0,  # Negate back to positive
+            "evaluation_time": trial.values[1] if trial.values else 0.0,
             "samples_per_second": trial.user_attrs["samples_per_second"],
         }
         for trial in study.trials
-        if trial.state == optuna.trial.TrialState.COMPLETE and trial.values is not None  # noqa: PD011
+        if trial.state == optuna.trial.TrialState.COMPLETE and trial.values is not None
     ]
 
     # Sort by MAP@3 descending
@@ -141,7 +137,7 @@ def save_results(study: optuna.Study) -> Path:
 
     # Save to CSV
     results_df = pd.DataFrame(results)
-    output_path = Path("results/llm_quantization_comparison.csv")
+    output_path = Path("results/llm_model_quantization_comparison.csv")
     output_path.parent.mkdir(exist_ok=True)
     results_df.to_csv(output_path, index=False)
 
@@ -154,19 +150,12 @@ def save_results(study: optuna.Study) -> Path:
     # Find Pareto optimal solutions
     print("\n=== Pareto Optimal Solutions ===")
     pareto_front = study.best_trials
-    for trial in pareto_front[:3]:  # Show top 3 Pareto optimal
+    for trial in pareto_front[:5]:  # Show top 5 Pareto optimal
         # Check if trial has values (some trials might not have been completed)
-        if trial.values is not None:  # noqa: PD011
-            print(f"  • {trial.params['quantization']}: MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s")  # noqa: PD011
-
-    # Best trade-off recommendation
-    if results:
-        q4_k_m = next((r for r in results if r["quantization"] == "Q4_K_M"), None)
-        if q4_k_m:
-            print("\n✓ Recommended: Q4_K_M")
+        if trial.values is not None:
             print(
-                f"  Good balance of quality ({q4_k_m['map_at_3']:.4f} MAP@3) "
-                f"and speed ({q4_k_m['samples_per_second']:.2f} samples/s)"
+                f"  • {trial.params['model_name']}-{trial.params['quantization']}: "
+                f"MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s"
             )
 
     return output_path
@@ -179,9 +168,9 @@ def cli() -> None:
 
 @click.command()
 @click.option(
-    "--trials", type=int, help="Number of trials (default: test all quantizations)", default=len(QUANTIZATION_OPTIONS)
+    "--trials", type=int, help="Number of trials (default: test all model+quantization combinations)", default=None
 )
-def compare(trials: int) -> None:
+def compare(trials: int | None) -> None:
     study = run_comparison(n_trials=trials)
     logger.success(f"Quantization comparison complete! Study: {study.study_name}")
 

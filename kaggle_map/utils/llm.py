@@ -13,11 +13,9 @@ from rich.table import Table
 
 from kaggle_map.core.models import (
     GGUF_MODELS,
-    GGUFRepoSpec,
     MODEL_OPTIONS,
-    QUANTIZATION_OPTIONS,
     InferenceConfig,
-    ModelLoadConfig,
+    LLMModelLoadConfig,
     ModelName,
     QuantizationLevel,
 )
@@ -42,6 +40,14 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
     config = GGUF_MODELS.get(model_name)
     assert config, f"Unknown model type: {model_name}"
 
+    # Assert that the quantization is available for this model (caller's responsibility)
+    error_msg = (
+        f"Quantization '{quantization}' is not available for model '{model_name}'. "
+        f"Available quantizations: {', '.join(config.available_quantizations)}. "
+        f"It's the caller's responsibility to check availability before calling download_model."
+    )
+    assert quantization in config.available_quantizations, error_msg
+
     repo_id = config.repo
     filename = config.filename_pattern.format(quant=quantization)
 
@@ -50,23 +56,19 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Download model
-    downloaded_path = hf_hub_download(
+    hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         local_dir=model_path.parent,
         local_dir_use_symlinks=False,  # Copy file instead of symlink
     )
-
-    # Move to expected location if needed
-    if downloaded_path != str(model_path):
-        Path(downloaded_path).rename(model_path)
-
+    assert model_path.exists(), f"Model file not found after download: {model_path}"
     logger.info(f"Model downloaded successfully: {model_path}")
     return model_path
 
 
 @contextmanager
-def load_llm_model(config: ModelLoadConfig) -> Iterator[Llama]:
+def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
     """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
     model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")
@@ -104,19 +106,18 @@ if __name__ == "__main__":
 
     # Download and benchmark all model variants
     for model_name in MODEL_OPTIONS:
-        for quantization in QUANTIZATION_OPTIONS:
+        gguf_repo_spec = GGUF_MODELS[model_name]
+        for quantization in gguf_repo_spec.available_quantizations:
             console.print(f"\n📦 Processing {model_name} - {quantization}", style="bold yellow")
             console.print("-" * 40)
 
-            # Create model loading config
-            load_config = ModelLoadConfig(
+            load_config = LLMModelLoadConfig(
                 model_name=model_name,
                 quantization=quantization,
                 n_ctx=2048,  # Smaller context for benchmarking
                 verbose=False,
             )
 
-            # Create inference config for benchmarking
             inference_config = InferenceConfig(
                 max_tokens=100,
                 temperature=0.1,

@@ -6,8 +6,8 @@ from typing import Literal, NamedTuple, get_args
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, field_validator
 import pydash
+from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
 from kaggle_map.core.embeddings.tokenizer import get_tokenizer
@@ -25,41 +25,6 @@ Explanation = str  # Student's explanation of their reasoning
 Misconception = str  # Specific misconception identifier
 Label = str
 
-# LLM operation type aliases
-PromptTemplate = str
-LLMResponse = str
-ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
-QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
-
-# Available options derived from type definitions
-MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))
-QUANTIZATION_OPTIONS: list[QuantizationLevel] = list(get_args(QuantizationLevel))
-
-
-class GGUFRepoSpec(NamedTuple):
-    """Specification for a GGUF model repository and filename pattern."""
-
-    repo: str  # HuggingFace repository ID
-    filename_pattern: str  # Pattern with {quant} placeholder for quantization level
-    available_quantizations: list[QuantizationLevel] = QUANTIZATION_OPTIONS
-
-
-# Model configurations with their HuggingFace patterns
-GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
-    "gemma-3-12b-it": GGUFRepoSpec(
-        repo="unsloth/gemma-3-12b-it-GGUF",
-        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
-    ),
-    "Qwen3-14B": GGUFRepoSpec(
-        repo="unsloth/Qwen3-14B-GGUF",
-        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
-    ),
-    "gpt-oss-20b": GGUFRepoSpec(
-        repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
-        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
-    ),
-}
 
 # ============================================================================
 # Core Models
@@ -199,7 +164,6 @@ class TrainingRow(EvaluationRow):
     """
 
     prediction: Prediction
-    training_examples: list["TrainingRow"] | None = None  # For few-shot prompting
 
     # Expose prediction fields at the top level for backward compatibility
     @property
@@ -250,6 +214,42 @@ class SubmissionRow(NamedTuple):
 # Configuration Classes
 # ============================================================================
 
+# LLM operation type aliases
+PromptTemplate = str
+LLMResponse = str
+ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
+QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+
+# Available options derived from type definitions
+MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))
+QUANTIZATION_OPTIONS: list[QuantizationLevel] = list(get_args(QuantizationLevel))
+
+
+class GGUFRepoSpec(NamedTuple):
+    """Specification for a GGUF model repository and filename pattern."""
+
+    repo: str  # HuggingFace repository ID
+    filename_pattern: str  # Pattern with {quant} placeholder for quantization level
+    available_quantizations: list[QuantizationLevel] = QUANTIZATION_OPTIONS
+
+
+# Model configurations with their HuggingFace patterns
+GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
+    "gemma-3-12b-it": GGUFRepoSpec(
+        repo="unsloth/gemma-3-12b-it-GGUF",
+        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
+    ),
+    "Qwen3-14B": GGUFRepoSpec(
+        repo="unsloth/Qwen3-14B-GGUF",
+        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
+    ),
+    "gpt-oss-20b": GGUFRepoSpec(
+        repo="unsloth/gpt-oss-20b-GGUF",
+        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
+        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
+    ),
+}
+
 
 @dataclass
 class ModelLoadConfig:
@@ -279,7 +279,3 @@ class InferenceConfig:
     echo: bool = False  # Include prompt in response
     top_p: float = 0.95  # Nucleus sampling threshold
     top_k: int = 40  # Top-k sampling
-
-
-# Backward compatibility alias (to be removed in future)
-LLMConfig = ModelLoadConfig
