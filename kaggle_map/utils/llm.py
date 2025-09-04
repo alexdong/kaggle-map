@@ -106,112 +106,172 @@ def load_llm_model(config: ModelLoadConfig) -> Iterator[Llama]:
 
 
 if __name__ == "__main__":
+    from statistics import mean, stdev
+
+    import psutil
+    from llama_cpp import llama_supports_gpu_offload
+
     console = Console()
 
     console.print("🚀 LLM Model Benchmarking Tool", style="bold cyan")
     console.print("=" * 50)
 
+    # Check GPU support
+    gpu_available = llama_supports_gpu_offload()
+    console.print(f"\n🎮 GPU Support: {'YES ✅' if gpu_available else 'NO ❌ (CPU only)'}")
+    if not gpu_available:
+        console.print("   Note: GPU support not detected. Will benchmark CPU only.", style="yellow")
+        console.print("   For GPU: rebuild llama-cpp-python with CUDA support", style="yellow")
+    console.print("=" * 50)
+
     # Test question
     test_question = "Who is the Bosch in the Haber-Bosch process?"
+
+    # Benchmark parameters
+    WARMUP_RUNS = 3
+    MEASUREMENT_RUNS = 10
 
     # Results storage
     results = []
 
+    # Test configurations - CPU and GPU (if available)
+    test_configs = [
+        ("CPU", 0),  # No GPU layers
+    ]
+    if gpu_available:
+        test_configs.append(("GPU", -1))  # All layers on GPU
+
     # Download and benchmark all model variants
     for model_name in MODEL_OPTIONS:
         for quantization in QUANTIZATION_OPTIONS:
-            console.print(f"\n📦 Processing {model_name} - {quantization}", style="bold yellow")
-            console.print("-" * 40)
+            for device_name, n_gpu_layers in test_configs:
+                console.print(f"\n📦 Processing {model_name} - {quantization} on {device_name}", style="bold yellow")
+                console.print("-" * 40)
 
-            # Create model loading config
-            load_config = ModelLoadConfig(
-                model_name=model_name,
-                quantization=quantization,
-                n_ctx=2048,  # Smaller context for benchmarking
-                verbose=False,
-            )
-
-            # Create inference config for benchmarking
-            inference_config = InferenceConfig(
-                max_tokens=100,
-                temperature=0.1,
-                echo=False,
-            )
-
-            # Download model
-            model_path = download_model(load_config.model_name, load_config.quantization)
-            console.print(f"✅ Model ready: {model_path.name}", style="green")
-
-            # Load model with context manager
-            start_load = time.time()
-            with load_llm_model(load_config) as llm:
-                load_time = time.time() - start_load
-
-                # Benchmark inference
-                console.print(f"🧪 Testing with: '{test_question}'")
-
-                start_inference = time.time()
-                output = llm(
-                    test_question,
-                    max_tokens=inference_config.max_tokens,
-                    temperature=inference_config.temperature,
-                    echo=inference_config.echo,
-                )
-                total_inference_time = time.time() - start_inference
-
-                # Extract response and calculate metrics
-                response = output["choices"][0]["text"].strip()  # type: ignore
-                tokens_generated = len(response.split())  # Rough token count
-
-                # Calculate time to first token (approximation)
-                time_to_first_token = (
-                    total_inference_time / tokens_generated if tokens_generated > 0 else total_inference_time
-                )
-                tokens_per_sec = tokens_generated / total_inference_time if total_inference_time > 0 else 0
-
-                # Store results
-                results.append(
-                    {
-                        "Model": f"{model_name}",
-                        "Quantization": quantization,
-                        "Load Time (s)": f"{load_time:.2f}",
-                        "Time to 1st Token (s)": f"{time_to_first_token:.3f}",
-                        "Tokens/sec": f"{tokens_per_sec:.1f}",
-                        "Response Preview": response[:50] + "..." if len(response) > 50 else response,
-                    }
+                # Create model loading config
+                load_config = ModelLoadConfig(
+                    model_name=model_name,
+                    quantization=quantization,
+                    n_ctx=2048,  # Smaller context for benchmarking
+                    n_gpu_layers=n_gpu_layers,  # Control GPU usage
+                    verbose=False,
                 )
 
-                console.print(
-                    f"⚡ Performance: {tokens_per_sec:.1f} tok/s, First token: {time_to_first_token:.3f}s", style="blue"
+                # Create inference config for benchmarking
+                inference_config = InferenceConfig(
+                    max_tokens=100,
+                    temperature=0.1,
+                    echo=False,
                 )
-                console.print(f"💬 Response: {response}...")
+
+                # Download model
+                model_path = download_model(load_config.model_name, load_config.quantization)
+                console.print(f"✅ Model ready: {model_path.name}", style="green")
+
+                # Load model with context manager
+                benchmark_start = time.time()
+                with load_llm_model(load_config) as llm:
+                    # Track memory usage
+                    process = psutil.Process()
+                    memory_before = process.memory_info().rss / 1024 / 1024 / 1024  # GB
+
+                    # Warmup runs
+                    console.print(f"🔥 Warming up with {WARMUP_RUNS} runs...")
+                    for _ in range(WARMUP_RUNS):
+                        _ = llm(
+                            test_question,
+                            max_tokens=inference_config.max_tokens,
+                            temperature=inference_config.temperature,
+                            echo=inference_config.echo,
+                        )
+
+                    # Measurement runs
+                    console.print(f"📊 Running {MEASUREMENT_RUNS} measurements...")
+                    latencies = []
+                    token_counts = []
+
+                    for _i in range(MEASUREMENT_RUNS):
+                        start_inference = time.time()
+                        output = llm(
+                            test_question,
+                            max_tokens=inference_config.max_tokens,
+                            temperature=inference_config.temperature,
+                            echo=inference_config.echo,
+                        )
+                        latency_ms = (time.time() - start_inference) * 1000  # Convert to ms
+                        latencies.append(latency_ms)
+
+                        # Extract response and count tokens
+                        response = output["choices"][0]["text"].strip()  # type: ignore
+                        tokens = len(response.split())  # Simple word count
+                        token_counts.append(tokens)
+
+                    # Track peak memory during inference
+                    memory_after = process.memory_info().rss / 1024 / 1024 / 1024  # GB
+                    memory_used = memory_after - memory_before
+
+                    # Calculate total time for this model/quant combo
+                    total_time_s = time.time() - benchmark_start
+
+                    # Calculate statistics
+                    mean_latency = mean(latencies)
+                    std_latency = stdev(latencies) if len(latencies) > 1 else 0
+                    min_latency = min(latencies)
+                    max_latency = max(latencies)
+
+                    mean_tokens = mean(token_counts)
+                    tokens_per_sec = mean_tokens / (mean_latency / 1000) if mean_latency > 0 else 0
+
+                    # Store results
+                    results.append(
+                        {
+                            "Model": f"{model_name}",
+                            "Quant": quantization,
+                            "Device": device_name,
+                            "Latency (ms)": f"{mean_latency:.0f} ± {std_latency:.0f}",
+                            "Tok/s": f"{tokens_per_sec:.1f}",
+                            "RAM (GB)": f"{memory_used:.1f}",
+                            "Total (s)": f"{total_time_s:.1f}",
+                            "min_latency": min_latency,
+                            "max_latency": max_latency,
+                        }
+                    )
+
+                    console.print(
+                        f"⚡ {device_name}: Latency {mean_latency:.0f} ± {std_latency:.0f} ms | "
+                        f"Throughput: {tokens_per_sec:.1f} tok/s | "
+                        f"Memory: {memory_used:.1f} GB | "
+                        f"Total: {total_time_s:.1f}s",
+                        style="blue"
+                    )
 
     # Display results table
     console.print("\n" + "=" * 80, style="bold")
     console.print("📊 BENCHMARK RESULTS", style="bold cyan")
     console.print("=" * 80, style="bold")
 
-    table = Table(title="Model Performance Comparison")
-
+    table = Table()
     table.add_column("Model", style="cyan", no_wrap=True)
     table.add_column("Quant", style="magenta")
-    table.add_column("Load (s)", style="green", justify="right")
-    table.add_column("1st Token (s)", style="yellow", justify="right")
-    table.add_column("Tok/s", style="red", justify="right")
-    table.add_column("Response Preview", style="white")
+    table.add_column("Device", style="white")
+    table.add_column("Latency (ms)", style="yellow", justify="right")
+    table.add_column("Tok/s", style="green", justify="right")
+    table.add_column("RAM (GB)", style="red", justify="right")
+    table.add_column("Total (s)", style="blue", justify="right")
 
     for r in results:
         table.add_row(
             r["Model"],
-            r["Quantization"],
-            r["Load Time (s)"],
-            r["Time to 1st Token (s)"],
-            r["Tokens/sec"],
-            r["Response Preview"],
+            r["Quant"],
+            r["Device"],
+            r["Latency (ms)"],
+            r["Tok/s"],
+            r["RAM (GB)"],
+            r["Total (s)"],
         )
 
     console.print(table)
 
-    console.print(f"\n🎯 Test Question: '{test_question}'", style="bold")
-    console.print(f"📈 Benchmarked {len(results)} model variants", style="bold")
-    console.print(f"📈 Benchmarked {len(results)} model variants", style="bold")
+    console.print(f"\n🎯 Test Question: '{test_question}'")
+    console.print(f"📈 {WARMUP_RUNS} warmup runs, {MEASUREMENT_RUNS} measurements per model")
+    console.print(f"📊 Benchmarked {len(results)} model variants")
