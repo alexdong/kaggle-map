@@ -4,7 +4,6 @@ from pathlib import Path
 import click
 import optuna
 import pandas as pd
-from huggingface_hub import hf_hub_download
 from loguru import logger
 
 from kaggle_map.core.dataset import (
@@ -12,10 +11,11 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
+from kaggle_map.core.llm_types import LLMConfig, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
-from kaggle_map.utils.llm_models import QUANTIZATION_OPTIONS, QuantizationType
+from kaggle_map.utils.llm import QUANTIZATION_OPTIONS, download_model
 
 # Model base URL on HuggingFace
 MODEL_BASE = "unsloth/gemma-3-12b-it-GGUF"
@@ -28,31 +28,17 @@ MODEL_SIZE_GB = {
 }
 
 
-def download_model_if_needed(quantization: QuantizationType) -> Path:
-    model_name = f"gemma-3-12b-it-{quantization}.gguf"
-    model_dir = Path("models/gguf")
-    model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / model_name
-
-    if model_path.exists():
-        logger.info(f"Model {model_name} already cached")
-        return model_path
-
-    logger.info(f"Downloading {model_name} from HuggingFace...")
-
-    downloaded_path = hf_hub_download(
-        repo_id=MODEL_BASE, filename=model_name, local_dir=model_dir, local_dir_use_symlinks=False
-    )
-
-    logger.info(f"Downloaded to {downloaded_path}")
-    return Path(downloaded_path)
+def download_model_if_needed(quantization: QuantizationLevel) -> Path:
+    """Download model if needed (wrapper for consistency)."""
+    return download_model("gemma-3-12b-it", quantization)
 
 
-def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100) -> dict:
+def evaluate_quantization(quantization: QuantizationLevel, sample_size: int = 100) -> dict:
     logger.info(f"Evaluating quantization: {quantization}")
 
     # Create strategy with specific quantization
-    strategy = LLMStrategy(model_type="gemma-3-12b-it", quantization_type=quantization)
+    config = LLMConfig(model_name="gemma-3-12b-it", quantization=quantization)
+    strategy = LLMStrategy(config=config)
 
     # Load training data for fit
     training_data = parse_training_data(Path("datasets/train.csv"))
@@ -60,8 +46,19 @@ def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100
     # Fit the strategy (loads correct answers and misconceptions)
     train_data, _, _ = split_training_data(training_data, train_ratio=0.7, random_seed=42)
 
-    strategy.correct_answers = extract_correct_answers(train_data)
-    strategy.misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
+    # Build problem contexts
+    correct_answers = extract_correct_answers(train_data)
+    misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
+
+    from kaggle_map.core.llm_types import ProblemContext
+
+    for question_id in correct_answers:
+        strategy.problem_contexts[question_id] = ProblemContext(
+            question_id=question_id,
+            question_text="",  # Will be filled from evaluation row
+            correct_answer=correct_answers[question_id],
+            known_misconceptions=misconceptions_by_question.get(question_id, []),
+        )
 
     # Measure evaluation time
     start_time = time.time()
@@ -84,7 +81,7 @@ def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100
 
 
 def objective(trial: optuna.Trial) -> tuple[float, float]:
-    quantization = trial.suggest_categorical("quantization", QUANTIZATION_OPTIONS)
+    quantization: QuantizationLevel = trial.suggest_categorical("quantization", QUANTIZATION_OPTIONS)  # type: ignore[assignment]
 
     # Evaluate
     results = evaluate_quantization(quantization, sample_size=100)

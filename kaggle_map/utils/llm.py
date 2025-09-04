@@ -3,7 +3,6 @@
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download
@@ -12,18 +11,17 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-type QuantizationType = str
-type ModelType = str
+from kaggle_map.core.llm_types import LLMConfig, ModelName, QuantizationLevel
 
 # Available quantization options
-QUANTIZATION_OPTIONS: list[QuantizationType] = [
+QUANTIZATION_OPTIONS: list[QuantizationLevel] = [
     "Q4_K_XL",
     "Q5_K_XL",
     "Q6_K_XL",
 ]
 
 # Model configurations with their HuggingFace patterns
-MODEL_CONFIGS = {
+MODEL_CONFIGS: dict[ModelName, dict[str, str]] = {
     "gemma-3-12b-it": {
         "repo": "unsloth/gemma-3-12b-it-GGUF",
         "filename_pattern": "gemma-3-12b-it-UD-{quant}.gguf",
@@ -35,30 +33,19 @@ MODEL_CONFIGS = {
 }
 
 # Available model options
-MODEL_OPTIONS: list[ModelType] = list(MODEL_CONFIGS.keys())
+MODEL_OPTIONS: list[ModelName] = ["gemma-3-12b-it", "Qwen3-14B"]
 
 
-@dataclass
-class LLMConfig:
-    """Configuration for LLM model loading and inference."""
-
-    model_type: ModelType
-    quantization_type: QuantizationType
-    n_ctx: int = 4096
-    n_batch: int = 512
-    n_gpu_layers: int = -1
-    n_threads: int = 8
-    verbose: bool = False
 
 
-def get_model_path(model_type: ModelType, quantization_type: QuantizationType) -> Path:
+def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
     """Get the local path for a GGUF model file."""
-    return Path(f"models/gguf/{model_type}-{quantization_type}.gguf")
+    return Path(f"models/gguf/{model_name}-{quantization}.gguf")
 
 
-def download_model(model_type: ModelType, quantization_type: QuantizationType) -> Path:
+def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Path:
     """Download GGUF model from Hugging Face Hub if it doesn't exist."""
-    model_path = get_model_path(model_type, quantization_type)
+    model_path = get_model_path(model_name, quantization)
 
     if model_path.exists():
         logger.info(f"Model already exists: {model_path}")
@@ -67,11 +54,11 @@ def download_model(model_type: ModelType, quantization_type: QuantizationType) -
     logger.info(f"Model not found locally: {model_path}")
 
     # Get model configuration
-    config = MODEL_CONFIGS.get(model_type)
-    assert config, f"Unknown model type: {model_type}"
+    config = MODEL_CONFIGS.get(model_name)
+    assert config, f"Unknown model type: {model_name}"
 
     repo_id = config["repo"]
-    filename = config["filename_pattern"].format(quant=quantization_type)
+    filename = config["filename_pattern"].format(quant=quantization)
 
     logger.info(f"Downloading {filename} from {repo_id}")
 
@@ -96,7 +83,7 @@ def download_model(model_type: ModelType, quantization_type: QuantizationType) -
 @contextmanager
 def load_llm_model(config: LLMConfig) -> Iterator[Llama]:
     """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
-    model_path = download_model(config.model_type, config.quantization_type)
+    model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")
     assert model_path.exists(), f"Model file not found after download: {model_path}"
 
@@ -131,21 +118,21 @@ if __name__ == "__main__":
     results = []
 
     # Download and benchmark all model variants
-    for model_type in MODEL_OPTIONS:
-        for quantization_type in QUANTIZATION_OPTIONS:
-            console.print(f"\n📦 Processing {model_type} - {quantization_type}", style="bold yellow")
+    for model_name in MODEL_OPTIONS:
+        for quantization in QUANTIZATION_OPTIONS:
+            console.print(f"\n📦 Processing {model_name} - {quantization}", style="bold yellow")
             console.print("-" * 40)
 
             # Create config
             config = LLMConfig(
-                model_type=model_type,
-                quantization_type=quantization_type,
+                model_name=model_name,
+                quantization=quantization,
                 n_ctx=2048,  # Smaller context for benchmarking
                 verbose=False,
             )
 
             # Download model
-            model_path = download_model(config.model_type, config.quantization_type)
+            model_path = download_model(config.model_name, config.quantization)
             console.print(f"✅ Model ready: {model_path.name}", style="green")
 
             # Load model with context manager
@@ -178,8 +165,8 @@ if __name__ == "__main__":
                 # Store results
                 results.append(
                     {
-                        "Model": f"{model_type}",
-                        "Quantization": quantization_type,
+                        "Model": f"{model_name}",
+                        "Quantization": quantization,
                         "Load Time (s)": f"{load_time:.2f}",
                         "Time to 1st Token (s)": f"{time_to_first_token:.3f}",
                         "Tokens/sec": f"{tokens_per_sec:.1f}",

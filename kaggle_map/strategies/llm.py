@@ -19,21 +19,19 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
+from kaggle_map.core.llm_types import (
+    LLMConfig,
+    LLMInferenceContext,
+    ProblemContext,
+)
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
-    Answer,
     EvaluationRow,
-    Misconception,
     Prediction,
     QuestionId,
     SubmissionRow,
 )
-from kaggle_map.utils.llm_models import (
-    ModelType,
-    QuantizationType,
-    get_model_path,
-    load_llm_model,
-)
+from kaggle_map.utils.llm import get_model_path, load_llm_model
 
 from .base import Strategy
 from .utils import TRAIN_RATIO, split_training_data
@@ -82,24 +80,16 @@ Category:Misconception
 </instructions>"""
 
 
-type QuantizationType = str
-type ModelType = str
 
 
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
-    def __init__(
-        self,
-        model_type: ModelType = "gemma-3-12b-it-GGUF",
-        quantization_type: QuantizationType = "Q6_K_XL",
-    ) -> None:
-        self.model_path = get_model_path(model_type, quantization_type)
-        self.model_type = model_type
-        self.quantization_type = quantization_type
+    def __init__(self, config: LLMConfig | None = None) -> None:
+        self.config = config or LLMConfig()
+        self.model_path = get_model_path(self.config.model_name, self.config.quantization)
         self.llm: Llama | None = None
-        self.correct_answers: dict[QuestionId, Answer] = {}
-        self.misconceptions_by_question: dict[QuestionId, list[Misconception]] = {}
+        self.problem_contexts: dict[QuestionId, ProblemContext] = {}
 
     @property
     def name(self) -> str:
@@ -107,36 +97,29 @@ class LLMStrategy(Strategy):
 
     @property
     def description(self) -> str:
-        return f"LLM-based prediction using GGUF model: {self.model_path.name}"
+        return f"LLM-based prediction using {self.config.model_name} ({self.config.quantization})"
 
     def _load_model(self) -> None:
         """Lazy load the GGUF model, downloading if necessary."""
         if self.llm is not None:
             return
 
-        self.llm = load_llm_model(
-            self.model_type,
-            self.quantization_type,
-            n_ctx=4096,
-            n_batch=512,
-            n_gpu_layers=-1,
-            n_threads=8,
-            verbose=False,
-        )
+        # Use context manager to load model
+        model_context = load_llm_model(self.config)
+        self.llm = model_context.__enter__()
 
-    def _build_prompt(self, row: EvaluationRow) -> str:
+    def _build_prompt(self, context: LLMInferenceContext) -> str:
         """Build XML-structured prompt with training context."""
-        correct_answer = self.correct_answers.get(row.question_id, "Unknown")
-
-        misconceptions = self.misconceptions_by_question.get(row.question_id, [])[:5]
-        known_misconceptions = ", ".join(misconceptions) if misconceptions else "None identified"
+        correct_answer = context.problem.correct_answer or "Unknown"
+        misconceptions = context.problem.known_misconceptions or []
+        known_misconceptions = ", ".join(misconceptions[:5]) if misconceptions else "None identified"
 
         return PROMPT_TEMPLATE.format(
-            question=row.question_text,
+            question=context.problem.question_text,
             correct_answer=correct_answer,
             known_misconceptions=known_misconceptions,
-            student_answer=row.mc_answer,
-            student_explanation=row.student_explanation,
+            student_answer=context.student_work.answer,
+            student_explanation=context.student_work.explanation,
         )
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
@@ -180,7 +163,10 @@ class LLMStrategy(Strategy):
             logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} samples)")
 
             for row in batch:
-                prompt = self._build_prompt(row)
+                # Build inference context
+                problem_context = self.problem_contexts.get(row.question_id)
+                inference_context = LLMInferenceContext.from_evaluation_row(row, problem_context)
+                prompt = self._build_prompt(inference_context)
 
                 start_time = time.time()
                 assert self.llm is not None, "LLM model not loaded"
@@ -218,8 +204,7 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
-        model_type: str = "gemma-3-12b-it",
-        quantization_type: str = "Q4_K_M",
+        config: LLMConfig | None = None,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
         logger.info("Fitting LLM strategy")
@@ -239,9 +224,16 @@ class LLMStrategy(Strategy):
         misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
         logger.info(f"Extracted misconceptions for {len(misconceptions_by_question)} questions")
 
-        strategy = cls(model_type=model_type, quantization_type=quantization_type)
-        strategy.correct_answers = correct_answers
-        strategy.misconceptions_by_question = misconceptions_by_question
+        strategy = cls(config=config)
+
+        # Build problem contexts for all questions
+        for question_id in correct_answers:
+            strategy.problem_contexts[question_id] = ProblemContext(
+                question_id=question_id,
+                question_text="",  # Will be filled from evaluation row
+                correct_answer=correct_answers[question_id],
+                known_misconceptions=misconceptions_by_question.get(question_id, []),
+            )
 
         return strategy
 
@@ -253,15 +245,11 @@ class LLMStrategy(Strategy):
 
     def save(self, filepath: Path) -> None:
         """Save strategy state (not the model itself)."""
-
         logger.info(f"Saving LLM strategy state to {filepath}")
 
         state = {
-            "correct_answers": self.correct_answers,
-            "misconceptions_by_question": self.misconceptions_by_question,
-            "model_path": str(self.model_path),  # Convert Path to string for serialization
-            "model_type": self.model_type,
-            "quantization_type": self.quantization_type,
+            "problem_contexts": self.problem_contexts,
+            "config": self.config,
         }
 
         with filepath.open("wb") as f:
@@ -275,14 +263,8 @@ class LLMStrategy(Strategy):
         with filepath.open("rb") as f:
             state = pickle.load(f)
 
-        strategy = cls(
-            model_type=state.get("model_type", "gemma-3-12b-it"),
-            quantization_type=state.get("quantization_type", "Q4_K_M"),
-        )
-        if "model_path" in state:
-            strategy.model_path = Path(state["model_path"])  # Convert string back to Path
-        strategy.correct_answers = state["correct_answers"]
-        strategy.misconceptions_by_question = state["misconceptions_by_question"]
+        strategy = cls(config=state.get("config"))
+        strategy.problem_contexts = state["problem_contexts"]
 
         return strategy
 
