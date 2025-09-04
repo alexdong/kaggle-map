@@ -2,7 +2,6 @@
 
 import importlib
 import inspect
-from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
@@ -208,21 +207,13 @@ def list_strategies() -> list[str]:
     return strategy_names
 
 
-@lru_cache(maxsize=1)
 def get_all_strategies() -> dict[str, type[Strategy]]:
     """Get all discovered strategies.
 
     Returns:
         Dictionary mapping strategy names to strategy classes
     """
-    logger.debug("Retrieving all strategies (may trigger discovery if not cached)")
+    logger.debug("Retrieving all strategies - triggering discovery")
     strategies = _discover_strategies()
-    logger.debug(f"Returning {len(strategies)} strategies from cache/discovery")
+    logger.debug(f"Returning {len(strategies)} strategies from discovery")
     return strategies
-
-
-def refresh_strategies() -> None:
-    """Force refresh of strategy cache (useful for testing)."""
-    logger.info("Clearing strategy cache - next access will trigger fresh discovery")
-    get_all_strategies.cache_clear()
-    logger.debug("Strategy cache cleared successfully")

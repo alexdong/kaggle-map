@@ -23,6 +23,7 @@ from kaggle_map.core.llm_types import (
     LLMConfig,
     LLMInferenceContext,
     ProblemContext,
+    StudentWork,
 )
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
@@ -165,7 +166,19 @@ class LLMStrategy(Strategy):
             for row in batch:
                 # Build inference context
                 problem_context = self.problem_contexts.get(row.question_id)
-                inference_context = LLMInferenceContext.from_evaluation_row(row, problem_context)
+                if problem_context:
+                    # Use provided problem context
+                    student_work = StudentWork(
+                        answer=row.mc_answer,
+                        explanation=row.student_explanation
+                    )
+                    inference_context = LLMInferenceContext(
+                        problem=problem_context,
+                        student_work=student_work
+                    )
+                else:
+                    # Use default from_evaluation_row
+                    inference_context = LLMInferenceContext.from_evaluation_row(row)
                 prompt = self._build_prompt(inference_context)
 
                 start_time = time.time()

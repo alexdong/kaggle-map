@@ -121,7 +121,7 @@ def _generate_embeddings_batch(
 
         # Prepare batch
         for row in batch:
-            text = repr(row)  # Uses TrainingRow.__repr__ format
+            text = row.to_embedding_text()  # Generate embedding text
             batch_texts.append(text)
             batch_row_ids.append(row.row_id)
 

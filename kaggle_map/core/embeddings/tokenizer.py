@@ -2,7 +2,7 @@
 Utilities for encoding Question/Answer/Explanation text into embeddings using sentence transformers.
 
 Primary entrypoints:
-- `repr(row)` - EvaluationRow.__repr__ creates normalized Q/A/E text
+- `row.to_embedding_text()` - Creates normalized Q/A/E text
 - `encode(model, text)` - Encode text into vector embeddings
 """
 
@@ -21,7 +21,7 @@ def main() -> None:
         student_explanation="The answer is four.",
     )
 
-    text = repr(row)
+    text = row.to_embedding_text()
     print(f"Text: {text}")
     embeddings = tokenizer.encode(text)
 

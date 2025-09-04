@@ -10,12 +10,12 @@ from pydantic import BaseModel, field_validator
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
 
 # Domain-specific type aliases
-type RowId = int
-type QuestionId = int
-type Answer = str
-type Question = str  # Question text from math problems
-type Explanation = str  # Student's explanation of their reasoning
-type Misconception = str  # Specific misconception identifier (e.g., "AddInsteadOfMultiply")
+RowId = int
+QuestionId = int
+Answer = str
+Question = str  # Question text from math problems
+Explanation = str  # Student's explanation of their reasoning
+Misconception = str  # Specific misconception identifier
 
 
 class Category(Enum):
@@ -85,21 +85,20 @@ class EvaluationRow(BaseModel):
     def normalize_answer(cls, v: str) -> str:
         return normalize_latex_answer(v)
 
-    def __repr__(self) -> str:
-        """Compose the canonical Q/A/E string used for embeddings.
-
-        Uses __repr__ (not __str__) because this is the exact format required by the
-        embedding system via repr(row) calls. This isn't just for debugging - it's
-        the data serialization format for ML processing.
+    def to_embedding_text(self) -> str:
+        """Generate the canonical Q/A/E string used for embeddings.
 
         Example output:
-            "Question: {}; Expected Answer: {}; Student's Answer: {}; Student's Explanation: {}"
-
+            "Question: {}; Student's Answer: {}; Student's Explanation: {}"
         """
         return (
             f"Question: {self.question_text}; "
             f"Student's Answer: {self.mc_answer}; Student's Explanation: {self.student_explanation}"
         )
+
+    def __repr__(self) -> str:
+        """Standard repr for debugging."""
+        return f"EvaluationRow(row_id={self.row_id}, question_id={self.question_id})"
 
 
 class TrainingInput(NamedTuple):
@@ -147,7 +146,7 @@ class TrainingRow(EvaluationRow):
         from kaggle_map.core.embeddings.tokenizer import get_tokenizer
 
         tokenizer = get_tokenizer()
-        text = repr(self)
+        text = self.to_embedding_text()
 
         # Generate embeddings and convert to numpy array
         embeddings_tensor = tokenizer.encode(text)
