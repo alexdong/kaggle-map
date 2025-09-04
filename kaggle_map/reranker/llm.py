@@ -211,14 +211,14 @@ def process_dataframe_simple(
             reranked = rerank_predictions(llm, request)
 
             # Update results
-            df_sample.at[idx, "LLM_top_1"] = str(reranked[0]) if reranked else ""
-            df_sample.at[idx, "LLM_top_3"] = "|".join(str(p) for p in reranked[:3])
+            df_sample.loc[idx, "LLM_top_1"] = str(reranked[0]) if reranked else ""
+            df_sample.loc[idx, "LLM_top_3"] = "|".join(str(p) for p in reranked[:3])
 
             # Check accuracy if ground truth available
             if "actual_misconception" in row:
                 actual = f"{row['Category']}:{row.get('actual_misconception', 'NA')}"
                 predicted = str(reranked[0]) if reranked else ""
-                df_sample.at[idx, "LLM_correct"] = compare_labels(actual, predicted)
+                df_sample.loc[idx, "LLM_correct"] = compare_labels(actual, predicted)
 
         except Exception as e:
             logger.error(f"Failed to process row {idx}: {e}")
