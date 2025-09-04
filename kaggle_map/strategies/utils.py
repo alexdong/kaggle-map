@@ -18,7 +18,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from kaggle_map.core.models import TrainingRow
-from kaggle_map.utils.device import get_device
 
 # Data split constants
 TRAIN_RATIO = 0.70

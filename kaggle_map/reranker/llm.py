@@ -76,6 +76,7 @@ def rerank_predictions(
     logger.debug(f"Reranking {len(request.candidate_predictions)} predictions")
     prompt = build_reranking_prompt(request)
     logger.debug(f"Reranking prompt: {prompt}")
+
     output = llm(
         prompt,
         max_tokens=20,  # Just need numbers like "3,1,2"
@@ -83,7 +84,7 @@ def rerank_predictions(
         stop=["\n"],
         echo=False,
     )
-
     response = output["choices"][0]["text"].strip()  # type: ignore
     logger.debug(f"Reranking response: {response}")
+
     return parse_reranking_response(response, request.candidate_predictions)
