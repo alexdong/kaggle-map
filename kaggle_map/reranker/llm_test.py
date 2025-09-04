@@ -3,8 +3,7 @@
 import pytest
 
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
-from kaggle_map.reranker.llm import build_reranking_prompt, parse_reranking_response
-from kaggle_map.reranker.models import RerankingRequest
+from kaggle_map.reranker.llm import build_reranking_prompt, parse_reranking_response, RerankingRequest
 
 
 def test_build_reranking_prompt():

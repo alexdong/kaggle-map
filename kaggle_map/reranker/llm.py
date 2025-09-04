@@ -5,16 +5,30 @@ replacing the complex HTTP/async implementation with direct model calls.
 """
 
 import re
+from dataclasses import dataclass
 
 from llama_cpp import Llama
 from loguru import logger
 
 from kaggle_map.core.models import (
+    EvaluationRow,
     LLMResponse,
     Prediction,
     PromptTemplate,
 )
-from kaggle_map.reranker.models import RerankingRequest
+
+
+@dataclass(frozen=True)
+class RerankingRequest:
+    """Complete request for reranking predictions."""
+
+    evaluation_row: EvaluationRow
+    candidate_predictions: list[Prediction]
+
+    @property
+    def top_prediction(self) -> Prediction | None:
+        """Get the current top prediction."""
+        return self.candidate_predictions[0] if self.candidate_predictions else None
 
 
 def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
@@ -61,6 +75,7 @@ def rerank_predictions(
 ) -> list[Prediction]:
     logger.debug(f"Reranking {len(request.candidate_predictions)} predictions")
     prompt = build_reranking_prompt(request)
+    logger.debug(f"Reranking prompt: {prompt}")
     output = llm(
         prompt,
         max_tokens=20,  # Just need numbers like "3,1,2"
