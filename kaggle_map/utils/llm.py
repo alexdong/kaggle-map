@@ -11,14 +11,14 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.models import InferenceConfig, ModelLoadConfig, ModelName, QuantizationLevel
-
-# Available quantization options
-QUANTIZATION_OPTIONS: list[QuantizationLevel] = [
-    "Q4_K_XL",
-    "Q5_K_XL",
-    "Q6_K_XL",
-]
+from kaggle_map.core.models import (
+    MODEL_OPTIONS,
+    QUANTIZATION_OPTIONS,
+    InferenceConfig,
+    ModelLoadConfig,
+    ModelName,
+    QuantizationLevel,
+)
 
 # Model configurations with their HuggingFace patterns
 MODEL_CONFIGS: dict[ModelName, dict[str, str]] = {
@@ -30,10 +30,12 @@ MODEL_CONFIGS: dict[ModelName, dict[str, str]] = {
         "repo": "unsloth/Qwen3-14B-GGUF",
         "filename_pattern": "Qwen3-14B-UD-{quant}.gguf",
     },
+    "gpt-oss-20b": {
+        "repo": "unsloth/gpt-oss-20b-GGUF",
+        "filename_pattern": "gpt-oss-20b-UD-{quant}.gguf",
+    },
 }
 
-# Available model options
-MODEL_OPTIONS: list[ModelName] = ["gemma-3-12b-it", "Qwen3-14B"]
 
 
 def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
@@ -175,7 +177,7 @@ if __name__ == "__main__":
                         "Load Time (s)": f"{load_time:.2f}",
                         "Time to 1st Token (s)": f"{time_to_first_token:.3f}",
                         "Tokens/sec": f"{tokens_per_sec:.1f}",
-                        "Response": response,
+                        "Response Preview": response[:50] + "..." if len(response) > 50 else response,
                     }
                 )
 

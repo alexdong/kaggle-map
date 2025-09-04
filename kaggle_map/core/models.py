@@ -28,8 +28,12 @@ Label = str
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
-ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
+ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
 QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+
+# Available options derived from type definitions
+MODEL_OPTIONS: list[ModelName] = ["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
+QUANTIZATION_OPTIONS: list[QuantizationLevel] = ["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
 
 # ============================================================================
 # Core Models
@@ -198,7 +202,7 @@ class TrainingRow(EvaluationRow):
 
     def as_training_input(self) -> TrainingInput:
         from kaggle_map.core.embeddings.tokenizer import get_tokenizer
-        
+
         tokenizer = get_tokenizer()
         text = self.to_embedding_text()
 

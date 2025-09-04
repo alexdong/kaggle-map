@@ -51,13 +51,13 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
@@ -73,6 +73,7 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
+from kaggle_map.utils.device import get_device
 
 from .base import Strategy
 from .utils import (
@@ -81,7 +82,6 @@ from .utils import (
     TorchConfig,
     extract_question_predictions,
     get_activation,
-    get_device,
     get_split_indices,
     init_wandb,
     load_torch_strategy,

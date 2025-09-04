@@ -262,7 +262,7 @@ class LLMStrategy(Strategy):
         if not isinstance(model, LLMStrategy):
             msg = f"Expected LLMStrategy, got {type(model)}"
             raise TypeError(msg)
-        
+
         if model.llm is None:
             model._load_model()
 
