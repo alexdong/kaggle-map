@@ -26,9 +26,8 @@ def objective_function(
     trial: optuna.Trial,
     strategy_class: Any,  # Use Any to avoid type checking issues
     train_data_path: str | None = None,
-    search_type: str = "regular"
+    search_type: str = "regular",
 ) -> float:
-
     # Get hyperparameters from strategy based on search type
     if search_type == "embedding":
         # Use embedding-specific search space
@@ -50,11 +49,7 @@ def objective_function(
     hyperparams["wandb_run_name"] = wandb_run_name
 
     # Add metadata for wandb tracking
-    hyperparams["wandb_tags"] = [
-        f"study_{trial.study.study_name}",
-        f"trial_{trial.number}",
-        "hypersearch"
-    ]
+    hyperparams["wandb_tags"] = [f"study_{trial.study.study_name}", f"trial_{trial.number}", "hypersearch"]
     hyperparams["study_id"] = trial.study.study_name
     hyperparams["trial_number"] = trial.number
 
@@ -99,7 +94,6 @@ def run_search(
     train_data_path: str | None = None,
     search_type: str = "regular",
 ) -> optuna.Study:
-
     search_desc = "embedding model comparison" if search_type == "embedding" else "hyperparameter"
     logger.info(f"Starting {search_desc} search for {strategy_name}")
     logger.info(f"Trials: {n_trials}, Jobs: {n_jobs}, Timeout: {timeout}s")
@@ -174,7 +168,7 @@ def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | No
     logger.info("Strategy: mlp")
     logger.info(f"Trials: {trials} (7 models x ~10 configs each)")
     logger.info(f"Parallel jobs: {jobs}")
-    logger.info(f"Timeout: {timeout}s ({timeout/3600:.1f} hours)")
+    logger.info(f"Timeout: {timeout}s ({timeout / 3600:.1f} hours)")
     logger.info("")
     logger.info("Models to test:")
     logger.info("  - MINI_LM (384 dim) - baseline")
@@ -237,4 +231,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

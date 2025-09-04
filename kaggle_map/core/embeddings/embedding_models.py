@@ -3,7 +3,7 @@ from enum import Enum
 
 from sentence_transformers import SentenceTransformer
 
-from kaggle_map.strategies.utils import get_device
+from kaggle_map.utils.device import get_device
 
 """Embedding model registry and metadata.
 

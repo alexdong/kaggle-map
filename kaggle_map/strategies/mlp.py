@@ -156,7 +156,9 @@ class QuestionSpecificMLP(nn.Module):
         if hasattr(config, "trunk_layers") and config.trunk_layers:
             # Hyperparameter search case - use provided architecture
             trunk_layers = config.trunk_layers
-            assert isinstance(trunk_layers, list | tuple), f"trunk_layers must be list or tuple, got {type(trunk_layers)}"
+            assert isinstance(trunk_layers, list | tuple), (
+                f"trunk_layers must be list or tuple, got {type(trunk_layers)}"
+            )
             assert len(trunk_layers) > 0, "trunk_layers must not be empty"
             dims = list(trunk_layers)  # Ensure it's a list
             assert dims[0] == input_dim, f"First layer must match input_dim {input_dim}, got {dims[0]}"

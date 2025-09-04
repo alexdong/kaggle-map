@@ -36,10 +36,7 @@ def dashboard() -> None:
     print("Press Ctrl+C to stop the dashboard\n")
 
     try:
-        subprocess.run(
-            [sys.executable, "-m", "optuna", "dashboard", STORAGE_URL],
-            check=True
-        )
+        subprocess.run([sys.executable, "-m", "optuna", "dashboard", STORAGE_URL], check=True)
     except KeyboardInterrupt:
         print("\nDashboard stopped")
     except subprocess.CalledProcessError as e:
@@ -62,6 +59,7 @@ mlp_group.add_command(mlp.search)
 mlp_group.add_command(mlp.search_embeddings)
 mlp_group.add_command(mlp.analyze)
 
+
 # Register LLM commands
 @click.group("llm")
 def llm_group() -> None:
@@ -83,4 +81,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

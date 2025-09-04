@@ -36,8 +36,6 @@ MODEL_CONFIGS: dict[ModelName, dict[str, str]] = {
 MODEL_OPTIONS: list[ModelName] = ["gemma-3-12b-it", "Qwen3-14B"]
 
 
-
-
 def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
     """Get the local path for a GGUF model file."""
     return Path(f"models/gguf/{model_name}-{quantization}.gguf")

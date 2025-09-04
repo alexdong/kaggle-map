@@ -76,8 +76,6 @@ Category:Misconception
 </instructions>"""
 
 
-
-
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 

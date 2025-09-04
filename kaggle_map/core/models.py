@@ -9,7 +9,8 @@ import pandas as pd
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
-from kaggle_map.core.embeddings.tokenizer import get_tokenizer
+
+# Moved get_tokenizer import to function level to avoid circular dependency
 
 # ============================================================================
 # Type Aliases
@@ -196,6 +197,8 @@ class TrainingRow(EvaluationRow):
         )
 
     def as_training_input(self) -> TrainingInput:
+        from kaggle_map.core.embeddings.tokenizer import get_tokenizer
+
         tokenizer = get_tokenizer()
         text = self.to_embedding_text()
 

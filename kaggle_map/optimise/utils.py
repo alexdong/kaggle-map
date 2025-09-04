@@ -57,6 +57,7 @@ def cleanup_after_trial() -> None:
     # Close wandb if it's running
     try:
         import wandb
+
         if wandb.run is not None:
             wandb.finish()
     except ImportError:
@@ -221,4 +222,3 @@ def list_all_studies(storage_url: str = STORAGE_URL) -> list[str]:
     except Exception as e:
         logger.error(f"Failed to list studies: {e}")
         return []
-
