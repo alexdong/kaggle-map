@@ -16,8 +16,8 @@ from kaggle_map.core.models import (
     LLMResponse,
     Prediction,
     PromptTemplate,
-    RerankingRequest,
 )
+from kaggle_map.reranker.models import RerankingRequest
 
 
 def normalize_label(label: Label) -> Label:

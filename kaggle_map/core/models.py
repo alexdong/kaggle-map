@@ -9,6 +9,7 @@ import pandas as pd
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
+from kaggle_map.core.embeddings.tokenizer import get_tokenizer
 
 # Domain-specific type aliases
 RowId = int
@@ -148,9 +149,6 @@ class TrainingRow(EvaluationRow):
         )
 
     def as_training_input(self) -> TrainingInput:
-        # Import here to avoid circular dependency
-        from kaggle_map.core.embeddings.tokenizer import get_tokenizer
-
         tokenizer = get_tokenizer()
         text = self.to_embedding_text()
 
@@ -176,19 +174,6 @@ PromptTemplate = str
 LLMResponse = str
 ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
 QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
-
-
-@dataclass(frozen=True)
-class RerankingRequest:
-    """Complete request for reranking predictions."""
-
-    evaluation_row: EvaluationRow
-    candidate_predictions: list[Prediction]
-
-    @property
-    def top_prediction(self) -> Prediction | None:
-        """Get the current top prediction."""
-        return self.candidate_predictions[0] if self.candidate_predictions else None
 
 
 @dataclass
