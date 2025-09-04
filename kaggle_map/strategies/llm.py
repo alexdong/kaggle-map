@@ -10,7 +10,7 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -19,15 +19,10 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
-from kaggle_map.core.llm_types import (
-    LLMConfig,
-    LLMInferenceContext,
-    ProblemContext,
-    StudentWork,
-)
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     EvaluationRow,
+    LLMConfig,
     Prediction,
     QuestionId,
     SubmissionRow,
@@ -90,7 +85,8 @@ class LLMStrategy(Strategy):
         self.config = config or LLMConfig()
         self.model_path = get_model_path(self.config.model_name, self.config.quantization)
         self.llm: Llama | None = None
-        self.problem_contexts: dict[QuestionId, ProblemContext] = {}
+        # Store additional context for questions (correct answers, known misconceptions)
+        self.question_contexts: dict[QuestionId, dict[str, Any]] = {}
 
     @property
     def name(self) -> str:
@@ -109,18 +105,18 @@ class LLMStrategy(Strategy):
         model_context = load_llm_model(self.config)
         self.llm = model_context.__enter__()
 
-    def _build_prompt(self, context: LLMInferenceContext) -> str:
+    def _build_prompt(self, row: EvaluationRow) -> str:
         """Build XML-structured prompt with training context."""
-        correct_answer = context.problem.correct_answer or "Unknown"
-        misconceptions = context.problem.known_misconceptions or []
+        correct_answer = row.correct_answer or "Unknown"
+        misconceptions = row.known_misconceptions or []
         known_misconceptions = ", ".join(misconceptions[:5]) if misconceptions else "None identified"
 
         return PROMPT_TEMPLATE.format(
-            question=context.problem.question_text,
+            question=row.question_text,
             correct_answer=correct_answer,
             known_misconceptions=known_misconceptions,
-            student_answer=context.student_work.answer,
-            student_explanation=context.student_work.explanation,
+            student_answer=row.mc_answer,
+            student_explanation=row.student_explanation,
         )
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
@@ -164,22 +160,13 @@ class LLMStrategy(Strategy):
             logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} samples)")
 
             for row in batch:
-                # Build inference context
-                problem_context = self.problem_contexts.get(row.question_id)
-                if problem_context:
-                    # Use provided problem context
-                    student_work = StudentWork(
-                        answer=row.mc_answer,
-                        explanation=row.student_explanation
-                    )
-                    inference_context = LLMInferenceContext(
-                        problem=problem_context,
-                        student_work=student_work
-                    )
-                else:
-                    # Use default from_evaluation_row
-                    inference_context = LLMInferenceContext.from_evaluation_row(row)
-                prompt = self._build_prompt(inference_context)
+                # Add any additional context if available
+                context = self.question_contexts.get(row.question_id, {})
+                if context:
+                    row.correct_answer = context.get("correct_answer")
+                    row.known_misconceptions = context.get("known_misconceptions")
+
+                prompt = self._build_prompt(row)
 
                 start_time = time.time()
                 assert self.llm is not None, "LLM model not loaded"
@@ -241,12 +228,10 @@ class LLMStrategy(Strategy):
 
         # Build problem contexts for all questions
         for question_id in correct_answers:
-            strategy.problem_contexts[question_id] = ProblemContext(
-                question_id=question_id,
-                question_text="",  # Will be filled from evaluation row
-                correct_answer=correct_answers[question_id],
-                known_misconceptions=misconceptions_by_question.get(question_id, []),
-            )
+            strategy.question_contexts[question_id] = {
+                "correct_answer": correct_answers[question_id],
+                "known_misconceptions": misconceptions_by_question.get(question_id, []),
+            }
 
         return strategy
 

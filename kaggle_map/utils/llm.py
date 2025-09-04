@@ -11,7 +11,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.llm_types import LLMConfig, ModelName, QuantizationLevel
+from kaggle_map.core.models import LLMConfig, ModelName, QuantizationLevel
 
 # Available quantization options
 QUANTIZATION_OPTIONS: list[QuantizationLevel] = [

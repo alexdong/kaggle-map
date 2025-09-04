@@ -11,7 +11,7 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
-from kaggle_map.core.llm_types import LLMConfig, QuantizationLevel
+from kaggle_map.core.models import LLMConfig, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
@@ -50,15 +50,13 @@ def evaluate_quantization(quantization: QuantizationLevel, sample_size: int = 10
     correct_answers = extract_correct_answers(train_data)
     misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
 
-    from kaggle_map.core.llm_types import ProblemContext
+    # Context is now stored directly as dict
 
     for question_id in correct_answers:
-        strategy.problem_contexts[question_id] = ProblemContext(
-            question_id=question_id,
-            question_text="",  # Will be filled from evaluation row
-            correct_answer=correct_answers[question_id],
-            known_misconceptions=misconceptions_by_question.get(question_id, []),
-        )
+        strategy.question_contexts[question_id] = {
+            "correct_answer": correct_answers[question_id],
+            "known_misconceptions": misconceptions_by_question.get(question_id, []),
+        }
 
     # Measure evaluation time
     start_time = time.time()

@@ -1,7 +1,8 @@
 """Core data structures for the Kaggle student misconception prediction competition."""
 
+from dataclasses import dataclass
 from enum import Enum
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -75,6 +76,10 @@ class EvaluationRow(BaseModel):
     mc_answer: Answer
     student_explanation: Explanation
 
+    # Optional context fields for LLM inference
+    correct_answer: Answer | None = None
+    known_misconceptions: list[Misconception] | None = None
+
     @field_validator("question_text", "student_explanation")
     @classmethod
     def normalize_text_fields(cls, v: str) -> str:
@@ -115,6 +120,7 @@ class TrainingRow(EvaluationRow):
     """
 
     prediction: Prediction
+    training_examples: list["TrainingRow"] | None = None  # For few-shot prompting
 
     # Expose prediction fields at the top level for backward compatibility
     @property
@@ -162,3 +168,42 @@ class TrainingRow(EvaluationRow):
 class SubmissionRow(NamedTuple):
     row_id: RowId
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
+
+
+# Type aliases for LLM operations
+Label = str  # "True_Misconception:AddInsteadOfMultiply"
+PromptTemplate = str
+LLMResponse = str
+ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
+QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+
+
+@dataclass(frozen=True)
+class RerankingRequest:
+    """Complete request for reranking predictions."""
+
+    evaluation_row: EvaluationRow
+    candidate_predictions: list[Prediction]
+
+    @property
+    def top_prediction(self) -> Prediction | None:
+        """Get the current top prediction."""
+        return self.candidate_predictions[0] if self.candidate_predictions else None
+
+
+@dataclass
+class LLMConfig:
+    """Configuration for loading and running GGUF models."""
+
+    model_name: ModelName = "gemma-3-12b-it"
+    quantization: QuantizationLevel = "Q4_K_XL"
+    n_ctx: int = 4096
+    n_batch: int = 512
+    n_gpu_layers: int = -1  # Use all available layers
+    n_threads: int = 8
+    verbose: bool = False
+
+    @property
+    def model_filename(self) -> str:
+        """Get the GGUF filename for this configuration."""
+        return f"{self.model_name}-{self.quantization}.gguf"

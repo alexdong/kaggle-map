@@ -10,15 +10,14 @@ import pandas as pd
 from llama_cpp import Llama
 from loguru import logger
 
-from kaggle_map.core.llm_types import (
+from kaggle_map.core.models import (
+    EvaluationRow,
     Label,
     LLMResponse,
-    ProblemContext,
+    Prediction,
     PromptTemplate,
     RerankingRequest,
-    StudentWork,
 )
-from kaggle_map.core.models import Prediction
 
 
 def normalize_label(label: Label) -> Label:
@@ -67,12 +66,13 @@ def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
     # Format predictions as numbered list
     predictions_text = "\n".join(f"{i + 1}. {pred!s}" for i, pred in enumerate(request.candidate_predictions))
 
+    row = request.evaluation_row
     return f"""Analyze this student's math work and reorder the predictions by likelihood.
 
-Question: {request.problem.question_text}
-Correct Answer: {request.problem.correct_answer or "Not provided"}
-Student Answer: {request.student_work.answer}
-Student Explanation: {request.student_work.explanation}
+Question: {row.question_text}
+Correct Answer: {row.correct_answer or "Not provided"}
+Student Answer: {row.mc_answer}
+Student Explanation: {row.student_explanation}
 
 Predictions to reorder:
 {predictions_text}
@@ -194,21 +194,16 @@ def process_dataframe_simple(
             predictions = [Prediction.from_string(label) for label in prediction_labels]
 
             # Build request
-            problem = ProblemContext(
+            eval_row = EvaluationRow(
+                row_id=idx,
                 question_id=row.get("QuestionId", 0),
-                question_text=row["QuestionText"],
-                correct_answer=None,  # Not available in this context
-                known_misconceptions=None,
-            )
-
-            student_work = StudentWork(
-                answer=str(row["MC_Answer"]),
-                explanation=str(row["StudentExplanation"]),
+                question_text=str(row["QuestionText"]),
+                mc_answer=str(row["MC_Answer"]),
+                student_explanation=str(row["StudentExplanation"]),
             )
 
             request = RerankingRequest(
-                problem=problem,
-                student_work=student_work,
+                evaluation_row=eval_row,
                 candidate_predictions=predictions,
             )
 
