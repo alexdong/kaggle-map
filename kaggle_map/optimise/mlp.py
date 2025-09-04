@@ -15,7 +15,6 @@ from .utils import (
     cleanup_after_trial,
     clear_gpu_memory,
     create_study,
-    generate_study_summary,
     handle_oom_error,
     save_best_config,
     track_gpu_memory,
@@ -131,8 +130,7 @@ def run_search(
     # Save best configuration
     save_best_config(study, strategy_name)
 
-    # Generate study summary
-    generate_study_summary(study)
+    # Summary can be viewed via optuna-dashboard
 
     return study
 
@@ -191,32 +189,25 @@ def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | No
 @click.command()
 @click.argument("study")
 def analyze(study: str) -> None:
-    try:
-        study_obj = optuna.load_study(study_name=study, storage=STORAGE_URL)
+    study_obj = optuna.load_study(study_name=study, storage=STORAGE_URL)
 
-        if len(study_obj.trials) == 0:
-            print(f"Study {study} has no trials")
-            return
+    if len(study_obj.trials) == 0:
+        print(f"Study {study} has no trials")
+        return
 
-        # Basic info
-        print(f"\nStudy: {study}")
-        print(f"Trials: {len(study_obj.trials)}")
-        print(f"Best Value: {study_obj.best_value:.4f}")
-        print(f"Best Trial: #{study_obj.best_trial.number}")
+    # Basic info
+    print(f"\nStudy: {study}")
+    print(f"Trials: {len(study_obj.trials)}")
+    print(f"Best Value: {study_obj.best_value:.4f}")
+    print(f"Best Trial: #{study_obj.best_trial.number}")
 
-        # Best parameters
-        print("\nBest Parameters:")
-        for param, value in study_obj.best_params.items():
-            print(f"  {param}: {value}")
+    # Best parameters
+    print("\nBest Parameters:")
+    for param, value in study_obj.best_params.items():
+        print(f"  {param}: {value}")
 
-        # Generate and save summary
-        summary_path = generate_study_summary(study_obj)
-        if summary_path:
-            print(f"\nDetailed summary saved to: {summary_path}")
-
-    except Exception as e:
-        logger.error(f"Failed to analyze study: {e}")
-        print(f"Error: Failed to load study '{study}'")
+    # Detailed analysis available via optuna-dashboard:
+    # Run 'make dashboard' to launch interactive visualizatio
 
 
 # Add commands to CLI
