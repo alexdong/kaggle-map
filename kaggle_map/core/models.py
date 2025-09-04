@@ -10,7 +10,7 @@ from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
 
-# Moved get_tokenizer import to function level to avoid circular dependency
+# NOTE: get_tokenizer import moved to function level to avoid circular dependency
 
 # ============================================================================
 # Type Aliases
@@ -198,7 +198,7 @@ class TrainingRow(EvaluationRow):
 
     def as_training_input(self) -> TrainingInput:
         from kaggle_map.core.embeddings.tokenizer import get_tokenizer
-
+        
         tokenizer = get_tokenizer()
         text = self.to_embedding_text()
 
@@ -224,18 +224,34 @@ class SubmissionRow(NamedTuple):
 
 
 @dataclass
-class LLMConfig:
-    """Configuration for loading and running GGUF models."""
+class ModelLoadConfig:
+    """Configuration for loading GGUF models into memory."""
 
     model_name: ModelName = "gemma-3-12b-it"
     quantization: QuantizationLevel = "Q4_K_XL"
-    n_ctx: int = 4096
-    n_batch: int = 512
-    n_gpu_layers: int = -1  # Use all available layers
-    n_threads: int = 8
-    verbose: bool = False
+    n_ctx: int = 4096  # Context window size
+    n_batch: int = 512  # Batch size for prompt processing
+    n_gpu_layers: int = -1  # Use all available GPU layers
+    n_threads: int = 8  # CPU threads for inference
+    verbose: bool = False  # Verbose llama.cpp output
 
     @property
     def model_filename(self) -> str:
         """Get the GGUF filename for this configuration."""
         return f"{self.model_name}-{self.quantization}.gguf"
+
+
+@dataclass
+class InferenceConfig:
+    """Configuration for text generation/inference."""
+
+    max_tokens: int = 100  # Maximum tokens to generate
+    temperature: float = 0.1  # Sampling temperature (0.0 = greedy)
+    stop: list[str] | None = None  # Stop sequences
+    echo: bool = False  # Include prompt in response
+    top_p: float = 0.95  # Nucleus sampling threshold
+    top_k: int = 40  # Top-k sampling
+
+
+# Backward compatibility alias (to be removed in future)
+LLMConfig = ModelLoadConfig

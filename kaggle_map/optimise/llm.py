@@ -11,7 +11,7 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
-from kaggle_map.core.models import LLMConfig, QuantizationLevel
+from kaggle_map.core.models import ModelLoadConfig, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
@@ -37,7 +37,7 @@ def evaluate_quantization(quantization: QuantizationLevel, sample_size: int = 10
     logger.info(f"Evaluating quantization: {quantization}")
 
     # Create strategy with specific quantization
-    config = LLMConfig(model_name="gemma-3-12b-it", quantization=quantization)
+    config = ModelLoadConfig(model_name="gemma-3-12b-it", quantization=quantization)
     strategy = LLMStrategy(config=config)
 
     # Load training data for fit

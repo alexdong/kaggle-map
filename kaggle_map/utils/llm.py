@@ -11,7 +11,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.models import LLMConfig, ModelName, QuantizationLevel
+from kaggle_map.core.models import InferenceConfig, ModelLoadConfig, ModelName, QuantizationLevel
 
 # Available quantization options
 QUANTIZATION_OPTIONS: list[QuantizationLevel] = [
@@ -79,7 +79,7 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
 
 
 @contextmanager
-def load_llm_model(config: LLMConfig) -> Iterator[Llama]:
+def load_llm_model(config: ModelLoadConfig) -> Iterator[Llama]:
     """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
     model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")
@@ -121,21 +121,28 @@ if __name__ == "__main__":
             console.print(f"\n📦 Processing {model_name} - {quantization}", style="bold yellow")
             console.print("-" * 40)
 
-            # Create config
-            config = LLMConfig(
+            # Create model loading config
+            load_config = ModelLoadConfig(
                 model_name=model_name,
                 quantization=quantization,
                 n_ctx=2048,  # Smaller context for benchmarking
                 verbose=False,
             )
 
+            # Create inference config for benchmarking
+            inference_config = InferenceConfig(
+                max_tokens=100,
+                temperature=0.1,
+                echo=False,
+            )
+
             # Download model
-            model_path = download_model(config.model_name, config.quantization)
+            model_path = download_model(load_config.model_name, load_config.quantization)
             console.print(f"✅ Model ready: {model_path.name}", style="green")
 
             # Load model with context manager
             start_load = time.time()
-            with load_llm_model(config) as llm:
+            with load_llm_model(load_config) as llm:
                 load_time = time.time() - start_load
 
                 # Benchmark inference
@@ -144,9 +151,9 @@ if __name__ == "__main__":
                 start_inference = time.time()
                 output = llm(
                     test_question,
-                    max_tokens=100,
-                    temperature=0.1,
-                    echo=False,
+                    max_tokens=inference_config.max_tokens,
+                    temperature=inference_config.temperature,
+                    echo=inference_config.echo,
                 )
                 total_inference_time = time.time() - start_inference
 
