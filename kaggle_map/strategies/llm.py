@@ -96,12 +96,9 @@ class LLMStrategy(Strategy):
 
     def _load_model(self) -> None:
         """Lazy load the GGUF model, downloading if necessary."""
-        if self.llm is not None:
-            return
-
-        # Use context manager to load model
-        model_context = load_llm_model(self.config)
-        self.llm = model_context.__enter__()
+        if self.llm is None:
+            model_context = load_llm_model(self.config)
+            self.llm = model_context.__enter__()
 
     def _build_prompt(self, row: EvaluationRow) -> str:
         """Build XML-structured prompt with training context."""
@@ -118,79 +115,63 @@ class LLMStrategy(Strategy):
         )
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
-        """Parse LLM response with comprehensive error logging."""
-        logger.debug(f"Parsing response for row {row.row_id}")
-        logger.debug(f"Raw response: {response}")
+        """Parse LLM response to extract category and misconception."""
+        logger.debug(f"Parsing response for row {row.row_id}: {response}")
 
         pattern = r"(True|False)_(Correct|Misconception|Neither):(\w+|NA)"
         match = re.search(pattern, response)
 
         if not match:
-            logger.error(
-                "Failed to parse LLM response",
-                row_id=row.row_id,
-                question_id=row.question_id,
-                response_length=len(response),
-                response_preview=response[:200],
-                response_full=response,
-                student_answer=row.mc_answer,
-                student_explanation=row.student_explanation[:100],
-                question_text=row.question_text[:100],
-            )
-            msg = f"Could not parse response for row {row.row_id}. Response: {response}"
+            logger.error(f"Failed to parse LLM response for row {row.row_id}: {response[:200]}")
+            msg = f"Could not parse response for row {row.row_id}"
             raise ValueError(msg)
 
-        category_misconception = f"{match.group(1)}_{match.group(2)}:{match.group(3)}"
-        logger.debug(f"Successfully parsed: {category_misconception}")
-        return category_misconception
+        result = f"{match.group(1)}_{match.group(2)}:{match.group(3)}"
+        logger.debug(f"Successfully parsed: {result}")
+        return result
 
     def predict_batch(self, rows: list[EvaluationRow], batch_size: int = 8) -> list[SubmissionRow]:
         """Process predictions in batches for efficiency."""
         self._load_model()
+        assert self.llm is not None, "LLM model not loaded"
 
         results = []
         total_batches = (len(rows) + batch_size - 1) // batch_size
 
-        for i in range(0, len(rows), batch_size):
+        for batch_num, i in enumerate(range(0, len(rows), batch_size), 1):
             batch = rows[i : i + batch_size]
-            batch_num = i // batch_size + 1
-
             logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} samples)")
 
             for row in batch:
-                # Add any additional context if available
-                context = self.question_contexts.get(row.question_id, {})
-                if context:
+                # Enrich row with context if available
+                if context := self.question_contexts.get(row.question_id):
                     row.correct_answer = context.get("correct_answer")
                     row.known_misconceptions = context.get("known_misconceptions")
 
-                prompt = self._build_prompt(row)
-
+                # Generate and parse LLM response
                 start_time = time.time()
-                assert self.llm is not None, "LLM model not loaded"
                 output = self.llm(
-                    prompt,
-                    max_tokens=30,  # Just enough for "Category:Misconception"
+                    self._build_prompt(row),
+                    max_tokens=30,
                     temperature=0.3,
                     stop=["</instructions>", "\n\n"],
                     echo=False,
                 )
-                inference_time = time.time() - start_time
+                logger.debug(f"Inference time for row {row.row_id}: {time.time() - start_time:.2f}s")
 
-                logger.debug(f"Inference time for row {row.row_id}: {inference_time:.2f}s")
-
-                # Cast to dict to access fields (llama-cpp-python returns iterator/dict)
+                # Extract response text
                 output_dict = dict(output) if hasattr(output, "__iter__") else output
                 response = output_dict["choices"][0]["text"].strip()  # type: ignore
 
+                # Parse and create submission
                 prediction = self._parse_response(response, row)
-                # Parse category and misconception from "Category:Misconception" format
-                if ":" in prediction:
-                    category, misconception = prediction.split(":", 1)
-                else:
-                    category, misconception = prediction, "NA"
-                pred_obj = Prediction(category=category, misconception=misconception)
-                results.append(SubmissionRow(row_id=row.row_id, predicted_categories=[pred_obj]))
+                category, misconception = prediction.split(":", 1) if ":" in prediction else (prediction, "NA")
+                results.append(
+                    SubmissionRow(
+                        row_id=row.row_id,
+                        predicted_categories=[Prediction(category=category, misconception=misconception)],
+                    )
+                )
 
         logger.info(f"Completed batch processing of {len(results)} predictions")
         return results
@@ -244,7 +225,7 @@ class LLMStrategy(Strategy):
         logger.info(f"Saving LLM strategy state to {filepath}")
 
         state = {
-            "problem_contexts": self.problem_contexts,
+            "question_contexts": self.question_contexts,
             "config": self.config,
         }
 
@@ -260,7 +241,7 @@ class LLMStrategy(Strategy):
             state = pickle.load(f)
 
         strategy = cls(config=state.get("config"))
-        strategy.problem_contexts = state["problem_contexts"]
+        strategy.question_contexts = state["question_contexts"]
 
         return strategy
 

@@ -18,15 +18,12 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from kaggle_map.core.models import TrainingRow
+from kaggle_map.utils.device import get_device
 
 # Data split constants
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 TEST_RATIO = 0.15
-
-
-# Re-export get_device from the new location for backward compatibility
-from kaggle_map.utils.device import get_device  # noqa: F401
 
 
 class ModelParameters(BaseModel):
@@ -62,6 +59,43 @@ class ModelParameters(BaseModel):
         )
 
 
+def get_split_indices(
+    n_samples: int,
+    train_ratio: float = TRAIN_RATIO,
+    val_ratio: float = VAL_RATIO,
+    random_seed: int = 42,
+) -> tuple[list[int], list[int], list[int]]:
+    """Get indices for train/validation/test splits.
+
+    Args:
+        n_samples: Total number of samples
+        train_ratio: Fraction of data for training (default: 0.70)
+        val_ratio: Fraction of data for validation (default: 0.15)
+        random_seed: Random seed for reproducibility (default: 42)
+
+    Returns:
+        Tuple of (train_indices, val_indices, test_indices)
+    """
+    assert n_samples > 0, "Number of samples must be positive"
+    assert train_ratio + val_ratio <= 1.0, "train_ratio + val_ratio must be <= 1.0"
+
+    # Create and shuffle indices
+    rng = np.random.Generator(np.random.PCG64(random_seed))
+    indices = np.arange(n_samples)
+    rng.shuffle(indices)
+
+    # Calculate split boundaries
+    train_size = int(n_samples * train_ratio)
+    val_size = int(n_samples * val_ratio)
+
+    # Return split indices
+    return (
+        indices[:train_size].tolist(),
+        indices[train_size : train_size + val_size].tolist(),
+        indices[train_size + val_size :].tolist(),
+    )
+
+
 def split_training_data(
     training_rows: list[TrainingRow],
     train_ratio: float = TRAIN_RATIO,
@@ -80,72 +114,25 @@ def split_training_data(
         Tuple of (train_rows, val_rows, test_rows)
     """
     assert training_rows, "Training data cannot be empty"
-    assert train_ratio + val_ratio <= 1.0, "train_ratio + val_ratio must be <= 1.0"
 
-    n_samples = len(training_rows)
-    indices = np.arange(n_samples)
+    # Get split indices
+    train_idx, val_idx, test_idx = get_split_indices(len(training_rows), train_ratio, val_ratio, random_seed)
 
-    # Set random seed for reproducibility
-    rng = np.random.Generator(np.random.PCG64(random_seed))
-    rng.shuffle(indices)
+    # Create splits using indices
+    train_rows = [training_rows[i] for i in train_idx]
+    val_rows = [training_rows[i] for i in val_idx]
+    test_rows = [training_rows[i] for i in test_idx]
 
-    # Calculate split points
-    train_size = int(n_samples * train_ratio)
-    val_size = int(n_samples * val_ratio)
+    logger.debug(
+        f"Split {len(training_rows)} samples into train={len(train_rows)}, val={len(val_rows)}, test={len(test_rows)}"
+    )
 
-    # Split indices
-    train_indices = indices[:train_size]
-    val_indices = indices[train_size : train_size + val_size]
-    test_indices = indices[train_size + val_size :]
-
-    # Create splits
-    train_rows = [training_rows[i] for i in train_indices]
-    val_rows = [training_rows[i] for i in val_indices]
-    test_rows = [training_rows[i] for i in test_indices]
-
-    logger.debug(f"Split {n_samples} samples into train={len(train_rows)}, val={len(val_rows)}, test={len(test_rows)}")
-
+    # Validate splits
     assert train_rows, "Training split cannot be empty"
-    # Allow empty validation split for very small datasets (e.g. tests)
-    if n_samples > 2:  # Only require validation split for datasets with more than 2 samples
+    if len(training_rows) > 2:
         assert val_rows, "Validation split cannot be empty for datasets with >2 samples"
 
     return train_rows, val_rows, test_rows
-
-
-def get_split_indices(
-    n_samples: int,
-    train_ratio: float = TRAIN_RATIO,
-    val_ratio: float = VAL_RATIO,
-    random_seed: int = 42,
-) -> tuple[list[int], list[int], list[int]]:
-    """Get indices for train/validation/test splits.
-
-    Args:
-        n_samples: Total number of samples
-        train_ratio: Fraction of data for training (default: 0.70)
-        val_ratio: Fraction of data for validation (default: 0.15)
-        random_seed: Random seed for reproducibility (default: 42)
-
-    Returns:
-        Tuple of (train_indices, val_indices, test_indices)
-    """
-    indices = np.arange(n_samples)
-
-    # Set random seed for reproducibility
-    rng = np.random.Generator(np.random.PCG64(random_seed))
-    rng.shuffle(indices)
-
-    # Calculate split points
-    train_size = int(n_samples * train_ratio)
-    val_size = int(n_samples * val_ratio)
-
-    # Split indices
-    train_indices = indices[:train_size].tolist()
-    val_indices = indices[train_size : train_size + val_size].tolist()
-    test_indices = indices[train_size + val_size :].tolist()
-
-    return train_indices, val_indices, test_indices
 
 
 # PyTorch utilities for neural network strategies
@@ -357,27 +344,18 @@ def create_optimizer(
     config: TorchConfig,
 ) -> torch.optim.Optimizer:
     """Create optimizer based on configuration."""
-    if config.optimizer == "adam":
-        return torch.optim.Adam(
-            model.parameters(),
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-        )
-    if config.optimizer == "adamw":
-        return torch.optim.AdamW(
-            model.parameters(),
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay,
-        )
-    if config.optimizer == "sgd":
-        return torch.optim.SGD(
-            model.parameters(),
-            lr=config.learning_rate,
-            momentum=0.9,
-            weight_decay=config.weight_decay,
-        )
-    logger.warning(f"Unknown optimizer {config.optimizer}, using Adam")
-    return torch.optim.Adam(
+    optimizers = {
+        "adam": torch.optim.Adam,
+        "adamw": torch.optim.AdamW,
+        "sgd": lambda params, **kwargs: torch.optim.SGD(params, momentum=0.9, **kwargs),
+    }
+
+    optimizer_class = optimizers.get(config.optimizer)
+    if not optimizer_class:
+        logger.warning(f"Unknown optimizer {config.optimizer}, using Adam")
+        optimizer_class = torch.optim.Adam
+
+    return optimizer_class(
         model.parameters(),
         lr=config.learning_rate,
         weight_decay=config.weight_decay,
@@ -393,47 +371,29 @@ def create_scheduler(
     if config.scheduler == "none":
         return None
 
-    scheduler_map = {
-        "cosine": lambda: _create_cosine_scheduler(optimizer, config),
-        "step": lambda: _create_step_scheduler(optimizer),
-        "onecycle": lambda: _create_onecycle_scheduler(optimizer, config, steps_per_epoch),
+    schedulers = {
+        "cosine": lambda: torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs),
+        "step": lambda: torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1),
+        "onecycle": lambda: torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=config.learning_rate * 10,
+            epochs=config.epochs,
+            steps_per_epoch=steps_per_epoch,
+        )
+        if steps_per_epoch
+        else None,
     }
 
-    scheduler_fn = scheduler_map.get(config.scheduler)
-    if scheduler_fn:
-        return scheduler_fn()
-
-    logger.warning(f"Unknown scheduler {config.scheduler}, not using any")
-    return None
-
-
-def _create_cosine_scheduler(
-    optimizer: torch.optim.Optimizer, config: TorchConfig
-) -> torch.optim.lr_scheduler.LRScheduler:
-    """Create cosine annealing scheduler."""
-    return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
-
-
-def _create_step_scheduler(optimizer: torch.optim.Optimizer) -> torch.optim.lr_scheduler.LRScheduler:
-    """Create step scheduler."""
-    return torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-
-
-def _create_onecycle_scheduler(
-    optimizer: torch.optim.Optimizer,
-    config: TorchConfig,
-    steps_per_epoch: int | None,
-) -> torch.optim.lr_scheduler.LRScheduler | None:
-    """Create OneCycle scheduler."""
-    if steps_per_epoch is None:
-        logger.warning("OneCycle scheduler requires steps_per_epoch, skipping")
+    scheduler_fn = schedulers.get(config.scheduler)
+    if not scheduler_fn:
+        logger.warning(f"Unknown scheduler {config.scheduler}, not using any")
         return None
-    return torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=config.learning_rate * 10,
-        epochs=config.epochs,
-        steps_per_epoch=steps_per_epoch,
-    )
+
+    scheduler = scheduler_fn()
+    if config.scheduler == "onecycle" and scheduler is None:
+        logger.warning("OneCycle scheduler requires steps_per_epoch, skipping")
+
+    return scheduler
 
 
 def get_activation(activation: str) -> nn.Module:
@@ -446,6 +406,31 @@ def get_activation(activation: str) -> nn.Module:
         "elu": nn.ELU(),
     }
     return activation_map.get(activation, nn.ReLU())
+
+
+def _process_batch(
+    model: nn.Module,
+    batch: Any,
+    criterion: nn.Module,
+    device: torch.device,
+    batch_callback: Callable[[nn.Module, Any, nn.Module, torch.device], tuple[torch.Tensor, int]] | None,
+) -> tuple[torch.Tensor | None, int]:
+    """Process a single batch through the model.
+
+    Returns:
+        Tuple of (loss, n_samples)
+    """
+    if batch_callback:
+        return batch_callback(model, batch, criterion, device)
+
+    # Default processing for standard supervised learning
+    inputs, targets = batch
+    inputs = inputs.to(device)
+    targets = targets.to(device)
+
+    outputs = model(inputs)
+    loss = criterion(outputs, targets)
+    return loss, inputs.size(0)
 
 
 def train_epoch(
@@ -479,31 +464,18 @@ def train_epoch(
     for batch in train_loader:
         optimizer.zero_grad()
 
-        # Allow custom batch processing via callback
-        if batch_callback:
-            loss, n_samples = batch_callback(model, batch, criterion, device)
-        else:
-            # Default processing for standard supervised learning
-            inputs, targets = batch
-            inputs = inputs.to(device)
-            targets = targets.to(device)
-
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            n_samples = inputs.size(0)
+        loss, n_samples = _process_batch(model, batch, criterion, device, batch_callback)
 
         if loss is not None:
-            # Accumulate loss for reporting
             total_loss += loss.item() * n_samples
             total_samples += n_samples
 
-            # Backward pass only if gradient required
             if loss.requires_grad:
                 loss.backward()
                 optimizer.step()
 
-                # Step scheduler if it's OneCycle (per-batch stepping)
-                if scheduler and hasattr(scheduler, "__class__") and scheduler.__class__.__name__ == "OneCycleLR":
+                # OneCycle scheduler steps per batch
+                if isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
                     scheduler.step()
 
     return total_loss / total_samples if total_samples > 0 else 0.0
@@ -535,18 +507,7 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in val_loader:
-            # Allow custom batch processing via callback
-            if batch_callback:
-                loss, n_samples = batch_callback(model, batch, criterion, device)
-            else:
-                # Default processing for standard supervised learning
-                inputs, targets = batch
-                inputs = inputs.to(device)
-                targets = targets.to(device)
-
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                n_samples = inputs.size(0)
+            loss, n_samples = _process_batch(model, batch, criterion, device, batch_callback)
 
             if loss is not None:
                 total_loss += loss.item() * n_samples
@@ -580,25 +541,15 @@ def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) 
         config: Training configuration
         extra_config: Additional configuration to log
     """
-    _ensure_wandb_run_name(config)
-    wandb_config = _build_wandb_config(config, extra_config)
-    _setup_wandb_run(config, wandb_config)
-
-
-def _ensure_wandb_run_name(config: TorchConfig) -> None:
-    """Generate wandb run name if not provided."""
+    # Generate run name if not provided
     if not config.wandb_run_name:
         config.wandb_run_name = (
             f"{config.wandb_project.split('-')[-1]}-e{config.epochs}-"
-            f"bs{config.batch_size}-"
-            f"lr{config.learning_rate:.0e}-"
-            f"split{int(config.train_split * 100)}-"
-            f"seed{config.random_seed}"
+            f"bs{config.batch_size}-lr{config.learning_rate:.0e}-"
+            f"split{int(config.train_split * 100)}-seed{config.random_seed}"
         )
 
-
-def _build_wandb_config(config: TorchConfig, extra_config: dict[str, Any] | None) -> dict[str, Any]:
-    """Build wandb configuration dictionary."""
+    # Build wandb config
     wandb_config = {
         "train_split": config.train_split,
         "random_seed": config.random_seed,
@@ -612,33 +563,24 @@ def _build_wandb_config(config: TorchConfig, extra_config: dict[str, Any] | None
         "dropout": config.dropout,
     }
 
+    # Add extra config if provided
     if extra_config:
         wandb_config.update(extra_config)
 
-    _add_metadata_to_config(config, wandb_config)
-    return wandb_config
-
-
-def _add_metadata_to_config(config: TorchConfig, wandb_config: dict[str, Any]) -> None:
-    """Add metadata from config to wandb config."""
-    metadata_attrs = ["study_id", "stage", "trial_number"]
-    for attr in metadata_attrs:
+    # Add metadata attributes if they exist
+    for attr in ["study_id", "stage", "trial_number"]:
         if hasattr(config, attr):
             wandb_config[attr] = getattr(config, attr)
 
-
-def _setup_wandb_run(config: TorchConfig, wandb_config: dict[str, Any]) -> None:
-    """Setup and initialize the wandb run."""
-    # Finish any previous run before starting a new one
+    # Finish any previous run and start new one
     if wandb.run is not None:
         wandb.finish()
 
-    tags = getattr(config, "wandb_tags", [])
     wandb.init(
         project=config.wandb_project,
         name=config.wandb_run_name,
         config=wandb_config,
-        tags=tags,
+        tags=getattr(config, "wandb_tags", []),
         resume="allow",
     )
 
@@ -715,6 +657,46 @@ def load_embeddings(
     return embeddings, question_ids, extra_data
 
 
+def _run_epoch(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None,
+    train_batch_fn: Callable[..., Any] | None,
+    val_batch_fn: Callable[..., Any] | None,
+) -> tuple[float, float]:
+    """Run a single training epoch."""
+    avg_train_loss = train_epoch(
+        model, train_loader, optimizer, criterion, device, scheduler=scheduler, batch_callback=train_batch_fn
+    )
+    avg_val_loss = validate_epoch(model, val_loader, criterion, device, batch_callback=val_batch_fn)
+    return avg_train_loss, avg_val_loss
+
+
+def _log_epoch_metrics(
+    epoch: int,
+    config: TorchConfig,
+    avg_train_loss: float,
+    avg_val_loss: float,
+    optimizer: torch.optim.Optimizer,
+) -> None:
+    """Log metrics for the epoch."""
+    logger.info(f"Epoch {epoch}/{config.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+
+    if wandb.run is not None:
+        wandb.log(
+            {
+                "epoch": epoch,
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
+                "learning_rate": optimizer.param_groups[0]["lr"],
+            }
+        )
+
+
 def train_torch_model(
     model: nn.Module,
     train_loader: DataLoader,
@@ -741,87 +723,48 @@ def train_torch_model(
     Returns:
         Tuple of (trained_model, training_history)
     """
-    # Default criterion
-    if criterion is None:
-        criterion = nn.CrossEntropyLoss()
-
-    # Setup optimizer and scheduler
+    criterion = criterion or nn.CrossEntropyLoss()
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config, steps_per_epoch=len(train_loader))
 
-    # Initialize checkpoint manager and early stopping
-    checkpoint_manager = CheckpointManager(
-        checkpoint_dir=config.checkpoint_dir, model_name=config.wandb_run_name or "model"
-    )
+    checkpoint_manager = CheckpointManager(config.checkpoint_dir, config.wandb_run_name or "model")
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
 
-    # Training history
-    history: dict[str, Any] = {
-        "train_loss": [],
-        "val_loss": [],
-        "epochs": [],
-    }
+    history: dict[str, Any] = {"train_loss": [], "val_loss": [], "epochs": []}
 
-    # Training loop
     try:
-        for epoch in range(config.epochs):
-            # Training
-            if train_batch_fn:
-                avg_train_loss = train_epoch(
-                    model,
-                    train_loader,
-                    optimizer,
-                    criterion,
-                    device,
-                    scheduler=scheduler,
-                    batch_callback=train_batch_fn,
-                )
-            else:
-                avg_train_loss = train_epoch(model, train_loader, optimizer, criterion, device, scheduler=scheduler)
-
-            # Validation
-            if val_batch_fn:
-                avg_val_loss = validate_epoch(model, val_loader, criterion, device, batch_callback=val_batch_fn)
-            else:
-                avg_val_loss = validate_epoch(model, val_loader, criterion, device)
-
-            logger.info(
-                f"Epoch {epoch + 1}/{config.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}"
+        for epoch in range(1, config.epochs + 1):
+            # Run training and validation
+            avg_train_loss, avg_val_loss = _run_epoch(
+                model, train_loader, val_loader, optimizer, criterion, device, scheduler, train_batch_fn, val_batch_fn
             )
+
+            # Log metrics
+            _log_epoch_metrics(epoch, config, avg_train_loss, avg_val_loss, optimizer)
 
             # Update history
             history["train_loss"].append(avg_train_loss)
             history["val_loss"].append(avg_val_loss)
-            history["epochs"].append(epoch + 1)
+            history["epochs"].append(epoch)
 
-            # Log to wandb if available
-            if wandb.run is not None:
-                wandb.log(
-                    {
-                        "epoch": epoch + 1,
-                        "train_loss": avg_train_loss,
-                        "val_loss": avg_val_loss,
-                        "learning_rate": optimizer.param_groups[0]["lr"],
-                    }
-                )
-
-            # Step scheduler if not OneCycle (OneCycle steps per batch)
-            if scheduler is not None and not isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
+            # Step scheduler (except OneCycle which steps per batch)
+            if scheduler and not isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
                 scheduler.step()
 
-            # Save best model and check early stopping
+            # Save best model
             metrics = {"train_loss": avg_train_loss, "val_loss": avg_val_loss}
             if (
-                checkpoint_manager.save_best_model(model, optimizer, epoch + 1, avg_val_loss, metrics, config=config)
-                and wandb.run is not None
+                checkpoint_manager.save_best_model(model, optimizer, epoch, avg_val_loss, metrics, config=config)
+                and wandb.run
             ):
                 wandb.log({"best_val_loss": avg_val_loss})
 
+            # Check early stopping
             if early_stopping(avg_val_loss):
-                logger.info(f"Early stopping triggered at epoch {epoch + 1}")
-                if wandb.run is not None:
-                    wandb.log({"early_stopped_epoch": epoch + 1})
-                history["early_stopped"] = epoch + 1
+                logger.info(f"Early stopping triggered at epoch {epoch}")
+                if wandb.run:
+                    wandb.log({"early_stopped_epoch": epoch})
+                history["early_stopped"] = epoch
                 break
 
             # Stop after first epoch if requested (for testing)
@@ -831,7 +774,7 @@ def train_torch_model(
 
     except KeyboardInterrupt:
         logger.warning("Training interrupted by user!")
-        if wandb.run is not None:
+        if wandb.run:
             wandb.log({"interrupted": True})
         history["interrupted"] = True
 

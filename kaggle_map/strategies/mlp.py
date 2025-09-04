@@ -647,7 +647,7 @@ class MLPStrategy(Strategy):
         wandb.config.update({"device": str(device)})
 
         training_data = parse_training_data(config.train_csv_path)
-        train_df = pd.read_csv(config.train_csv_path)
+        pd.read_csv(config.train_csv_path)
 
         correct_answers = extract_correct_answers(training_data)
         question_predictions = extract_question_predictions(training_data)
