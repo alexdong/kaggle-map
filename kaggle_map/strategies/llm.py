@@ -10,8 +10,8 @@ import random
 import re
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from llama_cpp import Llama
 from loguru import logger
 
 from kaggle_map.core.dataset import (
@@ -28,9 +28,18 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
+from kaggle_map.utils.llm_models import (
+    ModelType,
+    QuantizationType,
+    get_model_path,
+    load_llm_model,
+)
 
 from .base import Strategy
 from .utils import TRAIN_RATIO, split_training_data
+
+if TYPE_CHECKING:
+    from llama_cpp import Llama
 
 PROMPT_TEMPLATE = """<task>
 Analyze a student's math answer and identify their misconception.
@@ -76,38 +85,16 @@ Category:Misconception
 type QuantizationType = str
 type ModelType = str
 
-# Type -> size_gb
-# https://huggingface.co/unsloth/gemma-3-12b-it-GGUF
-QUANTIZATION_OPTIONS: dict[QuantizationType, float] = {
-    "Q4_K_S": 6.94,
-    "Q4_K_M": 7.30,
-    "Q4_K_XL": 7.43,
-    "Q5_K_XL": 8.46,
-    "Q6_K_XL": 10.60,
-}
-
-MODEL_OPTIONS: list[ModelType] = [
-    "gemma-3-12b-it",
-]
-
 
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
     def __init__(
         self,
-        model_type: ModelType = "gemma-3-12b-it",
-        quantization_type: QuantizationType = "Q4_K_M",
+        model_type: ModelType = "gemma-3-12b-it-GGUF",
+        quantization_type: QuantizationType = "Q6_K_XL",
     ) -> None:
-        """Initialize strategy with lazy model loading.
-
-        Args:
-            model_type: Type of model to use (e.g., "gemma-3-12b-it")
-            quantization_type: Quantization type (e.g., "Q4_K_M")
-            model_path: Explicit path to GGUF model file. If provided, overrides model_type and quantization_type.
-        """
-        self.model_path = f"models/gguf/{model_type}-{quantization_type}.gguf"
-
+        self.model_path = get_model_path(model_type, quantization_type)
         self.model_type = model_type
         self.quantization_type = quantization_type
         self.llm: Llama | None = None
@@ -120,28 +107,22 @@ class LLMStrategy(Strategy):
 
     @property
     def description(self) -> str:
-        return f"LLM-based prediction using GGUF model: {Path(self.model_path).name}"
+        return f"LLM-based prediction using GGUF model: {self.model_path.name}"
 
     def _load_model(self) -> None:
-        """Lazy load the GGUF model."""
+        """Lazy load the GGUF model, downloading if necessary."""
         if self.llm is not None:
             return
 
-        logger.info(f"Loading GGUF model from {self.model_path}")
-
-        model_file = Path(self.model_path)
-        assert model_file.exists(), f"Model file not found: {self.model_path}"
-
-        self.llm = Llama(
-            model_path=str(model_file),
+        self.llm = load_llm_model(
+            self.model_type,
+            self.quantization_type,
             n_ctx=4096,
             n_batch=512,
-            n_gpu_layers=-1,  # Use all GPU layers (Metal on Mac, CUDA on GPU)
-            verbose=False,
+            n_gpu_layers=-1,
             n_threads=8,
+            verbose=False,
         )
-
-        logger.info(f"Model loaded successfully: {model_file.name}")
 
     def _build_prompt(self, row: EvaluationRow) -> str:
         """Build XML-structured prompt with training context."""
@@ -238,7 +219,7 @@ class LLMStrategy(Strategy):
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
         model_type: str = "gemma-3-12b-it",
-        quantization_type: str = "Q4_K_M"
+        quantization_type: str = "Q4_K_M",
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
         logger.info("Fitting LLM strategy")
@@ -258,10 +239,7 @@ class LLMStrategy(Strategy):
         misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
         logger.info(f"Extracted misconceptions for {len(misconceptions_by_question)} questions")
 
-        strategy = cls(
-            model_type=model_type,
-            quantization_type=quantization_type
-        )
+        strategy = cls(model_type=model_type, quantization_type=quantization_type)
         strategy.correct_answers = correct_answers
         strategy.misconceptions_by_question = misconceptions_by_question
 
@@ -281,7 +259,7 @@ class LLMStrategy(Strategy):
         state = {
             "correct_answers": self.correct_answers,
             "misconceptions_by_question": self.misconceptions_by_question,
-            "model_path": self.model_path,
+            "model_path": str(self.model_path),  # Convert Path to string for serialization
             "model_type": self.model_type,
             "quantization_type": self.quantization_type,
         }
@@ -299,10 +277,10 @@ class LLMStrategy(Strategy):
 
         strategy = cls(
             model_type=state.get("model_type", "gemma-3-12b-it"),
-            quantization_type=state.get("quantization_type", "Q4_K_M")
+            quantization_type=state.get("quantization_type", "Q4_K_M"),
         )
         if "model_path" in state:
-            strategy.model_path = state["model_path"]
+            strategy.model_path = Path(state["model_path"])  # Convert string back to Path
         strategy.correct_answers = state["correct_answers"]
         strategy.misconceptions_by_question = state["misconceptions_by_question"]
 
@@ -331,7 +309,6 @@ class LLMStrategy(Strategy):
         )
 
         if sample_size is not None and sample_size < len(val_data):
-
             random.seed(random_seed)
             val_data = random.sample(val_data, sample_size)
             logger.info(f"Sampled {sample_size} validation rows for evaluation")

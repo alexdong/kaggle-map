@@ -13,11 +13,19 @@ from kaggle_map.core.dataset import (
     parse_training_data,
 )
 from kaggle_map.optimise.utils import STORAGE_URL
-from kaggle_map.strategies.llm import QUANTIZATION_OPTIONS, LLMStrategy, QuantizationType
+from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
+from kaggle_map.utils.llm_models import QUANTIZATION_OPTIONS, QuantizationType
 
 # Model base URL on HuggingFace
 MODEL_BASE = "unsloth/gemma-3-12b-it-GGUF"
+
+# Model size lookup (approximate values in GB)
+MODEL_SIZE_GB = {
+    "Q4_K_XL": 7.5,
+    "Q5_K_XL": 9.0,
+    "Q6_K_XL": 10.5,
+}
 
 
 def download_model_if_needed(quantization: QuantizationType) -> Path:
@@ -33,10 +41,7 @@ def download_model_if_needed(quantization: QuantizationType) -> Path:
     logger.info(f"Downloading {model_name} from HuggingFace...")
 
     downloaded_path = hf_hub_download(
-        repo_id=MODEL_BASE,
-        filename=model_name,
-        local_dir=model_dir,
-        local_dir_use_symlinks=False
+        repo_id=MODEL_BASE, filename=model_name, local_dir=model_dir, local_dir_use_symlinks=False
     )
 
     logger.info(f"Downloaded to {downloaded_path}")
@@ -46,12 +51,8 @@ def download_model_if_needed(quantization: QuantizationType) -> Path:
 def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100) -> dict:
     logger.info(f"Evaluating quantization: {quantization}")
 
-    # Download model if needed
-    model_path = download_model_if_needed(quantization)
-
-
     # Create strategy with specific quantization
-    strategy = LLMStrategy(model_path=str(model_path))
+    strategy = LLMStrategy(model_type="gemma-3-12b-it", quantization_type=quantization)
 
     # Load training data for fit
     training_data = parse_training_data(Path("datasets/train.csv"))
@@ -66,12 +67,7 @@ def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100
     start_time = time.time()
 
     # Evaluate on validation split
-    results = strategy.evaluate_on_split(
-        model=strategy,
-        train_split=0.7,
-        random_seed=42,
-        sample_size=sample_size
-    )
+    results = strategy.evaluate_on_split(model=strategy, train_split=0.7, random_seed=42, sample_size=sample_size)
 
     evaluation_time = time.time() - start_time
 
@@ -83,12 +79,12 @@ def evaluate_quantization(quantization: QuantizationType, sample_size: int = 100
         "map_at_3": results["map_at_3"],
         "evaluation_time": evaluation_time,
         "samples_per_second": sample_size / evaluation_time,
-        "model_size_gb": QUANTIZATION_OPTIONS[quantization],
+        "model_size_gb": MODEL_SIZE_GB.get(quantization),
     }
 
 
 def objective(trial: optuna.Trial) -> tuple[float, float]:
-    quantization = trial.suggest_categorical("quantization", list(QUANTIZATION_OPTIONS.keys()))
+    quantization = trial.suggest_categorical("quantization", QUANTIZATION_OPTIONS)
 
     # Evaluate
     results = evaluate_quantization(quantization, sample_size=100)
@@ -111,7 +107,7 @@ def objective(trial: optuna.Trial) -> tuple[float, float]:
     return -results["map_at_3"], results["evaluation_time"]
 
 
-def run_comparison(n_trials: int= len(QUANTIZATION_OPTIONS)) -> optuna.Study:
+def run_comparison(n_trials: int = len(QUANTIZATION_OPTIONS)) -> optuna.Study:
     # Create multi-objective study
     study = optuna.create_study(
         study_name=f"llm_quantization_{time.strftime('%Y%m%d_%H%M%S')}",
@@ -149,16 +145,16 @@ def save_results(study: optuna.Study) -> Path:
     results.sort(key=lambda x: x["map_at_3"], reverse=True)
 
     # Save to CSV
-    df = pd.DataFrame(results)
+    results_df = pd.DataFrame(results)
     output_path = Path("results/llm_quantization_comparison.csv")
     output_path.parent.mkdir(exist_ok=True)
-    df.to_csv(output_path, index=False)
+    results_df.to_csv(output_path, index=False)
 
     logger.info(f"Results saved to {output_path}")
 
     # Print summary
     print("\n=== Quantization Comparison Results ===")
-    print(df.to_string(index=False))
+    print(results_df.to_string(index=False))
 
     # Find Pareto optimal solutions
     print("\n=== Pareto Optimal Solutions ===")
@@ -166,19 +162,17 @@ def save_results(study: optuna.Study) -> Path:
     for trial in pareto_front[:3]:  # Show top 3 Pareto optimal
         # Check if trial has values (some trials might not have been completed)
         if trial.values is not None:
-            print(
-                f"  • {trial.params['quantization']}: "
-                f"MAP@3={-trial.values[0]:.4f}, "
-                f"Time={trial.values[1]:.2f}s"
-            )
+            print(f"  • {trial.params['quantization']}: MAP@3={-trial.values[0]:.4f}, Time={trial.values[1]:.2f}s")
 
     # Best trade-off recommendation
     if results:
         q4_k_m = next((r for r in results if r["quantization"] == "Q4_K_M"), None)
         if q4_k_m:
             print("\n✓ Recommended: Q4_K_M")
-            print(f"  Good balance of quality ({q4_k_m['map_at_3']:.4f} MAP@3) "
-                  f"and speed ({q4_k_m['samples_per_second']:.2f} samples/s)")
+            print(
+                f"  Good balance of quality ({q4_k_m['map_at_3']:.4f} MAP@3) "
+                f"and speed ({q4_k_m['samples_per_second']:.2f} samples/s)"
+            )
 
     return output_path
 
@@ -189,7 +183,9 @@ def cli() -> None:
 
 
 @click.command()
-@click.option("--trials", type=int, help="Number of trials (default: test all quantizations)", default=len(QUANTIZATION_OPTIONS))
+@click.option(
+    "--trials", type=int, help="Number of trials (default: test all quantizations)", default=len(QUANTIZATION_OPTIONS)
+)
 def compare(trials: int) -> None:
     study = run_comparison(n_trials=trials)
     logger.success(f"Quantization comparison complete! Study: {study.study_name}")
@@ -200,4 +196,3 @@ cli.add_command(compare)
 
 if __name__ == "__main__":
     cli()
-
