@@ -22,6 +22,25 @@ CPU_BATCH_SIZE_SMALL = 32
 CPU_BATCH_SIZE_LARGE = 16
 
 
+def get_optimal_batch_size(embedding_model: EmbeddingModel) -> int:
+    """Calculate optimal batch size based on embedding model dimensions and current device.
+
+    Args:
+        embedding_model: The embedding model enum instance
+
+    Returns:
+        Optimal batch size for the given model and current device
+    """
+    device = str(get_device())
+    is_gpu = device != "cpu"
+
+    # Dimension-based batch size selection for concatenated embeddings
+    if embedding_model.dim > SMALL_MODEL_THRESHOLD:
+        return GPU_BATCH_SIZE_LARGE if is_gpu else CPU_BATCH_SIZE_LARGE
+
+    return GPU_BATCH_SIZE_SMALL if is_gpu else CPU_BATCH_SIZE_SMALL
+
+
 def compute_concatenated_embeddings(
     training_data: list[Any],
     embedding_model_name: str = "MINI_LM",
@@ -73,12 +92,8 @@ def compute_concatenated_embeddings(
     # Batch encode all texts at once for better GPU utilization
     logger.info(f"Batch encoding {len(question_texts)} questions and answers...")
 
-    # Adjust batch size based on embedding dimensions to avoid OOM
-    batch_size = (
-        (GPU_BATCH_SIZE_LARGE if device != "cpu" else CPU_BATCH_SIZE_LARGE)
-        if embedding_model.base_dim > SMALL_MODEL_THRESHOLD
-        else (GPU_BATCH_SIZE_SMALL if device != "cpu" else CPU_BATCH_SIZE_SMALL)
-    )
+    # Get optimal batch size based on model dimensions and device
+    batch_size = get_optimal_batch_size(embedding_model)
 
     # Encode questions in batches
     question_embeddings = tokenizer.encode(question_texts, batch_size=batch_size, show_progress_bar=True)
@@ -142,7 +157,7 @@ def compute_single_embeddings(
         mc_answers_list.append(row.mc_answer)
 
     # Batch encode
-    batch_size = GPU_BATCH_SIZE_SMALL if device != "cpu" else CPU_BATCH_SIZE_SMALL
+    batch_size = get_optimal_batch_size(embedding_model)
     embeddings = tokenizer.encode(combined_texts, batch_size=batch_size, show_progress_bar=True)
 
     logger.info(f"Computed single embeddings with shape: {embeddings.shape}")
