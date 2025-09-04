@@ -3,33 +3,36 @@
 Architecture Design:
 -------------------
 Shared Trunk:
-  - Input: embedding(384) from sentence-transformers/all-MiniLM-L6-v2 (answer + explanation only)
-  - Hidden 1: 768 units, ReLU, 0.3 dropout
-  - Hidden 2: 384 units, ReLU, 0.3 dropout
-  - Shared: 192 units, ReLU, 0.3 dropout
+  - Input: concatenated embeddings (768-dim) = question embedding (384-dim) + answer embedding (384-dim)
+  - Architecture auto-scales based on embedding model dimensions (2x base_dim)
+  - Hidden layers with configurable sizes, ReLU activation, and dropout
+  - Layer normalization for stable training
 
 Question-Specific Prediction Heads (nn.ModuleDict):
   - One head per question ID (e.g., Q31772, Q31774, etc.)
+  - Separate heads for correct (True_*) vs incorrect (False_*) answers
   - Each head outputs N classes where N = unique Category:Misconception pairs for that question
   - Examples:
-    - Q31772: 8 outputs → [True_Correct:NA, False_Misconception:Incomplete, False_Misconception:WNB, ...]
-    - Q31774: 10 outputs → [True_Correct:NA, False_Misconception:Mult, True_Misconception:SwapDividend, ...]
+    - Q31772 True head: 3 outputs → [True_Correct:NA, True_Misconception:A, True_Misconception:B]
+    - Q31772 False head: 5 outputs → [False_Misconception:C, False_Misconception:D, ...]
 
 Key Design Decisions:
 --------------------
-1. Full Prediction Labels: Predicts complete "Category:Misconception" pairs as atomic classes
-2. Loss Function: CrossEntropyLoss for multi-class classification per question head
-3. Loss Aggregation: Average loss across all question heads during training
-4. Optimizer: Adam with learning rate 1e-3
-5. Early Stopping: Based on validation loss with patience of 10 epochs
-6. Data Split: 70% train, 15% validation, 15% test (configurable)
-7. Embeddings: 384-dim embeddings from MiniLM using only answer and explanation text
+1. **Concatenated Embeddings**: Uses separate question + answer embeddings for richer representations
+2. **Full Prediction Labels**: Predicts complete "Category:Misconception" pairs as atomic classes
+3. **Correctness-Aware Architecture**: Separate prediction heads for correct vs incorrect answers
+4. **Loss Function**: CrossEntropyLoss or ListMLELoss for multi-class classification per question head
+5. **Loss Aggregation**: Average loss across all active question heads during training
+6. **Optimizer**: AdamW with configurable learning rate and weight decay
+7. **Early Stopping**: Based on validation loss with configurable patience
+8. **Data Split**: Configurable train/validation/test splits
+9. **Embeddings**: 768-dim concatenated embeddings (question + answer) from various models
 
 Training Process:
 ----------------
-1. Load precomputed embeddings or compute on-the-fly
+1. Load or compute concatenated embeddings using standardized approach
 2. Create question-specific label encoders for full prediction mapping
-3. Train with mini-batches, grouping by question ID for head-specific loss
+3. Train with mini-batches, routing by question ID and correctness to appropriate heads
 4. Track progress with Weights & Biases (wandb) integration
 5. Apply early stopping based on validation loss
 6. Save model with pickle and parameters as JSON
@@ -60,6 +63,7 @@ from kaggle_map.core.dataset import (
     parse_training_data,
 )
 from kaggle_map.core.embeddings.tokenizer import get_tokenizer
+from kaggle_map.core.embeddings.utils import compute_concatenated_embeddings
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     Answer,
@@ -80,7 +84,6 @@ from .utils import (
     get_device,
     get_split_indices,
     init_wandb,
-    load_embeddings,
     load_torch_strategy,
     save_torch_strategy,
     split_training_data,
@@ -649,56 +652,9 @@ class MLPStrategy(Strategy):
         correct_answers = extract_correct_answers(training_data)
         question_predictions = extract_question_predictions(training_data)
 
-        def compute_embeddings(data):
-            # Get the embedding model enum
-            from kaggle_map.core.embeddings.embedding_models import EmbeddingModel
-
-            embedding_model = getattr(EmbeddingModel, embedding_model_name)
-            logger.info(
-                f"Computing embeddings with {embedding_model_name} (dim={embedding_model.dim}) on device: {device}"
-            )
-            tokenizer = get_tokenizer(model=embedding_model, device=str(device))
-
-            # Prepare texts for batch encoding
-            question_texts = []
-            answer_texts = []
-            question_ids_list = []
-            predictions_list = []
-            mc_answers_list = []
-
-            for row in data:
-                question_texts.append(row.question_text)
-                answer_texts.append(f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}")
-                question_ids_list.append(row.question_id)
-                predictions_list.append(str(row.prediction))
-                mc_answers_list.append(row.mc_answer)
-
-            # Batch encode all texts at once for better GPU utilization
-            logger.info(f"Batch encoding {len(question_texts)} questions and answers...")
-            # Adjust batch size based on embedding dimensions to avoid OOM
-            if embedding_model.dim > 384:
-                batch_size = 32 if str(device) != "cpu" else 16  # Conservative for 768-dim models
-            else:
-                batch_size = 64 if str(device) != "cpu" else 32  # Can be larger for 384-dim models
-
-            # Encode questions in batches
-            question_embeddings = tokenizer.encode(question_texts, batch_size=batch_size, show_progress_bar=True)
-
-            # Encode answers in batches
-            answer_embeddings = tokenizer.encode(answer_texts, batch_size=batch_size, show_progress_bar=True)
-
-            # Concatenate question and answer embeddings
-            combined_embeddings = np.concatenate([question_embeddings, answer_embeddings], axis=1)
-            logger.info(f"Computed embeddings with shape: {combined_embeddings.shape}")
-
-            return (
-                combined_embeddings,
-                np.array(question_ids_list),
-                {"predictions": np.array(predictions_list), "mc_answers": np.array(mc_answers_list)},
-            )
-
-        embeddings, question_ids, extra_data = load_embeddings(
-            config.embeddings_path, training_data, train_df, compute_embeddings
+        # Use the standardized concatenated embeddings approach
+        embeddings, question_ids, extra_data = compute_concatenated_embeddings(
+            training_data, embedding_model_name, str(device)
         )
         predictions = extra_data.get("predictions", np.array([]))
         mc_answers = extra_data.get("mc_answers", np.array([]))
@@ -817,12 +773,12 @@ class MLPStrategy(Strategy):
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions on a single evaluation row."""
-        # Compute separate embeddings for question and answer (original approach)
+        # Compute separate embeddings for question and answer (standardized concatenated approach)
         question_emb = self.tokenizer.encode(evaluation_row.question_text)
         answer_text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
         answer_emb = self.tokenizer.encode(answer_text)
 
-        # Concatenate question and answer embeddings (768-dimensional)
+        # Concatenate question and answer embeddings (creates 768-dimensional input)
         combined_emb = torch.FloatTensor(np.concatenate([question_emb, answer_emb]))
         combined_emb = combined_emb.unsqueeze(0).to(self.device)
 
