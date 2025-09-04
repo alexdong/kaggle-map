@@ -15,6 +15,7 @@ from kaggle_map.core.models import (
     LLMResponse,
     Prediction,
     PromptTemplate,
+    compare_labels,
 )
 from kaggle_map.reranker.models import RerankingRequest
 
@@ -40,11 +41,6 @@ Most likely first."""
 
 
 def parse_reranking_response(response: LLMResponse, original_predictions: list[Prediction]) -> list[Prediction]:
-    """Parse LLM response to reorder predictions.
-
-    Expected format: "3,1,2" indicating new order.
-    Falls back to original order if parsing fails.
-    """
     try:
         # Extract numbers from response
         numbers = re.findall(r"\d+", response)
@@ -87,15 +83,6 @@ def rerank_predictions(
     llm: Llama,
     request: RerankingRequest,
 ) -> list[Prediction]:
-    """Rerank predictions using direct LLM inference.
-
-    Args:
-        llm: Loaded llama-cpp model
-        request: Complete reranking request with context
-
-    Returns:
-        Reordered list of predictions
-    """
     logger.debug(f"Reranking {len(request.candidate_predictions)} predictions")
 
     prompt = build_reranking_prompt(request)
@@ -123,10 +110,6 @@ def process_dataframe_simple(
     df: pd.DataFrame,
     sample_size: int = 100,
 ) -> pd.DataFrame:
-    """Process DataFrame with LLM reranking using direct calls.
-
-    Simplified version without async/HTTP complexity.
-    """
     assert not df.empty, "DataFrame cannot be empty"
 
     # Required columns
@@ -145,46 +128,35 @@ def process_dataframe_simple(
     logger.info(f"Processing {len(df_sample)} rows")
 
     for idx, row in df_sample.iterrows():
-        try:
-            # Parse predictions
-            predictions_str = str(row["top_3_predictions_formatted"])
-            prediction_labels = [p.strip() for p in predictions_str.split("|")]
-            predictions = [Prediction.from_string(label) for label in prediction_labels]
+        predictions_str = str(row["top_3_predictions_formatted"])
+        prediction_labels = [p.strip() for p in predictions_str.split("|")]
+        predictions = [Prediction.from_string(label) for label in prediction_labels]
 
-            # Build request
-            eval_row = EvaluationRow(
-                row_id=idx,
-                question_id=row.get("QuestionId", 0),
-                question_text=str(row["QuestionText"]),
-                mc_answer=str(row["MC_Answer"]),
-                student_explanation=str(row["StudentExplanation"]),
-            )
+        # Build request
+        eval_row = EvaluationRow(
+            row_id=idx,
+            question_id=row.get("QuestionId", 0),
+            question_text=str(row["QuestionText"]),
+            mc_answer=str(row["MC_Answer"]),
+            student_explanation=str(row["StudentExplanation"]),
+        )
 
-            request = RerankingRequest(
-                evaluation_row=eval_row,
-                candidate_predictions=predictions,
-            )
+        request = RerankingRequest(
+            evaluation_row=eval_row,
+            candidate_predictions=predictions,
+        )
 
-            # Rerank
-            reranked = rerank_predictions(llm, request)
+        # Rerank
+        reranked = rerank_predictions(llm, request)
 
-            # Update results
-            df_sample.loc[idx, "LLM_top_1"] = str(reranked[0]) if reranked else ""
-            df_sample.loc[idx, "LLM_top_3"] = "|".join(str(p) for p in reranked[:3])
+        # Update results
+        df_sample.loc[idx, "LLM_top_1"] = str(reranked[0]) if reranked else ""
+        df_sample.loc[idx, "LLM_top_3"] = "|".join(str(p) for p in reranked[:3])
 
-            # Check accuracy if ground truth available
-            if "actual_misconception" in row:
-                actual = f"{row['Category']}:{row.get('actual_misconception', 'NA')}"
-                predicted = str(reranked[0]) if reranked else ""
-                df_sample.loc[idx, "LLM_correct"] = compare_labels(actual, predicted)
-
-        except Exception as e:
-            logger.error(f"Failed to process row {idx}: {e}")
-            continue
-
-    # Calculate stats
-    if "LLM_correct" in df_sample.columns:
-        accuracy = df_sample["LLM_correct"].mean()
-        logger.info(f"Reranking accuracy: {accuracy:.2%}")
+        # Check accuracy if ground truth available
+        if "actual_misconception" in row:
+            actual = f"{row['Category']}:{row.get('actual_misconception', 'NA')}"
+            predicted = str(reranked[0]) if reranked else ""
+            df_sample.loc[idx, "LLM_correct"] = compare_labels(actual, predicted)
 
     return df_sample
