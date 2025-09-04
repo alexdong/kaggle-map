@@ -1,10 +1,11 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import optuna
 import torch
+import wandb
 from loguru import logger
 
 # Single consolidated database location
@@ -55,37 +56,29 @@ def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
 
 def cleanup_after_trial() -> None:
     # Close wandb if it's running
-    try:
-        import wandb
-
-        if wandb.run is not None:
-            wandb.finish()
-    except ImportError:
-        pass
+    if wandb.run is not None:
+        wandb.finish()
 
     # Clear GPU memory
     clear_gpu_memory()
 
 
+def _extract_key_params(hyperparams: dict) -> list[str]:
+    """Extract key parameters for wandb run name."""
+    param_mappings = [
+        ("embedding_model", lambda v: f"emb_{v}"),
+        ("learning_rate", lambda v: f"lr_{v:.1e}"),
+        ("batch_size", lambda v: f"bs_{v}"),
+        ("dropout", lambda v: f"do_{v:.2f}"),
+        ("architecture_size", lambda v: f"arch_{v}"),
+        ("num_layers", lambda v: f"layers_{v}"),
+    ]
+    return [formatter(hyperparams[param]) for param, formatter in param_mappings if param in hyperparams]
+
+
 def build_wandb_run_name(trial: optuna.Trial, hyperparams: dict) -> str:
-    trial_num = trial.number
-    trial_info = f"trial_{trial_num}"
-    key_params = []
-
-    # Include key parameters in run name for easy identification
-    if "embedding_model" in hyperparams:
-        key_params.append(f"emb_{hyperparams['embedding_model']}")
-    if "learning_rate" in hyperparams:
-        key_params.append(f"lr_{hyperparams['learning_rate']:.1e}")
-    if "batch_size" in hyperparams:
-        key_params.append(f"bs_{hyperparams['batch_size']}")
-    if "dropout" in hyperparams:
-        key_params.append(f"do_{hyperparams['dropout']:.2f}")
-    if "architecture_size" in hyperparams:
-        key_params.append(f"arch_{hyperparams['architecture_size']}")
-    if "num_layers" in hyperparams:
-        key_params.append(f"layers_{hyperparams['num_layers']}")
-
+    trial_info = f"trial_{trial.number}"
+    key_params = _extract_key_params(hyperparams)
     return f"hypersearch_{trial_info}_{'_'.join(key_params)}"
 
 
@@ -100,7 +93,7 @@ def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
                 "best_value": study.best_value,
                 "best_params": study.best_params,
                 "n_trials": len(study.trials),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             f,
             indent=2,
@@ -142,7 +135,7 @@ def generate_study_summary(study: optuna.Study, output_dir: Path = Path("logs"))
 
     with summary_path.open("w") as f:
         f.write(f"# Optimization Study: {study.study_name}\n\n")
-        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
         # Overview
         f.write("## Study Overview\n\n")

@@ -180,8 +180,8 @@ class LLMStrategy(Strategy):
                 logger.debug(f"Inference time for row {row.row_id}: {inference_time:.2f}s")
 
                 # Cast to dict to access fields (llama-cpp-python returns iterator/dict)
-                output_dict = dict(output) if hasattr(output, "__iter__") else output  # type: ignore
-                response = output_dict["choices"][0]["text"].strip()
+                output_dict = dict(output) if hasattr(output, "__iter__") else output
+                response = output_dict["choices"][0]["text"].strip()  # type: ignore
 
                 prediction = self._parse_response(response, row)
                 # Parse category and misconception from "Category:Misconception" format

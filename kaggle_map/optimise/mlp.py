@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +103,7 @@ def run_search(
     strategy_class = get_strategy(strategy_name)
 
     # Create timestamped study name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     if search_type == "embedding":
         study_name = f"{strategy_name}_embedding_{timestamp}"
     else:
