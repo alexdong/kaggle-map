@@ -11,6 +11,10 @@ from pydantic import BaseModel, field_validator
 from kaggle_map.core.embeddings.formula import normalize_latex_answer, normalize_text
 from kaggle_map.core.embeddings.tokenizer import get_tokenizer
 
+# ============================================================================
+# Type Aliases
+# ============================================================================
+
 # Domain-specific type aliases
 RowId = int
 QuestionId = int
@@ -18,6 +22,17 @@ Answer = str
 Question = str  # Question text from math problems
 Explanation = str  # Student's explanation of their reasoning
 Misconception = str  # Specific misconception identifier
+
+# LLM operation type aliases
+Label = str  # "True_Misconception:AddInsteadOfMultiply"
+PromptTemplate = str
+LLMResponse = str
+ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
+QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+
+# ============================================================================
+# Core Models
+# ============================================================================
 
 
 class Category(Enum):
@@ -168,12 +183,9 @@ class SubmissionRow(NamedTuple):
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence
 
 
-# Type aliases for LLM operations
-Label = str  # "True_Misconception:AddInsteadOfMultiply"
-PromptTemplate = str
-LLMResponse = str
-ModelName = Literal["gemma-3-12b-it", "Qwen3-14B"]
-QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+# ============================================================================
+# Configuration Classes
+# ============================================================================
 
 
 @dataclass
