@@ -1,9 +1,7 @@
-"""Utilities for computing embeddings with consistent concatenation approach.
+"""Utilities for computing embeddings with Qwen3-Embedding-8B.
 
-This module provides functions to compute embeddings using the standardized approach:
-- Separate encoding of questions and answers
-- Concatenation to create 768-dimensional vectors (2x base dimension)
-- Optimized batch processing for GPU utilization
+This module provides functions to compute embeddings using the Qwen3-8B model
+with various quantization levels for efficient processing.
 """
 
 from typing import Any
@@ -11,138 +9,44 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.embeddings.embedding_models import (
+    QuantizationLevel,
+    get_tokenizer,
+)
 from kaggle_map.utils.device import get_device
-
-# Constants for batch sizing
-SMALL_MODEL_THRESHOLD = 384
-GPU_BATCH_SIZE_SMALL = 64
-GPU_BATCH_SIZE_LARGE = 32
-CPU_BATCH_SIZE_SMALL = 32
-CPU_BATCH_SIZE_LARGE = 16
-
-
-def get_optimal_batch_size(embedding_model: EmbeddingModel) -> int:
-    """Calculate optimal batch size based on embedding model dimensions and current device.
-
-    Args:
-        embedding_model: The embedding model enum instance
-
-    Returns:
-        Optimal batch size for the given model and current device
-    """
-    device = str(get_device())
-    is_gpu = device != "cpu"
-
-    # Dimension-based batch size selection for concatenated embeddings
-    if embedding_model.dim > SMALL_MODEL_THRESHOLD:
-        return GPU_BATCH_SIZE_LARGE if is_gpu else CPU_BATCH_SIZE_LARGE
-
-    return GPU_BATCH_SIZE_SMALL if is_gpu else CPU_BATCH_SIZE_SMALL
 
 
 def compute_concatenated_embeddings(
     training_data: list[Any],
-    embedding_model_name: str = "MINI_LM",
+    quantization: QuantizationLevel = QuantizationLevel.Q8_0,
     device: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
-    """Compute concatenated embeddings (question + answer) for training data.
+    """Compute embeddings for training data using Qwen3-8B.
 
-    This is the standardized approach used throughout the system for consistent
-    768-dimensional embeddings regardless of the base model dimension.
+    Since we're using a single large model instead of concatenating separate
+    question and answer embeddings, this function now computes a single
+    embedding for the combined text.
 
     Args:
         training_data: List of training rows with question_text, mc_answer,
                       student_explanation, question_id, and prediction attributes
-        embedding_model_name: Name of the embedding model (default: "MINI_LM")
-        device: Device to use for computation (default: auto-detect)
-
-    Returns:
-        Tuple of (concatenated_embeddings, question_ids, extra_data)
-        - concatenated_embeddings: np.ndarray of shape (n_samples, 2 * base_dim)
-        - question_ids: np.ndarray of question IDs
-        - extra_data: dict with 'predictions' and 'mc_answers' arrays
-    """
-    if device is None:
-        device = str(get_device())
-
-    # Get the embedding model enum
-    embedding_model = getattr(EmbeddingModel, embedding_model_name)
-    logger.info(
-        f"Computing concatenated embeddings with {embedding_model_name} "
-        f"(base_dim={embedding_model.base_dim}, final_dim={embedding_model.dim}) on device: {device}"
-    )
-
-    tokenizer = get_tokenizer(model=embedding_model, device=device)
-
-    # Prepare texts for batch encoding
-    question_texts = []
-    answer_texts = []
-    question_ids_list = []
-    predictions_list: list[str] = []
-    mc_answers_list = []
-
-    for row in training_data:
-        question_texts.append(row.question_text)
-        answer_texts.append(f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}")
-        question_ids_list.append(row.question_id)
-        predictions_list.append(str(row.prediction))
-        mc_answers_list.append(row.mc_answer)
-
-    # Batch encode all texts at once for better GPU utilization
-    logger.info(f"Batch encoding {len(question_texts)} questions and answers...")
-
-    # Get optimal batch size based on model dimensions and device
-    batch_size = get_optimal_batch_size(embedding_model)
-
-    # Encode questions in batches
-    question_embeddings = tokenizer.encode(question_texts, batch_size=batch_size, show_progress_bar=True)
-
-    # Encode answers in batches
-    answer_embeddings = tokenizer.encode(answer_texts, batch_size=batch_size, show_progress_bar=True)
-
-    # Concatenate question and answer embeddings
-    combined_embeddings = np.concatenate([question_embeddings, answer_embeddings], axis=1)
-    logger.info(f"Computed concatenated embeddings with shape: {combined_embeddings.shape}")
-
-    return (
-        combined_embeddings,
-        np.array(question_ids_list),
-        {"predictions": np.array(predictions_list), "mc_answers": np.array(mc_answers_list)},
-    )
-
-
-def compute_single_embeddings(
-    training_data: list[Any],
-    embedding_model_name: str = "MINI_LM",
-    device: str | None = None,
-) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
-    """Compute single embeddings using combined text (legacy approach).
-
-    This function is provided for backward compatibility but is not recommended
-    for new code. Use compute_concatenated_embeddings instead.
-
-    Args:
-        training_data: List of training rows
-        embedding_model_name: Name of the embedding model (default: "MINI_LM")
+        quantization: Quantization level to use (default: Q8_0)
         device: Device to use for computation (default: auto-detect)
 
     Returns:
         Tuple of (embeddings, question_ids, extra_data)
-        - embeddings: np.ndarray of shape (n_samples, base_dim)
+        - embeddings: np.ndarray of shape (n_samples, 5120)
         - question_ids: np.ndarray of question IDs
         - extra_data: dict with 'predictions' and 'mc_answers' arrays
     """
     if device is None:
         device = str(get_device())
 
-    # Get the embedding model enum
-    embedding_model = getattr(EmbeddingModel, embedding_model_name)
     logger.info(
-        f"Computing single embeddings with {embedding_model_name} (dim={embedding_model.base_dim}) on device: {device}"
+        f"Computing embeddings with Qwen3-8B ({quantization.value} quantization) on device: {device}"
     )
 
-    tokenizer = get_tokenizer(model=embedding_model, device=device)
+    tokenizer = get_tokenizer(quantization=quantization, device=device)
 
     # Prepare combined texts
     combined_texts = []
@@ -151,19 +55,62 @@ def compute_single_embeddings(
     mc_answers_list = []
 
     for row in training_data:
-        combined_texts.append(row.to_embedding_text())
+        # Combine question, answer, and explanation into single text
+        combined_text = (
+            f"Question: {row.question_text}\n"
+            f"Answer: {row.mc_answer}\n"
+            f"Explanation: {row.student_explanation}"
+        )
+        combined_texts.append(combined_text)
         question_ids_list.append(row.question_id)
         predictions_list.append(str(row.prediction))
         mc_answers_list.append(row.mc_answer)
 
-    # Batch encode
-    batch_size = get_optimal_batch_size(embedding_model)
-    embeddings = tokenizer.encode(combined_texts, batch_size=batch_size, show_progress_bar=True)
+    logger.info(f"Encoding {len(combined_texts)} samples...")
 
-    logger.info(f"Computed single embeddings with shape: {embeddings.shape}")
+    # Process in batches for memory efficiency
+    batch_size = 32  # Adjust based on available memory
+    embeddings_list = []
+
+    for i in range(0, len(combined_texts), batch_size):
+        batch = combined_texts[i:i + batch_size]
+        batch_embeddings = tokenizer.encode(batch)
+        embeddings_list.append(batch_embeddings)
+
+        if i % (batch_size * 10) == 0:
+            logger.debug(f"Processed {i}/{len(combined_texts)} samples")
+
+    # Combine all embeddings
+    embeddings = np.vstack(embeddings_list)
+    logger.info(f"Computed embeddings with shape: {embeddings.shape}")
 
     return (
         embeddings,
         np.array(question_ids_list),
         {"predictions": np.array(predictions_list), "mc_answers": np.array(mc_answers_list)},
     )
+
+
+def compute_single_embeddings(
+    training_data: list[Any],
+    quantization: QuantizationLevel = QuantizationLevel.Q8_0,
+    device: str | None = None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    """Compute single embeddings using combined text.
+
+    This is now identical to compute_concatenated_embeddings since we're
+    using a single model rather than concatenating separate embeddings.
+
+    Args:
+        training_data: List of training rows
+        quantization: Quantization level to use (default: Q8_0)
+        device: Device to use for computation (default: auto-detect)
+
+    Returns:
+        Tuple of (embeddings, question_ids, extra_data)
+        - embeddings: np.ndarray of shape (n_samples, 5120)
+        - question_ids: np.ndarray of question IDs
+        - extra_data: dict with 'predictions' and 'mc_answers' arrays
+    """
+    return compute_concatenated_embeddings(training_data, quantization, device)
+
