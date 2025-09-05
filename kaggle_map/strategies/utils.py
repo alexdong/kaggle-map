@@ -407,16 +407,6 @@ def get_activation(activation: str) -> nn.Module:
     return activation_map.get(activation, nn.ReLU())
 
 
-def get_device() -> torch.device:
-    """Get the best available device (CUDA, MPS, or CPU)."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        return torch.device("mps")
-    else:
-        return torch.device("cpu")
-
-
 def _process_batch(
     model: nn.Module,
     batch: Any,
