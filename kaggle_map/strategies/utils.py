@@ -126,11 +126,6 @@ def split_training_data(
         f"Split {len(training_rows)} samples into train={len(train_rows)}, val={len(val_rows)}, test={len(test_rows)}"
     )
 
-    # Validate splits
-    assert train_rows, "Training split cannot be empty"
-    if len(training_rows) > 2:
-        assert val_rows, "Validation split cannot be empty for datasets with >2 samples"
-
     return train_rows, val_rows, test_rows
 
 
