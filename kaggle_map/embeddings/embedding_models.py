@@ -22,18 +22,14 @@ class QwenEmbeddingModel:
 
     def __init__(
         self,
-        model_path: Path | None = None,
         n_ctx: int = 2048,
         n_gpu_layers: int = -1,  # -1 means all layers on GPU if available
-        verbose: bool = False,
     ) -> None:
         """Initialize the Qwen embedding model with Q8_0 quantization.
 
         Args:
-            model_path: Optional path to pre-downloaded model file
             n_ctx: Context window size
             n_gpu_layers: Number of layers to offload to GPU (-1 for all)
-            verbose: Whether to show llama.cpp output
         """
         self.n_ctx = n_ctx
 
@@ -46,8 +42,7 @@ class QwenEmbeddingModel:
             logger.debug(f"GPU detected ({device}), using all layers on GPU")
 
         # Get or download model file
-        if model_path is None:
-            model_path = self._get_model_path()
+        model_path = self._get_model_path()
 
         logger.info(f"Loading Qwen3-Embedding-8B Q8_0 from {model_path}")
 
@@ -57,7 +52,7 @@ class QwenEmbeddingModel:
             n_ctx=n_ctx,
             n_gpu_layers=n_gpu_layers,
             embedding=True,  # Enable embedding mode
-            verbose=verbose,
+            verbose=False,
             seed=-1,  # Random seed
         )
 
@@ -108,7 +103,7 @@ class QwenEmbeddingModel:
 
             # Truncate to max dimension if needed
             if len(embedding) > self.EMBEDDING_DIM:
-                embedding = embedding[:self.EMBEDDING_DIM]
+                embedding = embedding[: self.EMBEDDING_DIM]
 
             if normalize:
                 # L2 normalize
@@ -136,4 +131,3 @@ class QwenEmbeddingModel:
         """Compatibility method for device movement (no-op for llama.cpp)."""
         logger.debug(f"Device movement to {device} requested (no-op for llama.cpp)")
         return self
-
