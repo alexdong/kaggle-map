@@ -32,9 +32,7 @@ def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel)
 
     # Fit the strategy with the config (only to extract stats from training data)
     strategy = LLMStrategy.fit(
-        train_split=1.0,  # Use all data for extracting correct answers and misconceptions
-        random_seed=42,
-        train_csv_path=Path("datasets/train.csv"),
+        train_split=1.0,
         config=config,
     )
 
@@ -45,8 +43,6 @@ def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel)
     results = LLMStrategy.evaluate_on_split(
         model=strategy,
         train_split=1.0,  # Use all data for evaluation
-        random_seed=42,
-        train_csv_path=Path("datasets/train.csv"),
     )
     evaluation_time = time.time() - start_time
 

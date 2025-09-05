@@ -6,9 +6,9 @@ XML-structured prompts with context from training data.
 """
 
 import pickle
-import random
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -79,8 +79,8 @@ Category:Misconception
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
-    def __init__(self, config: LLMModelLoadConfig | None = None) -> None:
-        self.config = config or LLMModelLoadConfig()
+    def __init__(self, config: LLMModelLoadConfig) -> None:
+        self.config = config
         self.model_path = get_model_path(self.config.model_name, self.config.quantization)
         self.llm: Llama | None = None
         # Store additional context for questions (correct answers, known misconceptions)
@@ -94,7 +94,7 @@ class LLMStrategy(Strategy):
     def description(self) -> str:
         return f"LLM-based prediction using {self.config.model_name} ({self.config.quantization})"
 
-    def _load_model(self) -> None:
+    def load_model(self) -> None:
         """Lazy load the GGUF model, downloading if necessary."""
         if self.llm is None:
             model_context = load_llm_model(self.config)
@@ -105,7 +105,6 @@ class LLMStrategy(Strategy):
         correct_answer = row.correct_answer or "Unknown"
         misconceptions = row.known_misconceptions or []
         known_misconceptions = ", ".join(misconceptions[:5]) if misconceptions else "None identified"
-
         user_prompt = PROMPT_TEMPLATE.format(
             question=row.question_text,
             correct_answer=correct_answer,
@@ -113,84 +112,91 @@ class LLMStrategy(Strategy):
             student_answer=row.mc_answer,
             student_explanation=row.student_explanation,
         )
-
-        # Gemma chat template format
         return f"<start_of_turn>user\n{user_prompt}<end_of_turn>\n<start_of_turn>model\n"
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
         """Parse LLM response to extract category and misconception."""
         logger.debug(f"Parsing response for row {row.row_id}: {response}")
-
-        # Handle empty responses
-        if not response or not response.strip():
-            logger.warning(f"Empty response for row {row.row_id}, using default")
-            return "False_Neither:NA"
-
-        # Remove "Category:" prefix if present
         cleaned_response = response.replace("Category:", "").strip()
-
-        # Try to find the category:misconception pattern
         pattern = r"(True|False)_(Correct|Misconception|Neither):?([\w-]+|NA)?"
         match = re.search(pattern, cleaned_response)
+        assert match, f"Failed to parse response: '{response}'"
 
-        if match:
-            category = f"{match.group(1)}_{match.group(2)}"
-            misconception = match.group(3) if match.group(3) else "NA"
-            result = f"{category}:{misconception}"
-            logger.debug(f"Successfully parsed: {result}")
-            return result
+        category = f"{match.group(1)}_{match.group(2)}"
+        misconception = match.group(3) if match.group(3) else "NA"
+        result = f"{category}:{misconception}"
+        logger.debug(f"Successfully parsed: {result}")
+        return result
 
-        logger.warning(f"Could not parse response for row {row.row_id}: {response[:100]}")
-        return "False_Neither:NA"
+    def _enrich_row(self, row: EvaluationRow) -> EvaluationRow:
+        """Enrich evaluation row with context from training data."""
+        if context := self.question_contexts.get(row.question_id):
+            row.correct_answer = context.get("correct_answer")
+            row.known_misconceptions = context.get("known_misconceptions")
+        return row
+
+    def _process_single_row(self, row: EvaluationRow) -> SubmissionRow:
+        """Process a single row through the LLM pipeline."""
+        start_time = time.time()
+
+        # Build prompt
+        prompt = self._build_prompt(row)
+        logger.debug(f"Processing row {row.row_id} (prompt: {len(prompt)} chars)")
+
+        # Run inference
+        output = self.llm(
+            prompt,
+            max_tokens=50,
+            temperature=0.1,
+            stop=["<end_of_turn>", "\n"],
+            echo=False,
+        )
+
+        # Extract and parse response
+        output_dict = dict(output) if hasattr(output, "__iter__") else output
+        response = output_dict["choices"][0]["text"].strip()  # type: ignore
+
+        elapsed = time.time() - start_time
+        logger.info(f"Row {row.row_id}: '{response}' ({elapsed:.2f}s)")
+
+        # Parse prediction
+        prediction = self._parse_response(response, row)
+        category, misconception = prediction.split(":", 1) if ":" in prediction else (prediction, "NA")
+
+        return SubmissionRow(
+            row_id=row.row_id,
+            predicted_categories=[Prediction(category=category, misconception=misconception)],
+        )
 
     def predict_batch(self, rows: list[EvaluationRow], batch_size: int = 8) -> list[SubmissionRow]:
-        """Process predictions in batches for efficiency."""
-        self._load_model()
+        """Process predictions with parallel data preparation.
+
+        Note: LLM inference remains sequential due to model locking, but we parallelize
+        data enrichment and optimize the pipeline for clarity and maintainability.
+        """
+        self.load_model()
         assert self.llm is not None, "LLM model not loaded"
 
+        logger.info(f"Processing {len(rows)} rows")
+
+        # Parallel data enrichment (I/O bound, benefits from threading)
+        with ThreadPoolExecutor(max_workers=min(8, len(rows))) as executor:
+            enriched_rows = list(executor.map(self._enrich_row, rows))
+
+        # Sequential LLM inference (model locks during inference)
+        # Process in logical batches for progress reporting
         results = []
-        total_batches = (len(rows) + batch_size - 1) // batch_size
+        total_batches = (len(enriched_rows) + batch_size - 1) // batch_size
 
-        for batch_num, i in enumerate(range(0, len(rows), batch_size), 1):
-            batch = rows[i : i + batch_size]
-            logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} samples)")
+        for batch_num, i in enumerate(range(0, len(enriched_rows), batch_size), 1):
+            batch = enriched_rows[i : i + batch_size]
+            logger.info(f"Batch {batch_num}/{total_batches}: processing {len(batch)} samples")
 
-            for row in batch:
-                # Enrich row with context if available
-                if context := self.question_contexts.get(row.question_id):
-                    row.correct_answer = context.get("correct_answer")
-                    row.known_misconceptions = context.get("known_misconceptions")
+            # Process each row in the batch
+            batch_results = [self._process_single_row(row) for row in batch]
+            results.extend(batch_results)
 
-                # Generate and parse LLM response
-                start_time = time.time()
-                prompt = self._build_prompt(row)
-                logger.debug(f"Prompt length for row {row.row_id}: {len(prompt)} chars")
-
-                output = self.llm(
-                    prompt,
-                    max_tokens=50,
-                    temperature=0.1,  # Lower temperature for more deterministic output
-                    stop=["<end_of_turn>", "\n"],  # Stop at end of turn or newline
-                    echo=False,
-                )
-                logger.debug(f"Inference time for row {row.row_id}: {time.time() - start_time:.2f}s")
-
-                # Extract response text
-                output_dict = dict(output) if hasattr(output, "__iter__") else output
-                response = output_dict["choices"][0]["text"].strip()  # type: ignore
-                logger.info(f"LLM response for row {row.row_id}: '{response}'")
-
-                # Parse and create submission
-                prediction = self._parse_response(response, row)
-                category, misconception = prediction.split(":", 1) if ":" in prediction else (prediction, "NA")
-                results.append(
-                    SubmissionRow(
-                        row_id=row.row_id,
-                        predicted_categories=[Prediction(category=category, misconception=misconception)],
-                    )
-                )
-
-        logger.info(f"Completed batch processing of {len(results)} predictions")
+        logger.info(f"Completed processing {len(results)} predictions")
         return results
 
     @classmethod
@@ -200,12 +206,9 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
-        config: LLMModelLoadConfig | None = None,
+        config: LLMModelLoadConfig,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
-        if config is None:
-            config = LLMModelLoadConfig()
-
         logger.info("Fitting LLM strategy")
         logger.info(f"Loading training data from {train_csv_path}")
 
@@ -268,7 +271,7 @@ class LLMStrategy(Strategy):
     @classmethod
     def evaluate_on_split(
         cls,
-        model: Strategy,
+        model: "LLMStrategy",
         *,
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
@@ -278,24 +281,17 @@ class LLMStrategy(Strategy):
         """Evaluate model on validation split with optional sampling."""
         logger.info("Evaluating LLM strategy on validation split")
 
-        # Ensure we have an LLMStrategy instance
-        if not isinstance(model, LLMStrategy):
-            msg = f"Expected LLMStrategy, got {type(model)}"
-            raise TypeError(msg)
-
+        # Ensure model is loaded
         if model.llm is None:
-            model._load_model()
-
+            model.load_model()
         all_training_data = parse_training_data(train_csv_path)
 
         train_data, val_data, test_data = split_training_data(
             all_training_data, train_ratio=train_split, random_seed=random_seed
         )
 
-        if sample_size is not None and sample_size < len(val_data):
-            random.seed(random_seed)
-            val_data = random.sample(val_data, sample_size)
-            logger.info(f"Sampled {sample_size} validation rows for evaluation")
+        # Sample validation data if specified
+        val_sample = val_data[:sample_size] if sample_size else val_data
 
         eval_rows = [
             EvaluationRow(
@@ -305,17 +301,12 @@ class LLMStrategy(Strategy):
                 mc_answer=row.mc_answer,
                 student_explanation=row.student_explanation,
             )
-            for row in val_data
+            for row in val_sample
         ]
 
         predictions = model.predict_batch(eval_rows, batch_size=8)
-
-        ground_truth = {row.row_id: str(row.prediction) for row in val_data}
-
+        ground_truth = {row.row_id: str(row.prediction) for row in val_sample}
         predicted = {pred.row_id: pred.predicted_categories for pred in predictions}
-
         map_score = calculate_map_at_3(predicted, ground_truth)
-
         logger.info(f"Evaluation complete - MAP@3: {map_score:.4f}")
-
-        return {"map_at_3": map_score, "num_samples": len(val_data)}
+        return {"map_at_3": map_score, "num_samples": len(val_sample)}
