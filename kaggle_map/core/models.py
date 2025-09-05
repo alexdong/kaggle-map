@@ -218,7 +218,7 @@ class SubmissionRow(NamedTuple):
 PromptTemplate = str
 LLMResponse = str
 ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
-QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL", "Q8_K_XL"]
 
 # Available options derived from type definitions
 MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))

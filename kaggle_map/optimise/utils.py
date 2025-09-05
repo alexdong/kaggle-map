@@ -102,8 +102,6 @@ def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
     return best_config_path
 
 
-
-
 def list_all_studies(storage_url: str = STORAGE_URL) -> list[str]:
     try:
         storage = optuna.storages.RDBStorage(url=storage_url)

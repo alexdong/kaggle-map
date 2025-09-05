@@ -230,7 +230,7 @@ if __name__ == "__main__":
                         f"Throughput: {tokens_per_sec:.1f} tok/s | "
                         f"Memory: {memory_used:.1f} GB | "
                         f"Total: {total_time_s:.1f}s",
-                        style="blue"
+                        style="blue",
                     )
 
     # Display results table
