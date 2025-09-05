@@ -1,7 +1,7 @@
 """Utilities for computing embeddings with Qwen3-Embedding-8B.
 
 This module provides functions to compute embeddings using the Qwen3-8B model
-with various quantization levels for efficient processing.
+with Q8_0 quantization for efficient processing.
 """
 
 from typing import Any
@@ -9,44 +9,33 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from kaggle_map.embeddings.embedding_models import (
-    QuantizationLevel,
-    get_tokenizer,
-)
+from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
 from kaggle_map.utils.device import get_device
 
 
 def compute_concatenated_embeddings(
     training_data: list[Any],
-    quantization: QuantizationLevel = QuantizationLevel.Q8_0,
     device: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Compute embeddings for training data using Qwen3-8B.
 
-    Since we're using a single large model instead of concatenating separate
-    question and answer embeddings, this function now computes a single
-    embedding for the combined text.
-
     Args:
         training_data: List of training rows with question_text, mc_answer,
                       student_explanation, question_id, and prediction attributes
-        quantization: Quantization level to use (default: Q8_0)
         device: Device to use for computation (default: auto-detect)
 
     Returns:
         Tuple of (embeddings, question_ids, extra_data)
-        - embeddings: np.ndarray of shape (n_samples, 5120)
+        - embeddings: np.ndarray of shape (n_samples, 4096)
         - question_ids: np.ndarray of question IDs
         - extra_data: dict with 'predictions' and 'mc_answers' arrays
     """
     if device is None:
         device = str(get_device())
 
-    logger.info(
-        f"Computing embeddings with Qwen3-8B ({quantization.value} quantization) on device: {device}"
-    )
+    logger.info(f"Computing embeddings with Qwen3-8B Q8_0 on device: {device}")
 
-    tokenizer = get_tokenizer(quantization=quantization, device=device)
+    tokenizer = QwenEmbeddingModel()
 
     # Prepare combined texts
     combined_texts = []
@@ -93,7 +82,6 @@ def compute_concatenated_embeddings(
 
 def compute_single_embeddings(
     training_data: list[Any],
-    quantization: QuantizationLevel = QuantizationLevel.Q8_0,
     device: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """Compute single embeddings using combined text.
@@ -103,14 +91,13 @@ def compute_single_embeddings(
 
     Args:
         training_data: List of training rows
-        quantization: Quantization level to use (default: Q8_0)
         device: Device to use for computation (default: auto-detect)
 
     Returns:
         Tuple of (embeddings, question_ids, extra_data)
-        - embeddings: np.ndarray of shape (n_samples, 5120)
+        - embeddings: np.ndarray of shape (n_samples, 4096)
         - question_ids: np.ndarray of question IDs
         - extra_data: dict with 'predictions' and 'mc_answers' arrays
     """
-    return compute_concatenated_embeddings(training_data, quantization, device)
+    return compute_concatenated_embeddings(training_data, device)
 

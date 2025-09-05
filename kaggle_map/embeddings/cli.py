@@ -11,7 +11,7 @@ from rich.table import Table
 
 from kaggle_map.core.dataset import parse_training_data
 from kaggle_map.core.models import TrainingRow
-from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
 
 
 @click.command()
@@ -28,18 +28,12 @@ from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
     help="Output directory for embeddings file (default: datasets)",
 )
 @click.option(
-    "--embedding-model",
-    type=click.Choice(["mini-lm"], case_sensitive=False),
-    default="mini-lm",
-    help="Embedding model to use (default: mini-lm)",
-)
-@click.option(
     "--batch-size",
     type=int,
-    default=100,
-    help="Batch size for processing embeddings (default: 100)",
+    default=32,
+    help="Batch size for processing embeddings (default: 32)",
 )
-def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str, batch_size: int) -> None:
+def generate_embeddings(input_csv: Path, output_dir: Path, batch_size: int) -> None:
     """Generate embeddings for training data and save to numpy format.
 
     This tool reads the training CSV, generates embeddings for each row,
@@ -55,7 +49,7 @@ def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str,
     config_table.add_column("Value", style="magenta")
     config_table.add_row("Input CSV", str(input_csv))
     config_table.add_row("Output Directory", str(output_dir))
-    config_table.add_row("Embedding Model", embedding_model)
+    config_table.add_row("Model", "Qwen3-Embedding-8B Q8_0")
     config_table.add_row("Batch Size", str(batch_size))
     console.print(config_table)
 
@@ -67,12 +61,11 @@ def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str,
     console.print(f"✅ [bold green]Loaded {len(training_data)} training rows[/bold green]")
 
     # Initialize embedding model
-    with console.status("[bold green]Initializing embedding model..."):
-        embedding_model_obj = EmbeddingModel.MINI_LM
-        tokenizer = get_tokenizer(embedding_model_obj)
-        logger.info(f"Initialized embedding model: {embedding_model_obj.model_id}")
+    with console.status("[bold green]Initializing Qwen3-8B embedding model..."):
+        tokenizer = QwenEmbeddingModel()
+        logger.info("Initialized Qwen3-Embedding-8B Q8_0 model")
 
-    console.print(f"✅ [bold green]Initialized {embedding_model_obj.model_id}[/bold green]")
+    console.print("✅ [bold green]Initialized Qwen3-Embedding-8B Q8_0[/bold green]")
 
     # Generate embeddings
     console.print("[bold blue]Generating embeddings...[/bold blue]")
@@ -93,17 +86,17 @@ def generate_embeddings(input_csv: Path, output_dir: Path, embedding_model: str,
 
     console.print(f"✅ [bold green]Embeddings saved to {output_file}[/bold green]")
 
-    # Display summary - use the actual concatenated embedding dimensions
+    # Display summary
     _display_summary(console, output_file, len(training_data), embeddings[0].shape[0])
 
 
 def _generate_embeddings_batch(
     training_data: list[TrainingRow],
-    tokenizer: object,  # SentenceTransformer, but avoiding import
+    tokenizer: QwenEmbeddingModel,
     batch_size: int,
     console: Console,
 ) -> tuple[list[int], list[str], list[np.ndarray]]:
-    """Generate concatenated embeddings (question + answer) in batches with progress tracking."""
+    """Generate embeddings in batches with progress tracking."""
     row_ids = []
     misconceptions = []
     embeddings = []
@@ -115,62 +108,51 @@ def _generate_embeddings_batch(
         console=console,
     ):
         batch = training_data[i : i + batch_size]
-        batch_question_texts = []
-        batch_answer_texts = []
+        batch_texts = []
         batch_row_ids = []
         batch_misconceptions = []
 
-        # Prepare batch with separate question and answer texts
+        # Prepare batch with combined texts
         for row in batch:
-            batch_question_texts.append(row.question_text)
-            answer_text = f"Answer: {row.mc_answer}; Explanation: {row.student_explanation}"
-            batch_answer_texts.append(answer_text)
+            combined_text = (
+                f"Question: {row.question_text}\n"
+                f"Answer: {row.mc_answer}\n"
+                f"Explanation: {row.student_explanation}"
+            )
+            batch_texts.append(combined_text)
             batch_row_ids.append(row.row_id)
 
             # Use "NA" for empty misconceptions as requested
             misconception_str = row.misconception if row.misconception is not None else "NA"
             batch_misconceptions.append(misconception_str)
 
-        # Generate separate embeddings for questions and answers
-        question_embeddings = tokenizer.encode(batch_question_texts)  # type: ignore[attr-defined]
-        answer_embeddings = tokenizer.encode(batch_answer_texts)  # type: ignore[attr-defined]
-
-        # Concatenate question and answer embeddings to create 2x dimensional embeddings
-        batch_embeddings = np.concatenate([question_embeddings, answer_embeddings], axis=1)
+        # Generate embeddings
+        batch_embeddings = tokenizer.encode(batch_texts)
 
         # Store results
         row_ids.extend(batch_row_ids)
         misconceptions.extend(batch_misconceptions)
         embeddings.extend(batch_embeddings)
 
-    logger.info(f"Generated concatenated embeddings for {len(row_ids)} rows")
+    logger.info(f"Generated embeddings for {len(row_ids)} rows")
     return row_ids, misconceptions, embeddings
 
 
 def _display_summary(console: Console, output_file: Path, num_rows: int, embedding_dim: int) -> None:
-    """Display summary of embedding generation."""
+    """Display a summary of the generated embeddings."""
+    # Get file size
     file_size_mb = output_file.stat().st_size / (1024 * 1024)
 
     summary_table = Table(title="Embedding Generation Summary")
     summary_table.add_column("Metric", style="cyan")
     summary_table.add_column("Value", style="magenta")
-
-    summary_table.add_row("Total Rows Processed", f"{num_rows:,}")
+    summary_table.add_row("Total Rows", str(num_rows))
     summary_table.add_row("Embedding Dimensions", str(embedding_dim))
     summary_table.add_row("Output File", str(output_file))
-    summary_table.add_row("File Size", f"{file_size_mb:.1f} MB")
-    summary_table.add_row("Status", "[green]✅ Successfully generated[/green]")
-
+    summary_table.add_row("File Size", f"{file_size_mb:.2f} MB")
     console.print(summary_table)
-
-    console.print("\n[bold]Usage Instructions:[/bold]")
-    console.print("Load the embeddings in your code with:")
-    console.print("[dim]import numpy as np[/dim]")
-    console.print(f"[dim]data = np.load('{output_file}')[/dim]")
-    console.print("[dim]row_ids = data['row_ids'][/dim]")
-    console.print("[dim]misconceptions = data['misconceptions'][/dim]")
-    console.print("[dim]embeddings = data['embeddings'][/dim]")
 
 
 if __name__ == "__main__":
     generate_embeddings()
+

@@ -9,7 +9,6 @@ import pandas as pd
 import pydash
 from pydantic import BaseModel, field_validator
 
-from kaggle_map.embeddings.embedding_models import get_tokenizer
 from kaggle_map.embeddings.formula import normalize_latex_answer, normalize_text
 
 # ============================================================================
@@ -191,7 +190,9 @@ class TrainingRow(EvaluationRow):
         )
 
     def as_training_input(self) -> TrainingInput:
-        tokenizer = get_tokenizer()
+        from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+
+        tokenizer = QwenEmbeddingModel()
         text = self.to_embedding_text()
 
         # Generate embeddings and convert to numpy array

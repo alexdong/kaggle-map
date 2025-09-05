@@ -71,7 +71,6 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
-from kaggle_map.embeddings.tokenizer import get_tokenizer
 from kaggle_map.embeddings.utils import compute_concatenated_embeddings
 from kaggle_map.utils.device import get_device
 
@@ -736,7 +735,8 @@ class MLPStrategy(Strategy):
         )
 
         # Get tokenizer for predictions
-        tokenizer = get_tokenizer()
+        from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+        tokenizer = QwenEmbeddingModel()
 
         # Create model parameters for tracking
         parameters = ModelParameters.create(
@@ -859,10 +859,12 @@ class MLPStrategy(Strategy):
             )
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
 
+            from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+            
             model = cls(
                 model=mlp_model.to(get_device()),
                 correct_answers=extract_correct_answers(training_data),
-                tokenizer=get_tokenizer(),
+                tokenizer=QwenEmbeddingModel(),
                 device=get_device(),
                 parameters=None,
             )
