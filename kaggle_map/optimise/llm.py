@@ -89,30 +89,6 @@ def objective(trial: optuna.Trial) -> tuple[float, float]:
     return -results["map_at_3"], results["evaluation_time"]
 
 
-def run_comparison(n_trials: int | None = None) -> optuna.Study:
-    # Calculate total combinations if n_trials not specified
-    if n_trials is None:
-        n_trials = sum(len(spec.available_quantizations) for spec in GGUF_MODELS.values())
-        logger.info(f"Testing all {n_trials} model+quantization combinations")
-    # Create multi-objective study
-    study = optuna.create_study(
-        study_name=f"llm_quantization_{time.strftime('%Y%m%d_%H%M%S')}",
-        directions=["maximize", "minimize"],  # maximize MAP@3, minimize time
-        storage=STORAGE_URL,
-        load_if_exists=False,
-    )
-
-    logger.info(f"Starting quantization comparison with {n_trials} trials")
-
-    # Run optimization
-    study.optimize(objective, n_trials=n_trials)
-
-    # Save results
-    save_results(study)
-
-    return study
-
-
 def save_results(study: optuna.Study) -> Path:
     # Collect all trials
     results = [
@@ -156,22 +132,28 @@ def save_results(study: optuna.Study) -> Path:
     return output_path
 
 
-@click.group()
-def cli() -> None:
-    pass
+def run_comparison(n_trials: int) -> optuna.Study:
+    # Calculate total combinations if n_trials not specified
+    study = optuna.create_study(
+        study_name=f"llm_quantization_{time.strftime('%Y%m%d_%H%M%S')}",
+        directions=["maximize", "minimize"],  # maximize MAP@3, minimize time
+        storage=STORAGE_URL,
+        load_if_exists=False,
+    )
+    logger.info(f"Starting quantization comparison with {n_trials} trials")
+
+    # Run optimization
+    study.optimize(objective, n_trials=n_trials)
+
+    # Save results
+    save_results(study)
+    return study
 
 
 @click.command()
 @click.option(
-    "--trials", type=int, help="Number of trials (default: test all model+quantization combinations)", default=None
+    "--trials", type=int, help="Number of trials (default: test all model+quantization combinations)", default=100
 )
-def compare(trials: int | None) -> None:
+def compare(trials: int) -> None:
     study = run_comparison(n_trials=trials)
     logger.success(f"Quantization comparison complete! Study: {study.study_name}")
-
-
-# Add commands to CLI
-cli.add_command(compare)
-
-if __name__ == "__main__":
-    cli()

@@ -149,16 +149,6 @@ search-llm:
 	@echo "LLM GGUF Quantization Comparison"
 	@echo "Start time: $$(date)"
 	@echo "========================================="
-	@echo ""
-	@echo "Testing quantizations:"
-	@echo "  IQ4_XS  (6.55 GB)"
-	@echo "  IQ4_NL  (6.89 GB)"
-	@echo "  Q4_0    (6.91 GB)"
-	@echo "  Q4_1    (7.56 GB)"
-	@echo "  Q4_K_S  (6.94 GB)"
-	@echo "  Q4_K_M  (7.30 GB) - recommended"
-	@echo "  Q4_K_XL (7.43 GB)"
-	@echo ""
 	uv run -m kaggle_map.optimise llm compare --sample-size 100
 
 # ============================================================================
