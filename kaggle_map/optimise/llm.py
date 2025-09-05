@@ -2,6 +2,7 @@
 
 import time
 from pathlib import Path
+from typing import cast
 
 import click
 import optuna
@@ -65,17 +66,11 @@ def evaluate_quantization(model_name: ModelName, quantization: QuantizationLevel
 
 
 def objective(trial: optuna.Trial) -> tuple[float, float]:
-    # First sample the model
-    model_name: ModelName = trial.suggest_categorical("model_name", MODEL_OPTIONS)
+    model_name: ModelName = cast("ModelName", trial.suggest_categorical("model_name", MODEL_OPTIONS))
+    available_quantizations = GGUF_MODELS[model_name].available_quantizations
+    quantization = cast("QuantizationLevel", trial.suggest_categorical("quantization", available_quantizations))
 
-    # Get valid quantizations for this model
-    valid_quantizations = GGUF_MODELS[model_name].available_quantizations
-    quantization: QuantizationLevel = trial.suggest_categorical("quantization", valid_quantizations)
-
-    # Evaluate
     results = evaluate_quantization(model_name, quantization, sample_size=100)
-
-    # Log results
     logger.info(
         f"Model: {model_name} | "
         f"Quantization: {quantization} | "
