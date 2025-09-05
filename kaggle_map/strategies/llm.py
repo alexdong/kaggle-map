@@ -27,7 +27,7 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
-from kaggle_map.utils.llm import get_model_path, load_llm_model
+from kaggle_map.utils.llm import format_chat_prompt, get_model_path, get_stop_tokens, load_llm_model
 
 from .base import Strategy
 from .utils import TRAIN_RATIO, VAL_RATIO, split_training_data
@@ -101,7 +101,7 @@ class LLMStrategy(Strategy):
             self.llm = model_context.__enter__()
 
     def _build_prompt(self, row: EvaluationRow) -> str:
-        """Build prompt with Gemma chat template format."""
+        """Build prompt with model-specific chat template format."""
         correct_answer = row.correct_answer or "Unknown"
         misconceptions = row.known_misconceptions or []
         known_misconceptions = ", ".join(misconceptions[:5]) if misconceptions else "None identified"
@@ -112,15 +112,55 @@ class LLMStrategy(Strategy):
             student_answer=row.mc_answer,
             student_explanation=row.student_explanation,
         )
-        return f"<start_of_turn>user\n{user_prompt}<end_of_turn>\n<start_of_turn>model\n"
+        return format_chat_prompt(self.config.model_name, user_prompt)
 
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
-        """Parse LLM response to extract category and misconception."""
+        """Parse LLM response to extract category and misconception.
+
+        Handles different response formats including Qwen3's thinking tags.
+        """
         logger.debug(f"Parsing response for row {row.row_id}: {response}")
+
+        # Handle Qwen3's thinking mode - strip thinking tags if present
+        if "<think>" in response:
+            # Extract content after thinking section
+            if "</think>" in response:
+                # Get content after the closing think tag
+                parts = response.split("</think>", 1)
+                if len(parts) > 1:
+                    response = parts[1].strip()
+                else:
+                    # No content after thinking tag, might be incomplete
+                    logger.warning(f"Incomplete thinking response for row {row.row_id}, attempting to parse anyway")
+            else:
+                # Thinking tag not closed, response might be cut off
+                logger.warning(f"Unclosed thinking tag in response for row {row.row_id}")
+                # Try to extract any content that might be there
+                response = response.replace("<think>", "").strip()
+
+        # If response is empty or just whitespace after cleaning, provide a default
+        if not response or response == "<think>":
+            logger.warning(f"Empty or incomplete response for row {row.row_id}, using default")
+            return "False_Neither:NA"
+
         cleaned_response = response.replace("Category:", "").strip()
         pattern = r"(True|False)_(Correct|Misconception|Neither):?([\w-]+|NA)?"
         match = re.search(pattern, cleaned_response)
-        assert match, f"Failed to parse response: '{response}'"
+
+        if not match:
+            # Try to be more lenient - look for just True/False patterns
+            simple_pattern = r"(True|False)[_\s]*(Correct|Misconception|Neither)"
+            match = re.search(simple_pattern, cleaned_response, re.IGNORECASE)
+            if match:
+                category = f"{match.group(1).title()}_{match.group(2).title()}"
+                misconception = "NA"
+                result = f"{category}:{misconception}"
+                logger.debug(f"Successfully parsed with lenient matching: {result}")
+                return result
+
+            # If still no match, log the response and return a default
+            logger.error(f"Failed to parse response for row {row.row_id}: '{response}'")
+            return "False_Neither:NA"
 
         category = f"{match.group(1)}_{match.group(2)}"
         misconception = match.group(3) if match.group(3) else "NA"
@@ -148,7 +188,7 @@ class LLMStrategy(Strategy):
             prompt,
             max_tokens=50,
             temperature=0.1,
-            stop=["<end_of_turn>", "\n"],
+            stop=get_stop_tokens(self.config.model_name),
             echo=False,
         )
 

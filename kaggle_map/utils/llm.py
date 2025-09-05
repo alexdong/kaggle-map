@@ -33,6 +33,60 @@ from kaggle_map.core.models import (
 )
 
 
+def format_chat_prompt(model_name: ModelName, user_content: str) -> str:
+    """Format chat prompt according to the model's expected template.
+
+    Different models use different chat template formats:
+    - Gemma: <start_of_turn>user ... <end_of_turn><start_of_turn>model
+    - Qwen3: <|im_start|>user ... <|im_end|><|im_start|>assistant
+    - gpt-oss: <|start|>user ... <|end|><|start|>assistant
+
+    Args:
+        model_name: The model being used
+        user_content: The user's message content
+
+    Returns:
+        Formatted prompt string with appropriate chat markers
+    """
+    if "gemma" in model_name.lower():
+        return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
+    if "qwen" in model_name.lower():
+        # Include empty think tags to disable thinking mode (per Qwen3 documentation)
+        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+    if "gpt-oss" in model_name.lower():
+        # gpt-oss uses a more complex format with system/developer messages
+        # For simplicity, using basic user/assistant format here
+        return f"<|start|>user<|message|>{user_content}<|end|><|start|>assistant"
+    # Default to Gemma format for unknown models
+    logger.warning(f"Unknown model type {model_name}, defaulting to Gemma chat format")
+    return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
+
+
+def get_stop_tokens(model_name: ModelName) -> list[str]:
+    """Get the appropriate stop tokens for a model.
+
+    Different models use different stop tokens:
+    - Gemma: ["<end_of_turn>", "\n"]
+    - Qwen3: ["<|im_end|>", "\n"]
+    - gpt-oss: ["<|end|>", "\n"]
+
+    Args:
+        model_name: The model being used
+
+    Returns:
+        List of stop token strings
+    """
+    if "gemma" in model_name.lower():
+        return ["<end_of_turn>", "\n"]
+    if "qwen" in model_name.lower():
+        return ["<|im_end|>", "\n"]
+    if "gpt-oss" in model_name.lower():
+        return ["<|end|>", "\n"]
+    # Default to Gemma stop tokens for unknown models
+    logger.warning(f"Unknown model type {model_name}, defaulting to Gemma stop tokens")
+    return ["<end_of_turn>", "\n"]
+
+
 def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
     """Get the local path for a GGUF model file."""
     return Path(f"models/gguf/{model_name}-{quantization}.gguf")
