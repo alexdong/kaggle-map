@@ -4,9 +4,8 @@ from pathlib import Path
 
 import optuna
 import torch
-from loguru import logger
-
 import wandb
+from loguru import logger
 
 # Single consolidated database location
 STORAGE_URL = "sqlite:///kaggle_map/optimise/optuna.db"

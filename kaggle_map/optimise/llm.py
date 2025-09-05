@@ -4,64 +4,50 @@ import time
 from pathlib import Path
 from typing import cast
 
-import click
 import optuna
 import pandas as pd
 from loguru import logger
 
-from kaggle_map.core.dataset import (
-    extract_correct_answers,
-    extract_misconceptions_by_popularity,
-    parse_training_data,
-)
 from kaggle_map.core.models import GGUF_MODELS, MODEL_OPTIONS, LLMModelLoadConfig, ModelName, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
-from kaggle_map.strategies.utils import split_training_data
 
 
-def evaluate_quantization(model_name: ModelName, quantization: QuantizationLevel, sample_size: int = 100) -> dict:
+def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel) -> dict:
     logger.info(f"Evaluating model: {model_name}, quantization: {quantization}")
 
     # Create strategy with specific model and quantization
+    assert model_name in MODEL_OPTIONS, f"Invalid model name: {model_name}"
+    assert quantization in GGUF_MODELS[model_name].available_quantizations, (
+        f"Invalid quantization {quantization} for model {model_name}"
+    )
     config = LLMModelLoadConfig(model_name=model_name, quantization=quantization)
-    strategy = LLMStrategy(config=config)
 
-    # Load training data for fit
-    training_data = parse_training_data(Path("datasets/train.csv"))
+    # Fit the strategy with the config (only to extract stats from training data)
+    strategy = LLMStrategy.fit(
+        train_split=1.0,  # Use all data for extracting correct answers and misconceptions
+        random_seed=42,
+        train_csv_path=Path("datasets/train.csv"),
+        config=config,
+    )
 
-    # Fit the strategy (loads correct answers and misconceptions)
-    train_data, _, _ = split_training_data(training_data, train_ratio=0.7, random_seed=42)
-
-    # Build problem contexts
-    correct_answers = extract_correct_answers(train_data)
-    misconceptions_by_question = extract_misconceptions_by_popularity(train_data)
-
-    # Context is now stored directly as dict
-
-    for question_id in correct_answers:
-        strategy.question_contexts[question_id] = {
-            "correct_answer": correct_answers[question_id],
-            "known_misconceptions": misconceptions_by_question.get(question_id, []),
-        }
-
-    # Measure evaluation time
+    # Measure evaluation time using all training data
     start_time = time.time()
 
-    # Evaluate on validation split
-    results = strategy.evaluate_on_split(model=strategy, train_split=0.7, random_seed=42, sample_size=sample_size)
-
+    # Use evaluate_on_split to evaluate on all data
+    results = LLMStrategy.evaluate_on_split(
+        model=strategy,
+        train_split=1.0,  # Use all data for evaluation
+        random_seed=42,
+        train_csv_path=Path("datasets/train.csv"),
+    )
     evaluation_time = time.time() - start_time
-
-    # Clean up model from memory
-    del strategy
 
     return {
         "model_name": model_name,
         "quantization": quantization,
         "map_at_3": results["map_at_3"],
         "evaluation_time": evaluation_time,
-        "samples_per_second": sample_size / evaluation_time,
     }
 
 
@@ -70,19 +56,17 @@ def objective(trial: optuna.Trial) -> tuple[float, float]:
     available_quantizations = GGUF_MODELS[model_name].available_quantizations
     quantization = cast("QuantizationLevel", trial.suggest_categorical("quantization", available_quantizations))
 
-    results = evaluate_quantization(model_name, quantization, sample_size=100)
+    results = evaluate_gguf_models(model_name, quantization)
     logger.info(
         f"Model: {model_name} | "
         f"Quantization: {quantization} | "
         f"MAP@3: {results['map_at_3']:.4f} | "
-        f"Time: {results['evaluation_time']:.2f}s | "
-        f"Speed: {results['samples_per_second']:.2f} samples/s"
+        f"Time: {results['evaluation_time']:.2f}s"
     )
 
     # Store additional metrics
     trial.set_user_attr("model_name", model_name)
     trial.set_user_attr("evaluation_time", results["evaluation_time"])
-    trial.set_user_attr("samples_per_second", results["samples_per_second"])
 
     # Return both objectives: maximize MAP@3, minimize time
     # Optuna minimizes by default, so negate MAP@3
@@ -97,7 +81,6 @@ def save_results(study: optuna.Study) -> Path:
             "quantization": trial.params["quantization"],
             "map_at_3": -trial.values[0] if trial.values else 0.0,  # Negate back to positive
             "evaluation_time": trial.values[1] if trial.values else 0.0,
-            "samples_per_second": trial.user_attrs["samples_per_second"],
         }
         for trial in study.trials
         if trial.state == optuna.trial.TrialState.COMPLETE and trial.values is not None
@@ -150,10 +133,6 @@ def run_comparison(n_trials: int) -> optuna.Study:
     return study
 
 
-@click.command()
-@click.option(
-    "--trials", type=int, help="Number of trials (default: test all model+quantization combinations)", default=100
-)
-def compare(trials: int) -> None:
-    study = run_comparison(n_trials=trials)
+if __name__ == "__main__":
+    study = run_comparison(n_trials=100)
     logger.success(f"Quantization comparison complete! Study: {study.study_name}")

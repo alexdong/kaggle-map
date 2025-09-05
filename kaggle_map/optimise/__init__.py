@@ -1,6 +1,10 @@
+import subprocess
+import sys
+
 import click
 from loguru import logger
 
+from . import mlp
 from .utils import STORAGE_URL, list_all_studies
 
 
@@ -27,9 +31,6 @@ def list_studies() -> None:
 
 @click.command()
 def dashboard() -> None:
-    import subprocess
-    import sys
-
     print("Launching Optuna dashboard...")
     print(f"Database: {STORAGE_URL}")
     print("\nDashboard will open in your browser at http://127.0.0.1:8080")
@@ -43,10 +44,6 @@ def dashboard() -> None:
         logger.error(f"Failed to launch dashboard: {e}")
         print("\nError: Failed to launch dashboard")
         print("Make sure optuna-dashboard is installed: pip install optuna-dashboard")
-
-
-# Import and register sub-commands
-from . import llm, mlp
 
 
 # Register MLP commands
@@ -65,8 +62,6 @@ mlp_group.add_command(mlp.analyze)
 def llm_group() -> None:
     pass
 
-
-llm_group.add_command(llm.compare)
 
 # Add sub-groups to main CLI
 cli.add_command(mlp_group)

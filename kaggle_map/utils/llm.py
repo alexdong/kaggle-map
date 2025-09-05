@@ -5,6 +5,18 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+# Optional imports for GPU memory monitoring
+try:
+    import pynvml
+except ImportError:
+    pynvml = None  # type: ignore[assignment]
+
+try:
+    import torch
+except ImportError:
+    torch = None  # type: ignore[assignment]
+
+import psutil
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
@@ -103,22 +115,23 @@ def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
 
 def get_gpu_memory_usage() -> float | None:
     """Get current GPU memory usage in GB."""
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-        return info.used / 1024**3  # Convert to GB
-    except ImportError:
-        # Try torch.cuda if available
+    if pynvml is not None:
         try:
-            import torch
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            return info.used / 1024**3  # Convert to GB
+        except Exception:
+            pass
+
+    # Try torch.cuda if available
+    if torch is not None:
+        try:
             if torch.cuda.is_available():
                 return torch.cuda.memory_allocated() / 1024**3
-        except ImportError:
+        except Exception:
             pass
-    except Exception:
-        pass
+
     return None
 
 
@@ -133,7 +146,6 @@ def measure_memory(device_name: str) -> tuple[float, str]:
             return gpu_mem, "VRAM"
 
     # Fallback to CPU RAM measurement
-    import psutil
     process = psutil.Process()
     ram_gb = process.memory_info().rss / 1024**3
     return ram_gb, "RAM"
@@ -144,13 +156,14 @@ if __name__ == "__main__":
 
     from llama_cpp import llama_supports_gpu_offload
 
-    # Try to import GPU memory monitoring
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        gpu_memory_available = True
-    except (ImportError, Exception):
-        gpu_memory_available = False
+    # Try to initialize GPU memory monitoring
+    gpu_memory_available = False
+    if pynvml is not None:
+        try:
+            pynvml.nvmlInit()
+            gpu_memory_available = True
+        except Exception:
+            pass
 
     console = Console()
 
