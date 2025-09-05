@@ -218,7 +218,7 @@ class SubmissionRow(NamedTuple):
 PromptTemplate = str
 LLMResponse = str
 ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
-QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL", "Q8_K_XL"]
+QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
 
 # Available options derived from type definitions
 MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))
@@ -246,6 +246,7 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
     "gpt-oss-20b": GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
         filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
+        # Q5_K_XL not available for this model
         available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
     ),
 }
