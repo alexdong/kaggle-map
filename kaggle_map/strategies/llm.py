@@ -179,8 +179,12 @@ class LLMStrategy(Strategy):
 
         logger.info(f"Processing {len(rows)} rows")
 
+        # Handle empty input
+        if not rows:
+            return []
+
         # Parallel data enrichment (I/O bound, benefits from threading)
-        with ThreadPoolExecutor(max_workers=min(8, len(rows))) as executor:
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(rows)))) as executor:
             enriched_rows = list(executor.map(self._enrich_row, rows))
 
         # Sequential LLM inference (model locks during inference)
