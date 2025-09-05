@@ -48,22 +48,20 @@ from typing import Any
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import numpy as np
-import optuna
 import pandas as pd
 import torch
+import wandb
 from loguru import logger
+from optuna import Trial
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
-import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     parse_training_data,
 )
-from kaggle_map.core.embeddings.tokenizer import get_tokenizer
-from kaggle_map.core.embeddings.utils import compute_concatenated_embeddings
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     Answer,
@@ -73,6 +71,8 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
+from kaggle_map.embeddings.tokenizer import get_tokenizer
+from kaggle_map.embeddings.utils import compute_concatenated_embeddings
 from kaggle_map.utils.device import get_device
 
 from .base import Strategy
@@ -314,7 +314,7 @@ class MLPStrategy(Strategy):
         return "MLP with shared trunk and question-specific heads for full prediction (Category:Misconception)"
 
     @classmethod
-    def get_hyperparameter_search_space(cls, trial) -> dict[str, Any]:
+    def get_hyperparameter_search_space(cls, trial: Trial) -> dict[str, Any]:
         """Focused 4-hour search space for efficient exploitation.
 
         Based on insights from previous runs:
@@ -323,24 +323,19 @@ class MLPStrategy(Strategy):
         - Best batch sizes: 256-384
         - Effective dropout: 0.30-0.40
         """
-        if optuna is None:
-            msg = "Optuna is required for hyperparameter search"
-            raise ImportError(msg)
-
-        # Always use focused exploitation strategy for 4-hour run
         return {
             # Dense sampling around optimal LR range [8e-5, 3e-4]
             "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
             # Focus on proven batch sizes with fine gradations
             "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
             # Fine-grained dropout exploration around optimum
-            "dropout": trial.suggest_float("dropout", 0.30, 0.42),
+            "dropout": trial.suggest_float("dropout", 0.10, 0.42),
             # Heavy bias toward xlarge (85%), some large (10%), rare xxlarge (5%)
             "architecture_size": trial.suggest_categorical(
                 "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["xxlarge"]
             ),
             # Both optimizers with AdamW preference
-            "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adamw", "adamw", "adam"]),
+            "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adam"]),
             # Focus on promising weight decay range
             "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
             # Test all successful activations
@@ -348,22 +343,18 @@ class MLPStrategy(Strategy):
             # Focus on successful schedulers
             "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
             # Optimal patience range
-            "early_stopping_patience": trial.suggest_int("patience", 16, 22),
-            "epochs": trial.suggest_int("epochs", 28, 36),
+            "early_stopping_patience": trial.suggest_int("patience", 10, 22),
+            "epochs": trial.suggest_int("epochs", 28, 180),
         }
 
     @classmethod
-    def get_embedding_search_space(cls, trial) -> dict[str, Any]:
+    def get_embedding_search_space(cls, trial: Trial) -> dict[str, Any]:
         """Embedding model comparison search space.
 
         Tests different embedding models with fixed best hyperparameters
         from previous studies. Varies embedding model, architecture size,
         and layer configuration to find optimal combination.
         """
-        if optuna is None:
-            msg = "Optuna is required for hyperparameter search"
-            raise ImportError(msg)
-
         # Fixed best parameters from previous optimization
         base_params = {
             "learning_rate": 0.00028,

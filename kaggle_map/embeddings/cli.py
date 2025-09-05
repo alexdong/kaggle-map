@@ -10,8 +10,8 @@ from rich.progress import track
 from rich.table import Table
 
 from kaggle_map.core.dataset import parse_training_data
-from kaggle_map.core.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.core.models import TrainingRow
+from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 
 
 @click.command()

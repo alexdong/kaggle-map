@@ -10,9 +10,9 @@ Primary entrypoints:
 
 import numpy as np
 
-from kaggle_map.core.embeddings.embedding_models import EmbeddingModel, get_tokenizer
-from kaggle_map.core.embeddings.utils import compute_concatenated_embeddings, compute_single_embeddings  # noqa: F401
 from kaggle_map.core.models import EvaluationRow
+from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.embeddings.utils import compute_concatenated_embeddings, compute_single_embeddings  # noqa: F401
 
 
 def main() -> None:

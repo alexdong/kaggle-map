@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from kaggle_map.core.embeddings.embedding_models import EmbeddingModel, get_tokenizer
+from kaggle_map.embeddings.embedding_models import EmbeddingModel, get_tokenizer
 from kaggle_map.utils.device import get_device
 
 # Constants for batch sizing
