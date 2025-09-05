@@ -278,7 +278,6 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
-        sample_size: int | None = 10,  # Small sample for testing
     ) -> dict[str, float]:
         """Evaluate model on validation split with optional sampling."""
         logger.info("Evaluating LLM strategy on validation split")
@@ -295,8 +294,6 @@ class LLMStrategy(Strategy):
         )
 
         # Sample validation data if specified
-        val_sample = val_data[:sample_size] if sample_size else val_data
-
         eval_rows = [
             EvaluationRow(
                 row_id=row.row_id,
@@ -305,12 +302,12 @@ class LLMStrategy(Strategy):
                 mc_answer=row.mc_answer,
                 student_explanation=row.student_explanation,
             )
-            for row in val_sample
+            for row in val_data
         ]
 
         predictions = model.predict_batch(eval_rows, batch_size=8)
-        ground_truth = {row.row_id: str(row.prediction) for row in val_sample}
+        ground_truth = {row.row_id: str(row.prediction) for row in val_data}
         predicted = {pred.row_id: pred.predicted_categories for pred in predictions}
         map_score = calculate_map_at_3(predicted, ground_truth)
         logger.info(f"Evaluation complete - MAP@3: {map_score:.4f}")
-        return {"map_at_3": map_score, "num_samples": len(val_sample)}
+        return {"map_at_3": map_score, "num_samples": len(val_data)}
