@@ -23,6 +23,13 @@ def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel)
     )
     config = LLMModelLoadConfig(model_name=model_name, quantization=quantization)
 
+    # NOTE: Unconventional use of train_split=1.0 for both fit and eval
+    # This is intentional for LLM strategy optimization:
+    # - fit() with train_split=1.0: Extracts correct answers and misconceptions from ALL data
+    #   (LLM doesn't train, just builds a knowledge base from the training set)
+    # - evaluate_on_split() with train_split=1.0: Tests on ALL data to maximize signal
+    #   for comparing different quantization levels (we're not validating generalization)
+
     # Fit the strategy with the config (only to extract stats from training data)
     strategy = LLMStrategy.fit(
         train_split=1.0,  # Use all data for extracting correct answers and misconceptions
