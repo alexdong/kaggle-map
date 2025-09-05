@@ -125,7 +125,6 @@ def split_training_data(
     logger.debug(
         f"Split {len(training_rows)} samples into train={len(train_rows)}, val={len(val_rows)}, test={len(test_rows)}"
     )
-
     return train_rows, val_rows, test_rows
 
 
