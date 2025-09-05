@@ -56,12 +56,21 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Download model
-    hf_hub_download(
+    downloaded_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         local_dir=model_path.parent,
         local_dir_use_symlinks=False,  # Copy file instead of symlink
     )
+
+    # Handle filename mismatch between HuggingFace repo and our local naming convention
+    # HF repos often have different naming patterns (e.g., "model-UD-Q4_K_XL.gguf")
+    # but we want consistent local names (e.g., "model-Q4_K_XL.gguf")
+    # This ensures models are stored with predictable names regardless of source
+    downloaded_file = Path(downloaded_path)
+    if downloaded_file != model_path and downloaded_file.exists():
+        downloaded_file.rename(model_path)
+
     assert model_path.exists(), f"Model file not found after download: {model_path}"
     logger.info(f"Model downloaded successfully: {model_path}")
     return model_path
@@ -92,11 +101,56 @@ def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
         logger.info(f"Model cleanup completed: {model_path.name}")
 
 
+def get_gpu_memory_usage() -> float | None:
+    """Get current GPU memory usage in GB."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        return info.used / 1024**3  # Convert to GB
+    except ImportError:
+        # Try torch.cuda if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.memory_allocated() / 1024**3
+        except ImportError:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def measure_memory(device_name: str) -> tuple[float, str]:
+    """Measure memory based on device type.
+
+    Returns tuple of (memory_gb, memory_type)
+    """
+    if device_name == "GPU":
+        gpu_mem = get_gpu_memory_usage()
+        if gpu_mem is not None:
+            return gpu_mem, "VRAM"
+
+    # Fallback to CPU RAM measurement
+    import psutil
+    process = psutil.Process()
+    ram_gb = process.memory_info().rss / 1024**3
+    return ram_gb, "RAM"
+
+
 if __name__ == "__main__":
     from statistics import mean, stdev
 
-    import psutil
     from llama_cpp import llama_supports_gpu_offload
+
+    # Try to import GPU memory monitoring
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        gpu_memory_available = True
+    except (ImportError, Exception):
+        gpu_memory_available = False
 
     console = Console()
 
@@ -159,9 +213,9 @@ if __name__ == "__main__":
                 # Load model with context manager
                 benchmark_start = time.time()
                 with load_llm_model(load_config) as llm:
-                    # Track memory usage
-                    process = psutil.Process()
-                    memory_before = process.memory_info().rss / 1024 / 1024 / 1024  # GB
+                    # Get initial memory baseline after model is loaded
+                    initial_memory, memory_type = measure_memory(device_name)
+                    peak_memories = [initial_memory]  # Track peak memory
 
                     # Warmup runs
                     console.print(f"🔥 Warming up with {WARMUP_RUNS} runs...")
@@ -194,9 +248,13 @@ if __name__ == "__main__":
                         tokens = len(response.split())  # Simple word count
                         token_counts.append(tokens)
 
-                    # Track peak memory during inference
-                    memory_after = process.memory_info().rss / 1024 / 1024 / 1024  # GB
-                    memory_used = memory_after - memory_before
+                        # Track memory after each inference
+                        current_memory, _ = measure_memory(device_name)
+                        peak_memories.append(current_memory)
+
+                    # Report the peak memory reached during inference
+                    peak_memory = max(peak_memories)
+                    memory_used = peak_memory
 
                     # Calculate total time for this model/quant combo
                     total_time_s = time.time() - benchmark_start
@@ -218,7 +276,7 @@ if __name__ == "__main__":
                             "Device": device_name,
                             "Latency (ms)": f"{mean_latency:.0f} ± {std_latency:.0f}",
                             "Tok/s": f"{tokens_per_sec:.1f}",
-                            "RAM (GB)": f"{memory_used:.1f}",
+                            f"{memory_type} (GB)": f"{memory_used:.1f}",
                             "Total (s)": f"{total_time_s:.1f}",
                             "min_latency": min_latency,
                             "max_latency": max_latency,
@@ -228,7 +286,7 @@ if __name__ == "__main__":
                     console.print(
                         f"⚡ {device_name}: Latency {mean_latency:.0f} ± {std_latency:.0f} ms | "
                         f"Throughput: {tokens_per_sec:.1f} tok/s | "
-                        f"Memory: {memory_used:.1f} GB | "
+                        f"{memory_type}: {memory_used:.1f} GB | "
                         f"Total: {total_time_s:.1f}s",
                         style="blue",
                     )
@@ -244,7 +302,9 @@ if __name__ == "__main__":
     table.add_column("Device", style="white")
     table.add_column("Latency (ms)", style="yellow", justify="right")
     table.add_column("Tok/s", style="green", justify="right")
-    table.add_column("RAM (GB)", style="red", justify="right")
+    # Determine memory column name based on what was measured
+    memory_col_name = "VRAM (GB)" if gpu_available and gpu_memory_available else "RAM (GB)"
+    table.add_column(memory_col_name, style="red", justify="right")
     table.add_column("Total (s)", style="blue", justify="right")
 
     for r in results:
@@ -254,7 +314,7 @@ if __name__ == "__main__":
             r["Device"],
             r["Latency (ms)"],
             r["Tok/s"],
-            r["RAM (GB)"],
+            r.get("VRAM (GB)", r.get("RAM (GB)", "N/A")),
             r["Total (s)"],
         )
 

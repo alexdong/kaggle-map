@@ -101,12 +101,12 @@ class LLMStrategy(Strategy):
             self.llm = model_context.__enter__()
 
     def _build_prompt(self, row: EvaluationRow) -> str:
-        """Build XML-structured prompt with training context."""
+        """Build prompt with Gemma chat template format."""
         correct_answer = row.correct_answer or "Unknown"
         misconceptions = row.known_misconceptions or []
         known_misconceptions = ", ".join(misconceptions[:5]) if misconceptions else "None identified"
 
-        return PROMPT_TEMPLATE.format(
+        user_prompt = PROMPT_TEMPLATE.format(
             question=row.question_text,
             correct_answer=correct_answer,
             known_misconceptions=known_misconceptions,
@@ -114,21 +114,34 @@ class LLMStrategy(Strategy):
             student_explanation=row.student_explanation,
         )
 
+        # Gemma chat template format
+        return f"<start_of_turn>user\n{user_prompt}<end_of_turn>\n<start_of_turn>model\n"
+
     def _parse_response(self, response: str, row: EvaluationRow) -> str:
         """Parse LLM response to extract category and misconception."""
         logger.debug(f"Parsing response for row {row.row_id}: {response}")
 
-        pattern = r"(True|False)_(Correct|Misconception|Neither):(\w+|NA)"
-        match = re.search(pattern, response)
+        # Handle empty responses
+        if not response or not response.strip():
+            logger.warning(f"Empty response for row {row.row_id}, using default")
+            return "False_Neither:NA"
 
-        if not match:
-            logger.error(f"Failed to parse LLM response for row {row.row_id}: {response[:200]}")
-            msg = f"Could not parse response for row {row.row_id}"
-            raise ValueError(msg)
+        # Remove "Category:" prefix if present
+        cleaned_response = response.replace("Category:", "").strip()
 
-        result = f"{match.group(1)}_{match.group(2)}:{match.group(3)}"
-        logger.debug(f"Successfully parsed: {result}")
-        return result
+        # Try to find the category:misconception pattern
+        pattern = r"(True|False)_(Correct|Misconception|Neither):?([\w-]+|NA)?"
+        match = re.search(pattern, cleaned_response)
+
+        if match:
+            category = f"{match.group(1)}_{match.group(2)}"
+            misconception = match.group(3) if match.group(3) else "NA"
+            result = f"{category}:{misconception}"
+            logger.debug(f"Successfully parsed: {result}")
+            return result
+
+        logger.warning(f"Could not parse response for row {row.row_id}: {response[:100]}")
+        return "False_Neither:NA"
 
     def predict_batch(self, rows: list[EvaluationRow], batch_size: int = 8) -> list[SubmissionRow]:
         """Process predictions in batches for efficiency."""
@@ -150,11 +163,14 @@ class LLMStrategy(Strategy):
 
                 # Generate and parse LLM response
                 start_time = time.time()
+                prompt = self._build_prompt(row)
+                logger.debug(f"Prompt length for row {row.row_id}: {len(prompt)} chars")
+
                 output = self.llm(
-                    self._build_prompt(row),
-                    max_tokens=30,
-                    temperature=0.3,
-                    stop=["</instructions>", "\n\n"],
+                    prompt,
+                    max_tokens=50,
+                    temperature=0.1,  # Lower temperature for more deterministic output
+                    stop=["<end_of_turn>", "\n"],  # Stop at end of turn or newline
                     echo=False,
                 )
                 logger.debug(f"Inference time for row {row.row_id}: {time.time() - start_time:.2f}s")
@@ -162,6 +178,7 @@ class LLMStrategy(Strategy):
                 # Extract response text
                 output_dict = dict(output) if hasattr(output, "__iter__") else output
                 response = output_dict["choices"][0]["text"].strip()  # type: ignore
+                logger.info(f"LLM response for row {row.row_id}: '{response}'")
 
                 # Parse and create submission
                 prediction = self._parse_response(response, row)
