@@ -30,7 +30,7 @@ from kaggle_map.core.models import (
 from kaggle_map.utils.llm import get_model_path, load_llm_model
 
 from .base import Strategy
-from .utils import TRAIN_RATIO, split_training_data
+from .utils import TRAIN_RATIO, VAL_RATIO, split_training_data
 
 if TYPE_CHECKING:
     from llama_cpp import Llama
@@ -215,8 +215,10 @@ class LLMStrategy(Strategy):
         all_training_data = parse_training_data(train_csv_path)
         logger.info(f"Parsed {len(all_training_data)} total training rows")
 
+        # When train_split is 1.0, set val_ratio to 0 to avoid exceeding 1.0 total
+        val_ratio = 0.0 if train_split == 1.0 else VAL_RATIO
         train_data, val_data, test_data = split_training_data(
-            all_training_data, train_ratio=train_split, random_seed=random_seed
+            all_training_data, train_ratio=train_split, val_ratio=val_ratio, random_seed=random_seed
         )
         logger.info(f"Data split: train={len(train_data)}, val={len(val_data)}, test={len(test_data)}")
 
@@ -286,8 +288,10 @@ class LLMStrategy(Strategy):
             model.load_model()
         all_training_data = parse_training_data(train_csv_path)
 
+        # When train_split is 1.0, set val_ratio to 0 to avoid exceeding 1.0 total
+        val_ratio = 0.0 if train_split == 1.0 else VAL_RATIO
         train_data, val_data, test_data = split_training_data(
-            all_training_data, train_ratio=train_split, random_seed=random_seed
+            all_training_data, train_ratio=train_split, val_ratio=val_ratio, random_seed=random_seed
         )
 
         # Sample validation data if specified
