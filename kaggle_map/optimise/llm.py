@@ -13,7 +13,7 @@ from kaggle_map.core.dataset import (
     extract_misconceptions_by_popularity,
     parse_training_data,
 )
-from kaggle_map.core.models import GGUF_MODELS, MODEL_OPTIONS, ModelLoadConfig, ModelName, QuantizationLevel
+from kaggle_map.core.models import GGUF_MODELS, MODEL_OPTIONS, LLMModelLoadConfig, ModelName, QuantizationLevel
 from kaggle_map.optimise.utils import STORAGE_URL
 from kaggle_map.strategies.llm import LLMStrategy
 from kaggle_map.strategies.utils import split_training_data
@@ -23,7 +23,7 @@ def evaluate_quantization(model_name: ModelName, quantization: QuantizationLevel
     logger.info(f"Evaluating model: {model_name}, quantization: {quantization}")
 
     # Create strategy with specific model and quantization
-    config = ModelLoadConfig(model_name=model_name, quantization=quantization)
+    config = LLMModelLoadConfig(model_name=model_name, quantization=quantization)
     strategy = LLMStrategy(config=config)
 
     # Load training data for fit

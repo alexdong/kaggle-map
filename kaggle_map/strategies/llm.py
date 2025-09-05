@@ -22,7 +22,7 @@ from kaggle_map.core.dataset import (
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     EvaluationRow,
-    ModelLoadConfig,
+    LLMModelLoadConfig,
     Prediction,
     QuestionId,
     SubmissionRow,
@@ -79,8 +79,8 @@ Category:Misconception
 class LLMStrategy(Strategy):
     """LLM-based misconception prediction using GGUF quantized models."""
 
-    def __init__(self, config: ModelLoadConfig | None = None) -> None:
-        self.config = config or ModelLoadConfig()
+    def __init__(self, config: LLMModelLoadConfig | None = None) -> None:
+        self.config = config or LLMModelLoadConfig()
         self.model_path = get_model_path(self.config.model_name, self.config.quantization)
         self.llm: Llama | None = None
         # Store additional context for questions (correct answers, known misconceptions)
@@ -183,7 +183,7 @@ class LLMStrategy(Strategy):
         train_split: float = TRAIN_RATIO,
         random_seed: int = 42,
         train_csv_path: Path = Path("datasets/train.csv"),
-        config: ModelLoadConfig | None = None,
+        config: LLMModelLoadConfig | None = None,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
         logger.info("Fitting LLM strategy")

@@ -252,7 +252,7 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
 
 
 @dataclass
-class ModelLoadConfig:
+class LLMModelLoadConfig:
     """Configuration for loading GGUF models into memory."""
 
     model_name: ModelName = "gemma-3-12b-it"
