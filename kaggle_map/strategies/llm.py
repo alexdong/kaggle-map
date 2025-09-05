@@ -292,10 +292,11 @@ class LLMStrategy(Strategy):
         all_training_data = parse_training_data(train_csv_path)
 
         # When train_split is 1.0, set val_ratio to 0 to avoid exceeding 1.0 total
-        val_ratio = 0.0 if train_split == 1.0 else VAL_RATIO
+        val_ratio = 1.0 if train_split == 0.0 else VAL_RATIO
         train_data, val_data, test_data = split_training_data(
             all_training_data, train_ratio=train_split, val_ratio=val_ratio, random_seed=random_seed
         )
+        assert val_data, "Validation split is empty - cannot evaluate"
 
         # Sample validation data if specified
         eval_rows = [
