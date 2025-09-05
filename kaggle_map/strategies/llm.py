@@ -203,6 +203,9 @@ class LLMStrategy(Strategy):
         config: LLMModelLoadConfig | None = None,
     ) -> "LLMStrategy":
         """Load training data to extract correct answers and misconceptions."""
+        if config is None:
+            config = LLMModelLoadConfig()
+
         logger.info("Fitting LLM strategy")
         logger.info(f"Loading training data from {train_csv_path}")
 
