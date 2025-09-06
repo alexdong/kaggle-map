@@ -1,346 +1,90 @@
-"""Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
+"""Simplified LLM reranker using direct llama-cpp-python calls.
 
-import time
-from collections.abc import Iterator
-from contextlib import contextmanager
-from pathlib import Path
+This module provides reranking functionality using local GGUF models,
+replacing the complex HTTP/async implementation with direct model calls.
+"""
 
-from huggingface_hub import hf_hub_download
+import re
+from dataclasses import dataclass
+
 from llama_cpp import Llama
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
 
 from kaggle_map.core.models import (
-    GGUF_MODELS,
-    MODEL_OPTIONS,
-    InferenceConfig,
-    LLMModelLoadConfig,
-    ModelName,
-    QuantizationLevel,
+    EvaluationRow,
+    LLMResponse,
+    Prediction,
+    PromptTemplate,
 )
 
 
-def format_chat_prompt(model_name: ModelName, user_content: str) -> str:
-    """Format chat prompt according to the model's expected template.
+@dataclass(frozen=True)
+class RerankingRequest:
+    """Complete request for reranking predictions."""
 
-    Different models use different chat template formats:
-    - Gemma: <start_of_turn>user ... <end_of_turn><start_of_turn>model
-    - Qwen3: <|im_start|>user ... <|im_end|><|im_start|>assistant
-    - gpt-oss: <|start|>user ... <|end|><|start|>assistant
+    evaluation_row: EvaluationRow
+    candidate_predictions: list[Prediction]
 
-    Args:
-        model_name: The model being used
-        user_content: The user's message content
-
-    Returns:
-        Formatted prompt string with appropriate chat markers
-    """
-    if "gemma" in model_name.lower():
-        return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
-    if "qwen" in model_name.lower():
-        # Include empty think tags to disable thinking mode (per Qwen3 documentation)
-        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
-    if "gpt-oss" in model_name.lower():
-        # gpt-oss uses a more complex format with system/developer messages
-        # For simplicity, using basic user/assistant format here
-        return f"<|start|>user<|message|>{user_content}<|end|><|start|>assistant"
-    # Default to Gemma format for unknown models
-    logger.warning(f"Unknown model type {model_name}, defaulting to Gemma chat format")
-    return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
+    @property
+    def top_prediction(self) -> Prediction | None:
+        """Get the current top prediction."""
+        return self.candidate_predictions[0] if self.candidate_predictions else None
 
 
-def get_stop_tokens(model_name: ModelName) -> list[str]:
-    """Get the appropriate stop tokens for a model.
+def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
+    """Build a concise prompt for reranking predictions."""
+    # Format predictions as numbered list
+    predictions_text = "\n".join(f"{i + 1}. {pred!s}" for i, pred in enumerate(request.candidate_predictions))
 
-    Different models use different stop tokens:
-    - Gemma: ["<end_of_turn>", "\n"]
-    - Qwen3: ["<|im_end|>", "\n"]
-    - gpt-oss: ["<|end|>", "\n"]
+    row = request.evaluation_row
+    return f"""Analyze this student's math work and reorder the predictions by likelihood.
 
-    Args:
-        model_name: The model being used
+Question: {row.question_text}
+Correct Answer: {row.correct_answer or "Not provided"}
+Student Answer: {row.mc_answer}
+Student Explanation: {row.student_explanation}
 
-    Returns:
-        List of stop token strings
-    """
-    # Dict-driven configuration for stop tokens
-    stop_tokens_config = {
-        "gemma": ["<end_of_turn>", "\n"],
-        "qwen": ["<|im_end|>", "\n"],
-        "gpt-oss": ["<|end|>", "\n"],
-    }
+Predictions to reorder:
+{predictions_text}
 
-    model_name_lower = model_name.lower()
-
-    # Find matching model family
-    for model_family, tokens in stop_tokens_config.items():
-        if model_family in model_name_lower:
-            return tokens
-
-    # If we reach here, model is unknown - use assert to fail early
-    supported_families = ", ".join(stop_tokens_config.keys())
-    msg = (
-        f"Unknown model type '{model_name}'. Model name must contain one of: {supported_families}. "
-        f"This is a programming error - the model type should be validated before calling get_stop_tokens."
-    )
-    raise AssertionError(msg)
+Reply with ONLY the reordered numbers separated by commas. Like "3,1,2".
+Most likely first."""
 
 
-def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
-    """Get the local path for a GGUF model file."""
-    return Path(f"models/gguf/{model_name}-{quantization}.gguf")
+def parse_reranking_response(response: LLMResponse, original_predictions: list[Prediction]) -> list[Prediction]:
+    numbers = re.findall(r"\d+", response)
+    assert numbers, "No numbers found in reranking response"
 
+    indices = [int(n) - 1 for n in numbers]
+    valid_indices = all(0 <= i < len(original_predictions) for i in indices)
+    assert valid_indices, "Invalid indices in reranking response"
 
-def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Path:
-    """Download GGUF model from Hugging Face Hub if it doesn't exist."""
-    model_path = get_model_path(model_name, quantization)
-
-    if model_path.exists():
-        logger.info(f"Model already exists: {model_path}")
-        return model_path
-
-    logger.info(f"Model not found locally: {model_path}")
-
-    # Get model configuration
-    config = GGUF_MODELS.get(model_name)
-    assert config, f"Unknown model type: {model_name}"
-
-    # Assert that the quantization is available for this model (caller's responsibility)
-    error_msg = (
-        f"Quantization '{quantization}' is not available for model '{model_name}'. "
-        f"Available quantizations: {', '.join(config.available_quantizations)}. "
-        f"It's the caller's responsibility to check availability before calling download_model."
-    )
-    assert quantization in config.available_quantizations, error_msg
-
-    repo_id = config.repo
-    filename = config.filename_pattern.format(quant=quantization)
-
-    logger.info(f"Downloading {filename} from {repo_id}")
-
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Download model
-    downloaded_path = hf_hub_download(
-        repo_id=repo_id,
-        filename=filename,
-        local_dir=model_path.parent,
-        local_dir_use_symlinks=False,  # Copy file instead of symlink
+    # Ensure all indices are present (no missing predictions)
+    unique = dict.fromkeys(indices)
+    assert len(unique) == len(original_predictions), (
+        f"Missing indices in reranking: expected {len(original_predictions)}, got {len(unique)}"
     )
 
-    # Handle filename mismatch between HuggingFace repo and our local naming convention
-    # HF repos often have different naming patterns (e.g., "model-UD-Q4_K_XL.gguf")
-    # but we want consistent local names (e.g., "model-Q4_K_XL.gguf")
-    # This ensures models are stored with predictable names regardless of source
-    downloaded_file = Path(downloaded_path)
-    if downloaded_file != model_path and downloaded_file.exists():
-        downloaded_file.rename(model_path)
-
-    assert model_path.exists(), f"Model file not found after download: {model_path}"
-    logger.info(f"Model downloaded successfully: {model_path}")
-    return model_path
+    # Simple reordering since all indices are guaranteed to be present
+    return [original_predictions[i] for i in unique]
 
 
-@contextmanager
-def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
-    """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
-    model_path = download_model(config.model_name, config.quantization)
-    logger.info(f"Loading GGUF model from {model_path}")
-    assert model_path.exists(), f"Model file not found after download: {model_path}"
+def rerank_predictions(
+    llm: Llama,
+    request: RerankingRequest,
+) -> list[Prediction]:
+    logger.debug(f"Reranking {len(request.candidate_predictions)} predictions")
+    prompt = build_reranking_prompt(request)
+    logger.debug(f"Reranking prompt: {prompt}")
 
-    llm = Llama(
-        model_path=str(model_path),
-        n_ctx=config.n_ctx,
-        n_batch=config.n_batch,
-        n_gpu_layers=config.n_gpu_layers,  # Use all GPU layers (Metal on Mac, CUDA on GPU)
-        verbose=config.verbose,
-        n_threads=config.n_threads,
+    output = llm(
+        prompt,
+        max_tokens=20,  # Just need numbers like "3,1,2"
+        temperature=0.1,  # Low temperature for consistency
+        stop=["\n"],
+        echo=False,
     )
-    logger.info(f"Model loaded successfully: {model_path.name}")
+    response = output["choices"][0]["text"].strip()  # type: ignore
+    logger.debug(f"Reranking response: {response}")
 
-    try:
-        yield llm
-    finally:
-        # Cleanup happens automatically when exiting the context
-        del llm
-        logger.info(f"Model cleanup completed: {model_path.name}")
-
-
-if __name__ == "__main__":
-    from statistics import mean, stdev
-
-    from llama_cpp import llama_supports_gpu_offload
-
-    console = Console()
-
-    console.print("🚀 LLM Model Benchmarking Tool", style="bold cyan")
-    console.print("=" * 50)
-
-    # Check GPU support
-    gpu_available = llama_supports_gpu_offload()
-    console.print(f"\n🎮 GPU Support: {'YES ✅' if gpu_available else 'NO ❌ (CPU only)'}")
-    if not gpu_available:
-        console.print("   Note: GPU support not detected. Will benchmark CPU only.", style="yellow")
-        console.print("   For GPU: rebuild llama-cpp-python with CUDA support", style="yellow")
-    console.print("=" * 50)
-
-    # Test question
-    test_question = "Who is the Bosch in the Haber-Bosch process?"
-
-    # Benchmark parameters
-    WARMUP_RUNS = 3
-    MEASUREMENT_RUNS = 10
-
-    # Results storage
-    results = []
-
-    # Test configurations - CPU and GPU (if available)
-    test_configs = [
-        ("CPU", 0),  # No GPU layers
-    ]
-    if gpu_available:
-        test_configs.append(("GPU", -1))  # All layers on GPU
-
-    # Download and benchmark all model variants
-    for model_name in MODEL_OPTIONS:
-        gguf_repo_spec = GGUF_MODELS[model_name]
-        for quantization in gguf_repo_spec.available_quantizations:
-            for device_name, n_gpu_layers in test_configs:
-                console.print(f"\n📦 Processing {model_name} - {quantization} on {device_name}", style="bold yellow")
-                console.print("-" * 40)
-
-                # Create model loading config
-                load_config = LLMModelLoadConfig(
-                    model_name=model_name,
-                    quantization=quantization,
-                    n_ctx=2048,  # Smaller context for benchmarking
-                    n_gpu_layers=n_gpu_layers,  # Control GPU usage
-                    verbose=False,
-                )
-
-                # Create inference config for benchmarking
-                inference_config = InferenceConfig(
-                    max_tokens=100,
-                    temperature=0.1,
-                    echo=False,
-                )
-
-                # Download model
-                model_path = download_model(load_config.model_name, load_config.quantization)
-                console.print(f"✅ Model ready: {model_path.name}", style="green")
-
-                # Load model with context manager
-                benchmark_start = time.time()
-                with load_llm_model(load_config) as llm:
-                    # Get initial memory baseline after model is loaded
-                    initial_memory = 0.0  # Memory measurement not implemented
-                    memory_type = "RAM"
-                    peak_memories = [initial_memory]  # Track peak memory
-
-                    # Warmup runs
-                    console.print(f"🔥 Warming up with {WARMUP_RUNS} runs...")
-                    for _ in range(WARMUP_RUNS):
-                        _ = llm(
-                            test_question,
-                            max_tokens=inference_config.max_tokens,
-                            temperature=inference_config.temperature,
-                            echo=inference_config.echo,
-                        )
-
-                    # Measurement runs
-                    console.print(f"📊 Running {MEASUREMENT_RUNS} measurements...")
-                    latencies = []
-                    token_counts = []
-
-                    for _i in range(MEASUREMENT_RUNS):
-                        start_inference = time.time()
-                        output = llm(
-                            test_question,
-                            max_tokens=inference_config.max_tokens,
-                            temperature=inference_config.temperature,
-                            echo=inference_config.echo,
-                        )
-                        latency_ms = (time.time() - start_inference) * 1000  # Convert to ms
-                        latencies.append(latency_ms)
-
-                        # Extract response and count tokens
-                        response = output["choices"][0]["text"].strip()  # type: ignore
-                        tokens = len(response.split())  # Simple word count
-                        token_counts.append(tokens)
-
-                        # Track memory after each inference
-                        current_memory = 0.0  # Memory measurement not implemented
-                        peak_memories.append(current_memory)
-
-                    # Report the peak memory reached during inference
-                    peak_memory = max(peak_memories)
-                    memory_used = peak_memory
-
-                    # Calculate total time for this model/quant combo
-                    total_time_s = time.time() - benchmark_start
-
-                    # Calculate statistics
-                    mean_latency = mean(latencies)
-                    std_latency = stdev(latencies) if len(latencies) > 1 else 0
-                    min_latency = min(latencies)
-                    max_latency = max(latencies)
-
-                    mean_tokens = mean(token_counts)
-                    tokens_per_sec = mean_tokens / (mean_latency / 1000) if mean_latency > 0 else 0
-
-                    # Store results
-                    results.append(
-                        {
-                            "Model": f"{model_name}",
-                            "Quant": quantization,
-                            "Device": device_name,
-                            "Latency (ms)": f"{mean_latency:.0f} ± {std_latency:.0f}",
-                            "Tok/s": f"{tokens_per_sec:.1f}",
-                            f"{memory_type} (GB)": f"{memory_used:.1f}",
-                            "Total (s)": f"{total_time_s:.1f}",
-                            "min_latency": min_latency,
-                            "max_latency": max_latency,
-                        }
-                    )
-
-                    console.print(
-                        f"⚡ {device_name}: Latency {mean_latency:.0f} ± {std_latency:.0f} ms | "
-                        f"Throughput: {tokens_per_sec:.1f} tok/s | "
-                        f"{memory_type}: {memory_used:.1f} GB | "
-                        f"Total: {total_time_s:.1f}s",
-                        style="blue",
-                    )
-
-    # Display results table
-    console.print("\n" + "=" * 80, style="bold")
-    console.print("📊 BENCHMARK RESULTS", style="bold cyan")
-    console.print("=" * 80, style="bold")
-
-    table = Table()
-    table.add_column("Model", style="cyan", no_wrap=True)
-    table.add_column("Quant", style="magenta")
-    table.add_column("Device", style="white")
-    table.add_column("Latency (ms)", style="yellow", justify="right")
-    table.add_column("Tok/s", style="green", justify="right")
-    # Determine memory column name based on what was measured
-    memory_col_name = "VRAM (GB)" if gpu_available else "RAM (GB)"
-    table.add_column(memory_col_name, style="red", justify="right")
-    table.add_column("Total (s)", style="blue", justify="right")
-
-    for r in results:
-        table.add_row(
-            r["Model"],
-            r["Quant"],
-            r["Device"],
-            r["Latency (ms)"],
-            r["Tok/s"],
-            r.get("VRAM (GB)", r.get("RAM (GB)", "N/A")),
-            r["Total (s)"],
-        )
-
-    console.print(table)
-
-    console.print(f"\n🎯 Test Question: '{test_question}'")
-    console.print(f"📈 {WARMUP_RUNS} warmup runs, {MEASUREMENT_RUNS} measurements per model")
-    console.print(f"📊 Benchmarked {len(results)} model variants")
+    return parse_reranking_response(response, request.candidate_predictions)

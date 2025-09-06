@@ -1,40 +1,157 @@
-"""Tests for LLM utilities."""
+"""Tests for LLM reranker functionality."""
 
 import pytest
 
-from kaggle_map.reranker.llm import format_chat_prompt, get_stop_tokens
+from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.reranker.llm import build_reranking_prompt, parse_reranking_response, RerankingRequest
 
-def test_gemma_model_formatting():
-    user_content = "What is the capital of France?"
-    result = format_chat_prompt("gemma-3-12b-it", user_content)
-    expected = f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
-    assert result == expected, f"Failed for model Gemma"
 
-def test_qwen_model_formatting():
-    user_content = "Solve 2+2"
-    result = format_chat_prompt("Qwen3-14B", user_content)
-    expected = f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
-    assert result == expected, f"Failed for model Qwen3"
+def test_build_reranking_prompt():
+    # Arrange - Real fraction division problem
+    evaluation_row = EvaluationRow(
+        row_id=1,
+        question_id=100,
+        question_text="Calculate \\( \\frac{1}{2} \\div 6 \\)",
+        correct_answer="\\( \\frac{1}{12} \\)",
+        mc_answer="\\( 3 \\)",
+        student_explanation="1 / 2 of 6 is 3, so the answer is B.",
+    )
 
-def test_gpt_oss_model_formatting():
-    user_content = "Explain quantum physics"
-    result = format_chat_prompt("gpt-oss-20b", user_content)
-    expected = f"<|start|>user<|message|>{user_content}<|end|><|start|>assistant"
-    assert result == expected, f"Failed for model gpt-oss"
+    predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="SwapDividend"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Mult"),
+        Prediction(category=Category.TRUE_NEITHER, misconception="NA"),
+    ]
 
-def test_multiline_user_content():
-    user_content = "Line 1\nLine 2\nLine 3"
-    result = format_chat_prompt("gemma-3-12b-it", user_content)
-    expected = f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
-    assert result == expected
-    assert "Line 1\nLine 2\nLine 3" in result
+    request = RerankingRequest(
+        evaluation_row=evaluation_row,
+        candidate_predictions=predictions,
+    )
 
-def test_special_characters_in_content():
-    """Test formatting with special characters in user content."""
-    user_content = "What's 2+2? <tag> & \"quotes\" 'apostrophes'"
-    result = format_chat_prompt("gemma-3-12b-it", user_content)
-    assert user_content in result
-    assert "<tag>" in result
-    assert "&" in result
-    assert '"quotes"' in result
+    # Act
+    prompt = build_reranking_prompt(request)
 
+    # Assert
+    assert "Calculate \\( \\frac{1}{2} \\div 6 \\)" in prompt
+    assert "Correct Answer: \\( \\frac{1}{12} \\)" in prompt
+    assert "Student Answer: 3" in prompt  # LaTeX is stripped by normalize_latex_answer
+    assert "1 / 2 of 6 is 3" in prompt
+    assert "1. True_Misconception:SwapDividend" in prompt
+    assert "2. False_Misconception:Mult" in prompt
+    assert "3. True_Neither:NA" in prompt
+    assert "Reply with ONLY the reordered numbers" in prompt
+
+
+def test_build_reranking_prompt_with_none_correct_answer():
+    # Arrange - Real algebra problem
+    evaluation_row = EvaluationRow(
+        row_id=1,
+        question_id=100,
+        question_text="\\( 2y = 24 \\) What is the value of \\( y \\)?",
+        correct_answer=None,  # Sometimes correct answer is not provided
+        mc_answer="\\( 12 \\)",
+        student_explanation="i think because 2*12is 24 so that's why im sort of guessing",
+    )
+
+    predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Not_variable"),
+    ]
+
+    request = RerankingRequest(
+        evaluation_row=evaluation_row,
+        candidate_predictions=predictions,
+    )
+
+    # Act
+    prompt = build_reranking_prompt(request)
+
+    # Assert
+    assert "Correct Answer: Not provided" in prompt
+
+
+def test_parse_reranking_response_simple():
+    # Arrange - Real misconception types
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="SwapDividend"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Mult"),
+        Prediction(category=Category.TRUE_CORRECT, misconception="NA"),
+    ]
+    response = "3,1,2"
+
+    # Act
+    reordered = parse_reranking_response(response, original_predictions)
+
+    # Assert
+    assert len(reordered) == 3
+    assert reordered[0].misconception == "NA"
+    assert reordered[1].misconception == "SwapDividend"
+    assert reordered[2].misconception == "Mult"
+
+
+def test_parse_reranking_response_with_extra_text():
+    # Arrange - Real fraction misconceptions
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_Fraction"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Additive"),
+    ]
+    response = "The best order is: 2, 1."
+
+    # Act
+    reordered = parse_reranking_response(response, original_predictions)
+
+    # Assert
+    assert len(reordered) == 2
+    assert reordered[0].misconception == "Additive"
+    assert reordered[1].misconception == "Wrong_Fraction"
+
+
+def test_parse_reranking_response_no_numbers():
+    # Arrange - Single misconception case
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="FlipChange"),
+    ]
+    response = "No numbers here"
+
+    # Act & Assert
+    with pytest.raises(AssertionError, match="No numbers found in reranking response"):
+        parse_reranking_response(response, original_predictions)
+
+
+def test_parse_reranking_response_invalid_index():
+    # Arrange - Common misconceptions for fractions
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="WNB"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Irrelevant"),
+    ]
+    response = "1,2,3"  # Index 3 is out of bounds (3-1=2, but only indices 0,1 exist)
+
+    # Act & Assert
+    with pytest.raises(AssertionError, match="Invalid indices in reranking response"):
+        parse_reranking_response(response, original_predictions)
+
+
+def test_parse_reranking_response_missing_indices():
+    # Arrange - Mix of real misconception categories
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="SwapDividend"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Not_variable"),
+        Prediction(category=Category.TRUE_CORRECT, misconception="NA"),
+    ]
+    response = "1,2"  # Missing index 3
+
+    # Act & Assert
+    with pytest.raises(AssertionError, match="Missing indices in reranking: expected 3, got 2"):
+        parse_reranking_response(response, original_predictions)
+
+
+def test_parse_reranking_response_duplicate_indices():
+    # Arrange - Common algebra misconceptions
+    original_predictions = [
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Additive"),
+        Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Mult"),
+    ]
+    response = "1,1"  # Duplicate index
+
+    # Act & Assert
+    with pytest.raises(AssertionError, match="Missing indices in reranking: expected 2, got 1"):
+        parse_reranking_response(response, original_predictions)
