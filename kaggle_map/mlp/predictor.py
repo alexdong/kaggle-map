@@ -33,6 +33,9 @@ from kaggle_map.utils.metrics import calculate_map_at_3
 # MAP@3 evaluation metric requires exactly 3 predictions per question
 MAX_PREDICTIONS = 3
 
+# Default configuration instances to avoid None checks
+_DEFAULT_TRAINING_CONFIG = TrainingConfig()
+
 
 def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
     """Extract unique prediction strings per question."""
@@ -105,22 +108,19 @@ class Predictor:
     @classmethod
     def fit(
         cls,
-        config: TrainingConfig | None = None,
-        embedding_strategy: str | None = None,
+        config: TrainingConfig = _DEFAULT_TRAINING_CONFIG,
+        embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND,
     ) -> "Predictor":
         """Train a new predictor.
 
         Args:
             config: Training configuration
-            embedding_strategy: "double_blind" or "semantic"
+            embedding_strategy: Embedding strategy to use
 
         Returns:
             Trained Predictor instance
         """
-        if config is None:
-            config = TrainingConfig()
-
-        strategy = EmbeddingStrategy.from_string(embedding_strategy)
+        strategy = embedding_strategy
 
         device = get_device()
         logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
@@ -291,13 +291,15 @@ class Predictor:
         """Evaluate the predictor on test data.
 
         Args:
-            test_data: Optional test data. If None, uses validation split from train.csv
-            train_csv_path: Path to training data
+            test_data: Test data rows. If empty, uses validation split from train.csv
+            train_csv_path: Path to training data (used when test_data is empty)
 
         Returns:
             Dictionary with evaluation metrics
         """
         if test_data is None:
+            test_data = []
+        if not test_data:
             training_data = load_training_data(train_csv_path)
             n_samples = len(training_data)
             split = _get_split_indices(n_samples, 0.7, 42)
