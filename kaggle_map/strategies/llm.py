@@ -27,7 +27,7 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
-from kaggle_map.utils.llm import format_chat_prompt, get_model_path, get_stop_tokens, load_llm_model
+from kaggle_map.reranker.llm_utils import format_chat_prompt, get_model_path, get_stop_tokens, load_llm_model
 
 from .base import Strategy
 from .utils import TRAIN_RATIO, VAL_RATIO, split_training_data

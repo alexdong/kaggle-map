@@ -80,7 +80,10 @@ def get_stop_tokens(model_name: ModelName) -> list[str]:
 
     # If we reach here, model is unknown - use assert to fail early
     supported_families = ", ".join(stop_tokens_config.keys())
-    msg = f"Unknown model type '{model_name}'. Model name must contain one of: {supported_families}. This is a programming error - the model type should be validated before calling get_stop_tokens."
+    msg = (
+        f"Unknown model type '{model_name}'. Model name must contain one of: {supported_families}. "
+        f"This is a programming error - the model type should be validated before calling get_stop_tokens."
+    )
     raise AssertionError(msg)
 
 
