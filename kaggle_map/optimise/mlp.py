@@ -6,8 +6,10 @@ import click
 import optuna
 import torch
 from loguru import logger
+from optuna import Trial
 
-from kaggle_map.mlp.mlp import MLPStrategy
+from kaggle_map.mlp import Predictor
+from kaggle_map.mlp.trainer import TrainingConfig
 
 from .utils import (
     STORAGE_URL,
@@ -20,31 +22,60 @@ from .utils import (
 )
 
 
+def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
+    """Get hyperparameter search space for MLP."""
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
+        "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
+        "dropout": trial.suggest_float("dropout", 0.10, 0.42),
+        "architecture_size": trial.suggest_categorical(
+            "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["medium"]
+        ),
+        "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adam"]),
+        "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
+        "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
+        "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
+        "early_stopping_patience": trial.suggest_int("early_stopping_patience", 10, 22),
+        "epochs": trial.suggest_int("epochs", 28, 180),
+        "embedding_strategy": trial.suggest_categorical(
+            "embedding_strategy", ["double_blind", "semantic"]
+        ),
+    }
+
+
 def objective_function(
     trial: optuna.Trial,
-    strategy_class: Any,  # Use Any to avoid type checking issues
     train_data_path: str | None = None,
 ) -> float:
-    # Get hyperparameters from strategy based on search type
-    hyperparams = strategy_class.get_hyperparameter_search_space(trial)
+    # Get hyperparameters
+    hyperparams = get_hyperparameter_search_space(trial)
 
-    # Add train_csv_path if provided
+    # Create training config
+    config = TrainingConfig(
+        epochs=hyperparams["epochs"],
+        batch_size=hyperparams["batch_size"],
+        learning_rate=hyperparams["learning_rate"],
+        weight_decay=hyperparams["weight_decay"],
+        optimizer=hyperparams["optimizer"],
+        scheduler=hyperparams["scheduler"],
+        early_stopping_patience=hyperparams["early_stopping_patience"],
+        architecture_size=hyperparams["architecture_size"],
+        dropout=hyperparams["dropout"],
+        activation=hyperparams["activation"],
+    )
+
     if train_data_path:
-        hyperparams["train_csv_path"] = Path(train_data_path)
-
-    # Add metadata for tracking
-    hyperparams["study_id"] = trial.study.study_name
-    hyperparams["trial_number"] = trial.number
+        config.train_csv_path = Path(train_data_path)
 
     # Clear GPU memory before training
     clear_gpu_memory()
 
-    logger.info(f"Starting trial {trial.number} with params: {hyperparams}")
+    logger.info(f"Starting trial {trial.number}")
 
     # Handle OOM gracefully but let other errors crash
     try:
-        model = strategy_class.fit(**hyperparams)
-        result = strategy_class.evaluate(model)
+        model = Predictor.fit(config, embedding_strategy=hyperparams["embedding_strategy"])
+        result = model.evaluate()
 
         # Track GPU utilization
         track_gpu_memory(trial)
@@ -83,8 +114,6 @@ def run_search(
     if train_data_path:
         logger.info(f"Using training data: {train_data_path}")
 
-    strategy_class = MLPStrategy
-
     # Create timestamped study name
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     if search_type == "embedding":
@@ -96,7 +125,7 @@ def run_search(
 
     # Create objective with bound parameters
     def objective(trial: optuna.Trial) -> float:
-        return objective_function(trial, strategy_class, train_data_path)
+        return objective_function(trial, train_data_path)
 
     logger.info(f"Starting optimization with study: {study.study_name}")
 

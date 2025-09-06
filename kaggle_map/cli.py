@@ -10,8 +10,18 @@ from rich.console import Console
 from rich.table import Table
 
 from .core.dataset import load_training_data
-from .mlp.mlp import MLPStrategy
-from .mlp.utils import TRAIN_RATIO, ModelParameters, get_split_indices
+from .mlp.mlp_compat import MLPStrategy
+from .mlp.predictor import get_split_indices
+
+TRAIN_RATIO = 0.7
+
+
+class ModelParameters:
+    """Placeholder for backward compatibility."""
+
+    @classmethod
+    def create(cls, **kwargs):
+        return cls()
 
 
 @dataclass
