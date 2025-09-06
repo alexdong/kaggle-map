@@ -2,7 +2,7 @@
 
 import pytest
 
-from kaggle_map.reranker.llm_utils import format_chat_prompt, get_stop_tokens
+from kaggle_map.reranker.utils import format_chat_prompt, get_stop_tokens
 
 def test_gemma_model_formatting():
     user_content = "What is the capital of France?"
