@@ -232,9 +232,13 @@ class Predictor:
         )
 
         embedding = self.embedding_strategy.fn(eval_row_with_answer)
+        logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding)}")
         embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(self.device)
 
         is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
+        logger.debug(
+            f"Question {evaluation_row.question_id}: is_correct={is_correct}, mc_answer='{evaluation_row.mc_answer}'"
+        )
         correctness_idx = torch.tensor([1 if is_correct else 0], dtype=torch.long).to(self.device)
 
         self.model.eval()
@@ -253,6 +257,7 @@ class Predictor:
             probs = functional.softmax(logits, dim=-1)[0]
             top_k = min(MAX_PREDICTIONS, logits.size(-1))
             top_indices = torch.topk(probs, k=top_k)[1]
+            logger.debug(f"Model outputs for {key}: top_{top_k}_probs={probs[top_indices].tolist()}")
 
             encoder = (
                 self.model.true_label_encoders.get(evaluation_row.question_id)
@@ -273,6 +278,8 @@ class Predictor:
         while len(predictions) < MAX_PREDICTIONS:
             predictions.append(default)
 
+        prediction_strs = [str(p) for p in predictions[:MAX_PREDICTIONS]]
+        logger.debug(f"Final predictions for row {evaluation_row.row_id}: {prediction_strs}")
         return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
 
     def evaluate(
