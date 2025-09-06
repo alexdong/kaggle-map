@@ -9,6 +9,18 @@ from torch.utils.data import Dataset
 
 from kaggle_map.core.models import Answer, QuestionId
 
+__all__ = ["DatasetArrays", "MLPDataset", "TrainingSample"]
+
+
+@dataclass
+class TrainingSample:
+    """A single training sample for MLP model."""
+
+    embedding: torch.Tensor
+    question_id: torch.Tensor
+    label: torch.Tensor
+    is_correct_idx: torch.Tensor
+
 
 @dataclass
 class DatasetArrays:
@@ -50,12 +62,8 @@ class MLPDataset(Dataset):
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Get a single training sample.
-
-        Returns:
-            Tuple of (embedding, question_id, label, is_correct_idx)
-        """
+    def __getitem__(self, idx: int) -> TrainingSample:
+        """Get a single training sample."""
         qid = int(self.question_ids[idx].item())
         prediction = self.predictions[idx]
         mc_answer = self.mc_answers[idx]
@@ -74,9 +82,9 @@ class MLPDataset(Dataset):
         else:
             label = 0  # Default to first class if not found
 
-        return (
-            self.embeddings[idx],
-            self.question_ids[idx],
-            torch.tensor(label, dtype=torch.long),
-            is_correct_idx,
+        return TrainingSample(
+            embedding=self.embeddings[idx],
+            question_id=self.question_ids[idx],
+            label=torch.tensor(label, dtype=torch.long),
+            is_correct_idx=is_correct_idx,
         )
