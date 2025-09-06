@@ -24,10 +24,10 @@ import numpy as np
 from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
 if TYPE_CHECKING:
-    from kaggle_map.core.models import TrainingRow
+    from kaggle_map.core.models import EvaluationRow
 
 
-def compute_double_blind_strategy_embeddings(row: "TrainingRow") -> np.ndarray:
+def compute_double_blind_strategy_embeddings(row: "EvaluationRow") -> np.ndarray:
     model = QwenEmbeddingModel.get_instance()
     assert row.correct_answer is not None, "Correct answer is required for double blind embeddings"
 
@@ -39,7 +39,7 @@ def compute_double_blind_strategy_embeddings(row: "TrainingRow") -> np.ndarray:
     return np.concatenate([question_correct_embedding, answer_explanation_embedding])
 
 
-def compute_semantic_strategy_embedding(row: "TrainingRow") -> np.ndarray:
+def compute_semantic_strategy_embedding(row: "EvaluationRow") -> np.ndarray:
     model = QwenEmbeddingModel.get_instance()
     assert row.correct_answer is not None, "Correct answer is required for double blind embeddings"
     correct_answer = row.correct_answer if row.correct_answer else row.mc_answer
