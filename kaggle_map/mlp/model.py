@@ -14,6 +14,20 @@ ArchitectureSize = Literal["medium", "large", "xlarge"]
 
 
 @dataclass(frozen=True)
+class EvaluationResult:
+    """Key for model evaluation outputs by question and correctness."""
+
+    question_id: QuestionId
+    is_correct: bool
+
+    def __hash__(self) -> int:
+        return hash((self.question_id, self.is_correct))
+
+    def __str__(self) -> str:
+        return f"Q{self.question_id}_{'correct' if self.is_correct else 'incorrect'}"
+
+
+@dataclass(frozen=True)
 class Architecture:
     """Architecture configuration for MLP model."""
 
@@ -113,7 +127,7 @@ class QuestionSpecificMLP(nn.Module):
 
     def forward(
         self, x: torch.Tensor, question_ids: torch.Tensor, is_correct: torch.Tensor
-    ) -> dict[tuple[int, bool], torch.Tensor]:
+    ) -> dict[EvaluationResult, torch.Tensor]:
         """Forward pass returning logits per question, split by correctness.
 
         Args:
@@ -122,7 +136,7 @@ class QuestionSpecificMLP(nn.Module):
             is_correct: [batch_size] - correctness indices (0 or 1)
 
         Returns:
-            Dictionary mapping (question_id, is_correct) to logits tensor
+            Dictionary mapping EvaluationResult to logits tensor
         """
         correct_emb = self.correctness_embedding(is_correct.long())
 
@@ -146,11 +160,13 @@ class QuestionSpecificMLP(nn.Module):
             correct_mask = question_correctness > 0
             if correct_mask.any() and str(qid_int) in self.true_heads:
                 correct_features = question_features[correct_mask]
-                outputs[(qid_int, True)] = self.true_heads[str(qid_int)](correct_features)
+                eval_key = EvaluationResult(question_id=qid_int, is_correct=True)
+                outputs[eval_key] = self.true_heads[str(qid_int)](correct_features)
 
             incorrect_mask = ~correct_mask
             if incorrect_mask.any() and str(qid_int) in self.false_heads:
                 incorrect_features = question_features[incorrect_mask]
-                outputs[(qid_int, False)] = self.false_heads[str(qid_int)](incorrect_features)
+                eval_key = EvaluationResult(question_id=qid_int, is_correct=False)
+                outputs[eval_key] = self.false_heads[str(qid_int)](incorrect_features)
 
         return outputs

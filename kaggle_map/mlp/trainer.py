@@ -9,7 +9,7 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 
-from kaggle_map.mlp.model import QuestionSpecificMLP
+from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 
 
 @dataclass
@@ -93,14 +93,14 @@ def process_batch(  # noqa: C901
     labels = labels.to(device)
     is_correct = is_correct.to(device)
 
-    outputs = model(embeddings, question_ids, is_correct)
+    outputs: dict[EvaluationResult, torch.Tensor] = model(embeddings, question_ids, is_correct)
 
     total_loss = 0.0
     total_samples = 0
 
-    for (qid, correct), logits in outputs.items():
-        correctness_mask = is_correct > 0 if correct else is_correct == 0
-        question_mask = question_ids == qid
+    for eval_result, logits in outputs.items():
+        correctness_mask = is_correct > 0 if eval_result.is_correct else is_correct == 0
+        question_mask = question_ids == eval_result.question_id
         combined_mask = question_mask & correctness_mask
 
         if combined_mask.any():

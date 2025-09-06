@@ -24,7 +24,7 @@ from kaggle_map.core.models import (
 )
 from kaggle_map.mlp.dataset import DatasetArrays, DatasetEncoders, MLPDataset
 from kaggle_map.mlp.loss import ListMLELoss
-from kaggle_map.mlp.model import QuestionSpecificMLP
+from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 from kaggle_map.mlp.trainer import TrainingConfig, TrainingSetup, train_model
 from kaggle_map.utils.device import get_device
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -223,7 +223,7 @@ class Predictor:
             )
 
         predictions = []
-        key = (evaluation_row.question_id, is_correct)
+        key = EvaluationResult(question_id=evaluation_row.question_id, is_correct=is_correct)
 
         if key in outputs:
             logits = outputs[key]
