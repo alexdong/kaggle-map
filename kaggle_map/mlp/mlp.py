@@ -62,7 +62,6 @@ from kaggle_map.core.dataset import (
     extract_correct_answers,
     load_training_data,
 )
-from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     Answer,
     Category,
@@ -73,6 +72,7 @@ from kaggle_map.core.models import (
     SubmissionRow,
 )
 from kaggle_map.utils.device import get_device
+from kaggle_map.utils.metrics import calculate_map_at_3
 
 from .utils import (
     TRAIN_RATIO,

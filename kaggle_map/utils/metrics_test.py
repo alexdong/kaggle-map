@@ -2,7 +2,7 @@
 
 import pytest
 
-from kaggle_map.core.metrics import calculate_map_at_3
+from kaggle_map.utils.metrics import calculate_map_at_3
 from kaggle_map.core.models import Category, Prediction
 
 
