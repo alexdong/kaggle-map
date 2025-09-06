@@ -10,14 +10,13 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from kaggle_map.mlp.model import QuestionSpecificMLP
-from kaggle_map.utils.device import get_device
 
 
 @dataclass
 class TrainingContext:
     """Context for training operations."""
 
-    model: nn.Module
+    model: QuestionSpecificMLP
     criterion: nn.Module
     device: torch.device
     optimizer: torch.optim.Optimizer | None = None
@@ -52,7 +51,7 @@ class TrainingConfig:
 class TrainingResult:
     """Result from training a model."""
 
-    model: nn.Module
+    model: QuestionSpecificMLP
     history: dict[str, Any]
 
 
@@ -60,7 +59,7 @@ class TrainingResult:
 class TrainingSetup:
     """Setup for training a model."""
 
-    model: nn.Module
+    model: QuestionSpecificMLP
     train_loader: DataLoader
     val_loader: DataLoader
     config: TrainingConfig
@@ -68,10 +67,11 @@ class TrainingSetup:
     criterion: nn.Module
 
 
-def process_batch(
+def process_batch(  # noqa: C901
     model: QuestionSpecificMLP,
     batch: tuple,
     criterion: nn.Module,
+    device: torch.device,
     *,
     training: bool = True,
 ) -> tuple[torch.Tensor | None, int]:
@@ -87,7 +87,6 @@ def process_batch(
     Returns:
         Tuple of (loss, batch_size) or (None, 0) if no valid samples
     """
-    device = get_device()
     embeddings, question_ids, labels, is_correct = batch
     embeddings = embeddings.to(device)
     question_ids = question_ids.to(device)
@@ -114,9 +113,12 @@ def process_batch(
     assert total_samples > 0, "No valid samples in batch"
     avg_loss = total_loss / total_samples
     # Detach for validation to save memory
-    if not training:
+    if not training and isinstance(avg_loss, torch.Tensor):
         avg_loss = avg_loss.detach()
-    return avg_loss, embeddings.size(0)
+    # Ensure avg_loss is a torch.Tensor
+    if not isinstance(avg_loss, torch.Tensor):
+        avg_loss = torch.tensor(avg_loss)
+    return avg_loss, int(embeddings.size(0))
 
 
 def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
@@ -186,13 +188,14 @@ def train_epoch(
         Average training loss for the epoch
     """
     assert ctx.optimizer is not None, "Optimizer required for training"
+    optimizer = ctx.optimizer
 
     ctx.model.train()
     total_loss = 0.0
     total_samples = 0
 
     for batch in train_loader:
-        ctx.optimizer.zero_grad()
+        optimizer.zero_grad()
 
         loss, n_samples = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=True)
 
@@ -201,7 +204,7 @@ def train_epoch(
             total_samples += n_samples
 
             loss.backward()
-            ctx.optimizer.step()
+            optimizer.step()
 
             if ctx.scheduler and isinstance(ctx.scheduler, torch.optim.lr_scheduler.OneCycleLR):
                 ctx.scheduler.step()
@@ -245,7 +248,7 @@ def _run_training_loop(
 ) -> dict[str, Any]:
     """Run the main training loop."""
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
-    history = {"train_loss": [], "val_loss": [], "epochs": []}
+    history: dict[str, Any] = {"train_loss": [], "val_loss": [], "epochs": []}
     best_val_loss = float("inf")
     best_model_state = None
 

@@ -2,7 +2,7 @@
 
 import pickle
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -105,13 +105,20 @@ class Predictor:
         question_predictions = _extract_question_predictions(training_data)
 
         logger.info("Computing embeddings...")
-        embeddings_list = []
-        question_ids_list = []
-        predictions_list = []
-        mc_answers_list = []
+        embeddings_list: list[np.ndarray] = []
+        question_ids_list: list[int] = []
+        predictions_list: list[str] = []
+        mc_answers_list: list[str] = []
 
         for row in training_data:
-            eval_row = replace(row, correct_answer=correct_answers.get(row.question_id, ""))
+            eval_row = EvaluationRow(
+                row_id=row.row_id,
+                question_id=row.question_id,
+                question_text=row.question_text,
+                mc_answer=row.mc_answer,
+                student_explanation=row.student_explanation,
+                correct_answer=correct_answers.get(row.question_id, ""),
+            )
             embedding = strategy.fn(eval_row)
             embeddings_list.append(embedding)
             question_ids_list.append(row.question_id)
@@ -192,8 +199,13 @@ class Predictor:
         Returns:
             SubmissionRow with top 3 predictions
         """
-        eval_row_with_answer = replace(
-            evaluation_row, correct_answer=self.correct_answers.get(evaluation_row.question_id, "")
+        eval_row_with_answer = EvaluationRow(
+            row_id=evaluation_row.row_id,
+            question_id=evaluation_row.question_id,
+            question_text=evaluation_row.question_text,
+            mc_answer=evaluation_row.mc_answer,
+            student_explanation=evaluation_row.student_explanation,
+            correct_answer=self.correct_answers.get(evaluation_row.question_id, ""),
         )
 
         embedding = self.embedding_strategy.fn(eval_row_with_answer)

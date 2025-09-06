@@ -65,7 +65,11 @@ class MLPDataset(Dataset):
 
         label_encoder = self.true_label_encoders.get(qid) if is_correct else self.false_label_encoders.get(qid)
 
-        if label_encoder and prediction in label_encoder.classes_:
+        if (
+            label_encoder is not None
+            and hasattr(label_encoder, "classes_")
+            and prediction in getattr(label_encoder, "classes_", [])
+        ):
             label = label_encoder.transform([prediction])[0]
         else:
             label = 0  # Default to first class if not found
