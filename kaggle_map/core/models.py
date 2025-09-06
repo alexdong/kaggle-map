@@ -1,8 +1,9 @@
 """Core data structures for the Kaggle student misconception prediction competition."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, NamedTuple, get_args
+from typing import TYPE_CHECKING, Literal, NamedTuple, get_args
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,9 @@ import pydash
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
+
+if TYPE_CHECKING:
+    from kaggle_map.core.models import EvaluationRow
 
 # ============================================================================
 # Type Aliases
@@ -23,6 +27,50 @@ Question = str  # Question text from math problems
 Explanation = str  # Student's explanation of their reasoning
 Misconception = str  # Specific misconception identifier
 Label = str
+
+
+# ============================================================================
+# Embedding Strategies
+# ============================================================================
+
+
+class EmbeddingStrategy(Enum):
+    """Strategies for computing embeddings from evaluation rows."""
+
+    DOUBLE_BLIND = "double_blind"
+    SEMANTIC = "semantic"
+
+    @property
+    def dimension(self) -> int:
+        """Return the output dimension for this embedding strategy."""
+        return 8192 if self == EmbeddingStrategy.DOUBLE_BLIND else 4096
+
+    @classmethod
+    def from_string(cls, value: str | None) -> "EmbeddingStrategy":
+        """Convert string to enum, with default to DOUBLE_BLIND."""
+        if value is None:
+            return cls.DOUBLE_BLIND
+        return cls(value)
+
+    def get_embedding_function(self) -> Callable[["EvaluationRow"], np.ndarray]:
+        """Return the embedding function for this strategy.
+
+        This method imports the functions at runtime to avoid circular dependencies.
+        """
+        # ruff: noqa: PLC0415
+        from kaggle_map.embeddings import (
+            compute_double_blind_strategy_embeddings,
+            compute_semantic_strategy_embedding,
+        )
+
+        if self == EmbeddingStrategy.DOUBLE_BLIND:
+            return compute_double_blind_strategy_embeddings
+        return compute_semantic_strategy_embedding
+
+    @property
+    def fn(self) -> Callable[["EvaluationRow"], np.ndarray]:
+        """Return the embedding function for this strategy."""
+        return self.get_embedding_function()
 
 
 # ============================================================================

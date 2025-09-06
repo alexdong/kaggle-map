@@ -315,7 +315,7 @@ class LLMStrategy(Strategy):
         return strategy
 
     @classmethod
-    def evaluate_on_split(
+    def evaluate(
         cls,
         model: "LLMStrategy",
         *,

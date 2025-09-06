@@ -79,7 +79,7 @@ class Strategy(ABC):
 
     @classmethod
     @abstractmethod
-    def evaluate_on_split(
+    def evaluate(
         cls,
         model: "Strategy",
         *,

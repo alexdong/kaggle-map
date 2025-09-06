@@ -25,19 +25,9 @@ def objective_function(
     trial: optuna.Trial,
     strategy_class: Any,  # Use Any to avoid type checking issues
     train_data_path: str | None = None,
-    search_type: str = "regular",
 ) -> float:
     # Get hyperparameters from strategy based on search type
-    if search_type == "embedding":
-        # Use embedding-specific search space
-        if hasattr(strategy_class, "get_embedding_search_space"):
-            hyperparams = strategy_class.get_embedding_search_space(trial)
-        else:
-            msg = f"Strategy {strategy_class.__name__} does not support embedding search"
-            raise ValueError(msg)
-    else:
-        # Use regular hyperparameter search space
-        hyperparams = strategy_class.get_hyperparameter_search_space(trial)
+    hyperparams = strategy_class.get_hyperparameter_search_space(trial)
 
     # Add train_csv_path if provided
     if train_data_path:
@@ -60,7 +50,7 @@ def objective_function(
     # Handle OOM gracefully but let other errors crash
     try:
         model = strategy_class.fit(**hyperparams)
-        result = strategy_class.evaluate_on_split(model)
+        result = strategy_class.evaluate(model)
 
         # Track GPU utilization
         track_gpu_memory(trial)
@@ -112,7 +102,7 @@ def run_search(
 
     # Create objective with bound parameters
     def objective(trial: optuna.Trial) -> float:
-        return objective_function(trial, strategy_class, train_data_path, search_type)
+        return objective_function(trial, strategy_class, train_data_path)
 
     logger.info(f"Starting optimization with study: {study.study_name}")
 

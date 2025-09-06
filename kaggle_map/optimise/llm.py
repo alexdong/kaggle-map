@@ -27,7 +27,7 @@ def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel)
     # This is intentional for LLM strategy optimization:
     # - fit() with train_split=1.0: Extracts correct answers and misconceptions from ALL data
     #   (LLM doesn't train, just builds a knowledge base from the training set)
-    # - evaluate_on_split() with train_split=0.0: Tests on ALL data to maximize signal
+    # - evaluate() with train_split=0.0: Tests on ALL data to maximize signal
     #   for comparing different quantization levels (we're not validating generalization)
 
     # Fit the strategy with the config (only to extract stats from training data)
@@ -39,8 +39,8 @@ def evaluate_gguf_models(model_name: ModelName, quantization: QuantizationLevel)
     # Measure evaluation time using all training data
     start_time = time.time()
 
-    # Use evaluate_on_split to evaluate on all data
-    results = LLMStrategy.evaluate_on_split(
+    # Use evaluate to evaluate on all data
+    results = LLMStrategy.evaluate(
         model=strategy,
         train_split=0.0,  # Use all data for evaluation
     )

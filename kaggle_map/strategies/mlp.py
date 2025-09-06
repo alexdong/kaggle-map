@@ -66,6 +66,7 @@ from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
     Answer,
     Category,
+    EmbeddingStrategy,
     EvaluationRow,
     Prediction,
     QuestionId,
@@ -305,6 +306,7 @@ class MLPStrategy(Strategy):
     correct_answers: dict[QuestionId, Answer]
     tokenizer: Any  # SentenceTransformer instance (avoid import for speed)
     device: torch.device
+    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
     parameters: ModelParameters | None = None
 
     @property
@@ -347,74 +349,10 @@ class MLPStrategy(Strategy):
             # Optimal patience range
             "early_stopping_patience": trial.suggest_int("patience", 10, 22),
             "epochs": trial.suggest_int("epochs", 28, 180),
-        }
-
-    @classmethod
-    def get_embedding_search_space(cls, trial: Trial) -> dict[str, Any]:
-        """Embedding model comparison search space.
-
-        Tests different embedding models with fixed best hyperparameters
-        from previous studies. Varies embedding model, architecture size,
-        and layer configuration to find optimal combination.
-        """
-        # Fixed best parameters from previous optimization
-        base_params = {
-            "learning_rate": 0.00028,
-            "dropout": 0.32,
-            "optimizer": "adamw",
-            "weight_decay": 0.0065,
-            "activation": "silu",
-            "scheduler": "cosine",
-            "early_stopping_patience": 19,
-            "epochs": 35,
-        }
-
-        # Embedding model selection - must use consistent choices across all trials
-        embedding_model = trial.suggest_categorical(
-            "embedding_model",
-            [
-                "MINI_LM",  # 384 dims - baseline
-                "E5_BASE",  # 768 dims - strong balanced
-                "INSTRUCTOR_BASE",  # 768 dims - task-specific
-                "BGE_BASE",  # 768 dims - modern efficient
-                "CONTRIEVER",  # 768 dims - Facebook model
-                "SENTENCE_T5_BASE",  # 768 dims - T5-based
-                "MINI_LM_L12",  # 384 dims - deeper MiniLM
-            ],
-        )
-
-        # Determine embedding dimensions
-        embedding_dim = 384 if embedding_model in ["MINI_LM", "MINI_LM_L12"] else 768
-
-        # Batch size selection - all possible values must be consistent
-        # We'll adjust actual batch size based on embedding dim in fit()
-        batch_size_idx = trial.suggest_int("batch_size_idx", 0, 2)
-        batch_sizes_384 = [192, 256, 320]
-        batch_sizes_768 = [128, 192, 256]
-
-        # Select batch size based on embedding dimensions
-        if embedding_dim == 384:
-            batch_size = batch_sizes_384[batch_size_idx]
-        else:
-            # For larger embeddings, use more conservative sizes
-            batch_size = batch_sizes_768[batch_size_idx]
-
-        # Architecture size - suggest index to keep choices consistent
-        arch_size_idx = trial.suggest_int("arch_size_idx", 0, 2)
-        arch_sizes_384 = ["small", "medium", "large"]
-        arch_sizes_768 = ["tiny", "small", "medium"]
-
-        architecture_size = arch_sizes_384[arch_size_idx] if embedding_dim == 384 else arch_sizes_768[arch_size_idx]
-
-        # Number of layers - affects model capacity
-        num_layers = trial.suggest_int("num_layers", 3, 5)
-
-        return {
-            **base_params,
-            "embedding_model": embedding_model,
-            "batch_size": batch_size,
-            "architecture_size": architecture_size,
-            "num_layers": num_layers,
+            # Add embedding strategy selection
+            "embedding_strategy": trial.suggest_categorical(
+                "embedding_strategy", [s.value for s in EmbeddingStrategy]
+            ),
         }
 
     @classmethod
@@ -602,6 +540,11 @@ class MLPStrategy(Strategy):
             kwargs["batch_size"] = 256  # Larger batch for GPU
             logger.info(f"Using batch_size=256 for {device} (override with batch_size parameter)")
 
+        # Get embedding strategy
+        embedding_strategy = EmbeddingStrategy.from_string(
+            kwargs.get("embedding_strategy")
+        )
+
         # Use create_config_from_hyperparams if architecture_size or embedding_model is provided (hyperparameter search)
         if "architecture_size" in kwargs or "embedding_model" in kwargs:
             config = cls.create_config_from_hyperparams(kwargs, wandb_project="kaggle-map-mlp")
@@ -615,12 +558,14 @@ class MLPStrategy(Strategy):
 
         logger.info(
             f"Fitting MLP strategy from {config.train_csv_path} with "
-            f"batch_size={config.batch_size}, embedding={embedding_model_name}"
+            f"batch_size={config.batch_size}, embedding={embedding_model_name}, "
+            f"embedding_strategy={embedding_strategy.value}"
         )
 
         # Get trunk_layers from config if available (from architecture scaling)
-        # Default assumes Qwen3-8B concatenated embeddings (8192 + 32 = 8224 input)
-        trunk_layers = getattr(config, "trunk_layers", [8224, 2048, 1024, 512, 256, 192])
+        # Default input dimension based on embedding strategy
+        default_input_dim = embedding_strategy.dimension + 32  # Add correctness embedding
+        trunk_layers = getattr(config, "trunk_layers", [default_input_dim, 2048, 1024, 512, 256, 192])
 
         extra_config = {
             "architecture": "improved_mlp_with_correctness",
@@ -631,6 +576,7 @@ class MLPStrategy(Strategy):
             "layer_norm": True,
             "dropout": config.dropout,
             "embedding_model": embedding_model_name,
+            "embedding_strategy": embedding_strategy.value,
         }
         init_wandb(config, extra_config)
 
@@ -646,16 +592,14 @@ class MLPStrategy(Strategy):
         correct_answers = extract_correct_answers(training_data)
         question_predictions = extract_question_predictions(training_data)
 
-        # Compute embeddings using the double blind strategy
-        from kaggle_map.embeddings import compute_double_blind_strategy_embeddings
-
+        # Compute embeddings using the selected strategy
         embeddings_list = []
         question_ids_list = []
         predictions_list = []
         mc_answers_list = []
 
         for row in training_data:
-            embedding = compute_double_blind_strategy_embeddings(row)
+            embedding = embedding_strategy.fn(row)
             embeddings_list.append(embedding)
             question_ids_list.append(row.question_id)
             if row.prediction:
@@ -754,6 +698,7 @@ class MLPStrategy(Strategy):
 
         # Get tokenizer for predictions
         from kaggle_map.embeddings.qwen import QwenEmbeddingModel
+
         tokenizer = QwenEmbeddingModel()
 
         # Create model parameters for tracking
@@ -777,19 +722,22 @@ class MLPStrategy(Strategy):
             correct_answers=correct_answers,
             tokenizer=tokenizer,
             device=device,
+            embedding_strategy=embedding_strategy,
             parameters=parameters,
         )
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions on a single evaluation row."""
-        # Compute separate embeddings for question and answer (standardized concatenated approach)
-        question_emb = self.tokenizer.encode(evaluation_row.question_text)
-        answer_text = f"Answer: {evaluation_row.mc_answer}; Explanation: {evaluation_row.student_explanation}"
-        answer_emb = self.tokenizer.encode(answer_text)
+        # Add correct answer to evaluation row if not present
+        from dataclasses import replace
+        eval_row_with_answer = replace(
+            evaluation_row,
+            correct_answer=self.correct_answers.get(evaluation_row.question_id, "")
+        )
 
-        # Concatenate question and answer embeddings (creates 768-dimensional input)
-        combined_emb = torch.FloatTensor(np.concatenate([question_emb, answer_emb]))
-        combined_emb = combined_emb.unsqueeze(0).to(self.device)
+        # Use embedding strategy to compute embeddings
+        embedding = self.embedding_strategy.fn(eval_row_with_answer)
+        combined_emb = torch.FloatTensor(embedding).unsqueeze(0).to(self.device)
 
         # Determine correctness
         is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
@@ -840,7 +788,7 @@ class MLPStrategy(Strategy):
         return load_torch_strategy(cls, filepath)
 
     @classmethod
-    def evaluate_on_split(
+    def evaluate(
         cls,
         model: "MLPStrategy | None" = None,
         *,
@@ -861,6 +809,11 @@ class MLPStrategy(Strategy):
             checkpoint = torch.load(str(checkpoint_path), weights_only=False)
             config = checkpoint["config"]
 
+            # Get embedding strategy from checkpoint (default to DOUBLE_BLIND for backward compatibility)
+            embedding_strategy = EmbeddingStrategy.from_string(
+                checkpoint.get("embedding_strategy")
+            )
+
             # Get embedding dimension from saved model state dict
             model_state = checkpoint["model_state_dict"]
             # Extract input dimension from the first layer of trunk
@@ -869,7 +822,7 @@ class MLPStrategy(Strategy):
                 input_dim = first_layer_weight.shape[1]  # [out_features, in_features]
                 embedding_dim = input_dim - 32  # Subtract correctness embedding dimension
             else:
-                embedding_dim = 768  # Default fallback
+                embedding_dim = embedding_strategy.dimension  # Use strategy's expected dimension
 
             training_data = load_training_data(train_csv_path)
             mlp_model = QuestionSpecificMLP(
@@ -884,6 +837,7 @@ class MLPStrategy(Strategy):
                 correct_answers=extract_correct_answers(training_data),
                 tokenizer=QwenEmbeddingModel(),
                 device=get_device(),
+                embedding_strategy=embedding_strategy,
                 parameters=None,
             )
             train_split = config.train_split

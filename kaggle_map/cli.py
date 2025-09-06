@@ -261,7 +261,7 @@ def _load_model_for_eval(
     # For MLP, try to use checkpoint if no model file exists
     if strategy == "mlp":
         console.print("Model file not found, looking for checkpoints...")
-        return None, train_split, random_seed  # Will trigger checkpoint loading in evaluate_on_split
+        return None, train_split, random_seed  # Will trigger checkpoint loading in evaluate
     console.print(f"[bold red]Model file not found: {model_file}[/bold red]")
     console.print(f"[yellow]Hint: Run '{strategy} fit' first, or specify --model-path[/yellow]")
     raise click.Abort()
@@ -329,16 +329,16 @@ def _run_evaluation(
     train_csv_path: Path,
 ) -> None:
     """Run evaluation and display results."""
-    assert hasattr(strategy_class, "evaluate_on_split"), f"Strategy {strategy} does not support evaluation"
+    assert hasattr(strategy_class, "evaluate"), f"Strategy {strategy} does not support evaluation"
 
     if model is not None:
-        eval_results = strategy_class.evaluate_on_split(
+        eval_results = strategy_class.evaluate(
             model, train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
         )
     else:
         # For MLP strategy, call with None model to use checkpoint loading
         # Cast None to Strategy for type checking - MLP strategy accepts None
-        eval_results = strategy_class.evaluate_on_split(
+        eval_results = strategy_class.evaluate(
             cast("Strategy", None), train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
         )
 
