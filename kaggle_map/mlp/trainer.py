@@ -152,8 +152,8 @@ def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Op
         return torch.optim.SGD(
             model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay, momentum=0.9
         )
-    logger.warning(f"Unknown optimizer {config.optimizer}, using AdamW")
-    return torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+    msg = f"Unknown optimizer '{config.optimizer}'. Supported optimizers: adam, adamw, sgd"
+    raise AssertionError(msg)
 
 
 def create_scheduler(
@@ -168,8 +168,8 @@ def create_scheduler(
         return torch.optim.lr_scheduler.OneCycleLR(
             optimizer, max_lr=config.learning_rate * 10, epochs=config.epochs, steps_per_epoch=steps_per_epoch
         )
-    logger.warning(f"Unknown scheduler {config.scheduler}, not using any")
-    return None
+    msg = f"Unknown scheduler '{config.scheduler}'. Supported schedulers: none, cosine, onecycle"
+    raise AssertionError(msg)
 
 
 class EarlyStopping:
