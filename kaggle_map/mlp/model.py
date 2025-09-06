@@ -111,9 +111,7 @@ class QuestionSpecificMLP(nn.Module):
                 encoder.fit(sorted(false_preds))
                 self.false_label_encoders[question_id] = encoder
 
-        logger.info(
-            f"Created model with {len(self.true_heads)} true heads and {len(self.false_heads)} false heads"
-        )
+        logger.info(f"Created model with {len(self.true_heads)} true heads and {len(self.false_heads)} false heads")
 
     def forward(
         self, x: torch.Tensor, question_ids: torch.Tensor, is_correct: torch.Tensor
