@@ -262,7 +262,7 @@ class EmbeddingStrategy(Enum):
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
-ModelName = Literal["gemma-3-12b-it", "Qwen3-14B", "gpt-oss-20b"]
+ModelName = Literal["gpt-oss-20b", "Qwen3-14B", "gemma-3-12b-it"]
 QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
 
 # Available options derived from type definitions
@@ -280,19 +280,19 @@ class GGUFRepoSpec(NamedTuple):
 
 # Model configurations with their HuggingFace patterns
 GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
-    "gemma-3-12b-it": GGUFRepoSpec(
-        repo="unsloth/gemma-3-12b-it-GGUF",
-        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
+    "gpt-oss-20b": GGUFRepoSpec(
+        repo="unsloth/gpt-oss-20b-GGUF",
+        filename_pattern="gpt-oss-20b-{quant}.gguf",
+        # Q5_K_XL not available for this model
+        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
     ),
     "Qwen3-14B": GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
-        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
+        filename_pattern="Qwen3-14B-{quant}.gguf",
     ),
-    "gpt-oss-20b": GGUFRepoSpec(
-        repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
-        # Q5_K_XL not available for this model
-        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
+    "gemma-3-12b-it": GGUFRepoSpec(
+        repo="unsloth/gemma-3-12b-it-GGUF",
+        filename_pattern="gemma-3-12b-it-{quant}.gguf",
     ),
 }
 
@@ -301,7 +301,7 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
 class LLMModelLoadConfig:
     """Configuration for loading GGUF models into memory."""
 
-    model_name: ModelName = "gemma-3-12b-it"
+    model_name: ModelName = "gpt-oss-20b"
     quantization: QuantizationLevel = "Q4_K_XL"
     n_ctx: int = 4096  # Context window size
     n_batch: int = 512  # Batch size for prompt processing

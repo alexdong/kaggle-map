@@ -31,15 +31,14 @@ def test_build_reranking_prompt():
     # Act
     prompt = build_reranking_prompt(request)
 
-    # Assert
-    assert "Calculate \\( \\frac{1}{2} \\div 6 \\)" in prompt
-    assert "Correct Answer: \\( \\frac{1}{12} \\)" in prompt
-    assert "Student Answer: 3" in prompt  # LaTeX is stripped by normalize_latex_answer
-    assert "1 / 2 of 6 is 3" in prompt
+    # Assert - Updated for new prompt format
+    assert "Student answered: 3" in prompt
+    assert "Student explained: 1 / 2 of 6 is 3" in prompt
     assert "1. True_Misconception:SwapDividend" in prompt
     assert "2. False_Misconception:Mult" in prompt
     assert "3. True_Neither:NA" in prompt
-    assert "Reply with ONLY the reordered numbers" in prompt
+    assert "Output format: numbers only, comma-separated" in prompt
+    assert "Example outputs:" in prompt
 
 
 def test_build_reranking_prompt_with_none_correct_answer():
@@ -65,8 +64,9 @@ def test_build_reranking_prompt_with_none_correct_answer():
     # Act
     prompt = build_reranking_prompt(request)
 
-    # Assert
-    assert "Correct Answer: Not provided" in prompt
+    # Assert - Updated for new prompt format (doesn't include correct answer anymore)
+    assert "Student answered: 12" in prompt
+    assert "Student explained: i think because 2*12is 24" in prompt
 
 
 def test_parse_reranking_response_simple():

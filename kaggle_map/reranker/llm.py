@@ -1,5 +1,3 @@
-from pathlib import Path
-
 """Simplified LLM reranker using direct llama-cpp-python calls.
 
 This module provides reranking functionality using local GGUF models,
@@ -9,6 +7,7 @@ replacing the complex HTTP/async implementation with direct model calls.
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from llama_cpp import Llama, llama_supports_gpu_offload
 from loguru import logger
@@ -46,18 +45,19 @@ def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
     predictions_text = "\n".join(f"{i + 1}. {pred!s}" for i, pred in enumerate(request.candidate_predictions))
 
     row = request.evaluation_row
-    return f"""Analyze this student's math work and reorder the predictions by likelihood.
+    # Simpler, more direct prompt
+    return f"""Reorder these predictions based on the student's answer.
 
-    Question: {row.question_text}
-    Correct Answer: {row.correct_answer or "Not provided"}
-    Student Answer: {row.mc_answer}
-    Student Explanation: {row.student_explanation}
+Student answered: {row.mc_answer}
+Student explained: {row.student_explanation}
 
-    Predictions to reorder:
-    {predictions_text}
+Predictions:
+{predictions_text}
 
-    Reply with ONLY the reordered numbers separated by commas. Like "3,1,2".
-    Most likely first."""
+Output format: numbers only, comma-separated
+Example outputs: "2,1,3" or "3,1,2" or "1,3,2"
+
+Your output:"""
 
 
 def parse_reranking_response(response: LLMResponse, original_predictions: list[Prediction]) -> list[Prediction]:
@@ -66,7 +66,9 @@ def parse_reranking_response(response: LLMResponse, original_predictions: list[P
 
     indices = [int(n) - 1 for n in numbers]
     valid_indices = all(0 <= i < len(original_predictions) for i in indices)
-    assert valid_indices, "Invalid indices in reranking response"
+    assert valid_indices, (
+        f"Invalid indices in reranking response: {indices} for {len(original_predictions)} predictions"
+    )
 
     # Ensure all indices are present (no missing predictions)
     unique = dict.fromkeys(indices)
@@ -82,19 +84,16 @@ def rerank_predictions(
     llm: Llama,
     request: RerankingRequest,
 ) -> list[Prediction]:
-    logger.debug(f"Reranking {len(request.candidate_predictions)} predictions")
     prompt = build_reranking_prompt(request)
-    logger.debug(f"Reranking prompt: {prompt}")
 
     output = llm(
         prompt,
-        max_tokens=20,  # Just need numbers like "3,1,2"
-        temperature=0.1,  # Low temperature for consistency
-        stop=["\n"],
+        max_tokens=50,  # Increased to ensure we get the full response
+        temperature=0.01,  # Very low temperature for deterministic output
+        stop=["\n", ".", ";"],  # Stop at newline, period, or semicolon
         echo=False,
     )
     response = output["choices"][0]["text"].strip()  # type: ignore
-    logger.debug(f"Reranking response: {response}")
 
     return parse_reranking_response(response, request.candidate_predictions)
 
@@ -153,12 +152,14 @@ if __name__ == "__main__":
                     # Parse predictions from top_3_predictions_formatted column
                     predictions_str = row["top_3_predictions_formatted"]
                     if pd.isna(predictions_str) or not predictions_str or not isinstance(predictions_str, str):
+                        logger.debug(f"Row {idx}: Skipping - invalid predictions_str")
                         continue
 
                     # Parse the predictions (format: "Category:misconception | Category:misconception | ...")
                     candidate_predictions = [
                         Prediction.from_string(pred_str) for pred_str in predictions_str.split(" | ") if ":" in pred_str
                     ]
+
                     # Create ground truth prediction from Category and actual_misconception
                     category = Category.from_csv_string(row["Category"])
                     misconception = row["actual_misconception"] if pd.notna(row["actual_misconception"]) else "NA"
@@ -178,25 +179,37 @@ if __name__ == "__main__":
                     request = RerankingRequest(evaluation_row=eval_row, candidate_predictions=candidate_predictions)
 
                     # Rerank predictions - skip row if reranking fails
-                    response = llm(
-                        build_reranking_prompt(request),
-                        max_tokens=20,
-                        temperature=0.1,
-                        stop=["\n"],
-                        echo=False,
-                    )
-                    response_text = response["choices"][0]["text"].strip()  # type: ignore
+                    try:
+                        response = llm(
+                            build_reranking_prompt(request),
+                            max_tokens=50,  # Increased to ensure full response
+                            temperature=0.01,  # Very low for deterministic output
+                            stop=["\n", ".", ";"],
+                            echo=False,
+                        )
+                        response_text = response["choices"][0]["text"].strip()  # type: ignore
 
-                    # Parse reranking response - skip if invalid
-                    numbers = re.findall(r"\d+", response_text)
-                    indices = [int(n) - 1 for n in numbers]
-                    reranked_predictions = [candidate_predictions[i] for i in indices]
+                        # Parse reranking response - skip if invalid
+                        numbers = re.findall(r"\d+", response_text)
+                        indices = [int(n) - 1 for n in numbers]
 
-                    # Calculate MAP@3 score
-                    map_score = calculate_map_at_3(ground_truth, reranked_predictions)
-                    total_map_score += map_score
-                    valid_rows += 1
-                    idx += 1
+                        if not indices or len(indices) != len(candidate_predictions):
+                            idx += 1
+                            continue
+
+                        reranked_predictions = [
+                            candidate_predictions[i] for i in indices if 0 <= i < len(candidate_predictions)
+                        ]
+
+                        # Calculate MAP@3 score
+                        map_score = calculate_map_at_3(ground_truth, reranked_predictions)
+                        total_map_score += map_score
+                        valid_rows += 1
+                        idx += 1
+                    except Exception as e:
+                        logger.error(f"Row {idx}: Error during reranking: {e}")
+                        idx += 1
+                        continue
 
                     # Log progress every 10 rows
                     if idx % 10 == 0:
