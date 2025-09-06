@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,17 @@ from .utils import (
     save_best_config,
     track_gpu_memory,
 )
+
+
+@dataclass
+class SearchConfig:
+    """Configuration for hyperparameter search."""
+    strategy_name: str
+    n_trials: int
+    n_jobs: int = 1
+    timeout: int | None = None
+    train_data_path: str | None = None
+    search_type: str = "regular"
 
 
 def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
@@ -100,40 +112,34 @@ def objective_function(
     return 0.0
 
 
-def run_search(
-    strategy_name: str,
-    n_trials: int,
-    n_jobs: int,
-    timeout: int | None = None,
-    train_data_path: str | None = None,
-    search_type: str = "regular",
-) -> optuna.Study:
-    search_desc = "embedding model comparison" if search_type == "embedding" else "hyperparameter"
-    logger.info(f"Starting {search_desc} search for {strategy_name}")
-    logger.info(f"Trials: {n_trials}, Jobs: {n_jobs}, Timeout: {timeout}s")
-    if train_data_path:
-        logger.info(f"Using training data: {train_data_path}")
+def run_search(config: SearchConfig) -> optuna.Study:
+    """Run hyperparameter search with the given configuration."""
+    search_desc = "embedding model comparison" if config.search_type == "embedding" else "hyperparameter"
+    logger.info(f"Starting {search_desc} search for {config.strategy_name}")
+    logger.info(f"Trials: {config.n_trials}, Jobs: {config.n_jobs}, Timeout: {config.timeout}s")
+    if config.train_data_path:
+        logger.info(f"Using training data: {config.train_data_path}")
 
     # Create timestamped study name
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    if search_type == "embedding":
-        study_name = f"{strategy_name}_embedding_{timestamp}"
+    if config.search_type == "embedding":
+        study_name = f"{config.strategy_name}_embedding_{timestamp}"
     else:
-        study_name = f"{strategy_name}_{timestamp}"
+        study_name = f"{config.strategy_name}_{timestamp}"
 
     study = create_study(study_name)
 
     # Create objective with bound parameters
     def objective(trial: optuna.Trial) -> float:
-        return objective_function(trial, train_data_path)
+        return objective_function(trial, config.train_data_path)
 
     logger.info(f"Starting optimization with study: {study.study_name}")
 
     study.optimize(
         objective,
-        n_trials=n_trials,
-        n_jobs=n_jobs,
-        timeout=timeout,
+        n_trials=config.n_trials,
+        n_jobs=config.n_jobs,
+        timeout=config.timeout,
         show_progress_bar=True,
     )
 
@@ -141,7 +147,7 @@ def run_search(
     logger.info(f"Best params: {study.best_params}")
 
     # Save best configuration
-    save_best_config(study, strategy_name)
+    save_best_config(study, config.strategy_name)
 
     # Summary can be viewed via optuna-dashboard
 
@@ -159,7 +165,15 @@ def cli() -> None:
 @click.option("--timeout", default=None, type=int, help="Timeout in seconds")
 @click.option("--train-data", default=None, help="Path to training data CSV")
 def search(trials: int, jobs: int, timeout: int | None, train_data: str | None) -> None:
-    study = run_search("mlp", trials, jobs, timeout, train_data, "regular")
+    config = SearchConfig(
+        strategy_name="mlp",
+        n_trials=trials,
+        n_jobs=jobs,
+        timeout=timeout,
+        train_data_path=train_data,
+        search_type="regular",
+    )
+    study = run_search(config)
 
     print("\nSearch completed!")
     print(f"Study name: {study.study_name}")
@@ -191,7 +205,15 @@ def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | No
     logger.info("  - MINI_LM_L12 (384 dim)")
     logger.info("=" * 60)
 
-    study = run_search("mlp", trials, jobs, timeout, train_data, "embedding")
+    config = SearchConfig(
+        strategy_name="mlp",
+        n_trials=trials,
+        n_jobs=jobs,
+        timeout=timeout,
+        train_data_path=train_data,
+        search_type="embedding",
+    )
+    study = run_search(config)
 
     print("\nEmbedding search completed!")
     print(f"Study name: {study.study_name}")

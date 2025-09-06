@@ -13,32 +13,55 @@ from kaggle_map.mlp.model import QuestionSpecificMLP
 
 
 @dataclass
+class TrainingContext:
+    """Context for training operations."""
+    model: nn.Module
+    criterion: nn.Module
+    device: torch.device
+    optimizer: torch.optim.Optimizer | None = None
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
+
+
+@dataclass
 class TrainingConfig:
     """Configuration for MLP training."""
 
-    # Training parameters
     epochs: int = 50
     batch_size: int = 256
     learning_rate: float = 1e-4
     weight_decay: float = 0.01
 
-    # Optimization
     optimizer: str = "adamw"
     scheduler: str = "cosine"
     early_stopping_patience: int = 15
 
-    # Data splits
     train_split: float = 0.7
     random_seed: int = 42
 
-    # Paths
     train_csv_path: Path = Path("datasets/train.csv")
     checkpoint_dir: Path = Path("checkpoints")
 
-    # Architecture
     architecture_size: str = "xlarge"
     dropout: float = 0.3
     activation: str = "gelu"
+
+
+@dataclass
+class TrainingResult:
+    """Result from training a model."""
+    model: nn.Module
+    history: dict[str, Any]
+
+
+@dataclass
+class TrainingSetup:
+    """Setup for training a model."""
+    model: nn.Module
+    train_loader: DataLoader
+    val_loader: DataLoader
+    config: TrainingConfig
+    device: torch.device
+    criterion: nn.Module
 
 
 def process_batch(
@@ -46,6 +69,7 @@ def process_batch(
     batch: tuple,
     criterion: nn.Module,
     device: torch.device,
+    *,
     training: bool = True,
 ) -> tuple[torch.Tensor | None, int]:
     """Process a single batch through the model.
@@ -66,15 +90,12 @@ def process_batch(
     labels = labels.to(device)
     is_correct = is_correct.to(device)
 
-    # Forward pass
     outputs = model(embeddings, question_ids, is_correct)
 
-    # Calculate loss across all question heads
     total_loss = 0.0
     total_samples = 0
 
     for (qid, correct), logits in outputs.items():
-        # Find matching samples in batch
         correctness_mask = is_correct > 0 if correct else is_correct == 0
         question_mask = question_ids == qid
         combined_mask = question_mask & correctness_mask
@@ -150,51 +171,62 @@ class EarlyStopping:
 
 
 def train_epoch(
-    model: nn.Module,
+    ctx: TrainingContext,
     train_loader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    criterion: nn.Module,
-    device: torch.device,
-    scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
 ) -> float:
-    """Train for one epoch."""
-    model.train()
+    """Train for one epoch.
+
+    Args:
+        ctx: Training context with model, optimizer, criterion, device
+        train_loader: DataLoader for training data
+
+    Returns:
+        Average training loss for the epoch
+    """
+    assert ctx.optimizer is not None, "Optimizer required for training"
+
+    ctx.model.train()
     total_loss = 0.0
     total_samples = 0
 
     for batch in train_loader:
-        optimizer.zero_grad()
+        ctx.optimizer.zero_grad()
 
-        loss, n_samples = process_batch(model, batch, criterion, device, training=True)
+        loss, n_samples = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=True)
 
         if loss is not None:
             total_loss += loss.item() * n_samples
             total_samples += n_samples
 
             loss.backward()
-            optimizer.step()
+            ctx.optimizer.step()
 
-            # OneCycle scheduler steps per batch
-            if isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
-                scheduler.step()
+            if ctx.scheduler and isinstance(ctx.scheduler, torch.optim.lr_scheduler.OneCycleLR):
+                ctx.scheduler.step()
 
     return total_loss / total_samples if total_samples > 0 else 0.0
 
 
 def validate_epoch(
-    model: nn.Module,
+    ctx: TrainingContext,
     val_loader: DataLoader,
-    criterion: nn.Module,
-    device: torch.device,
 ) -> float:
-    """Validate for one epoch."""
-    model.eval()
+    """Validate for one epoch.
+
+    Args:
+        ctx: Training context with model, criterion, device
+        val_loader: DataLoader for validation data
+
+    Returns:
+        Average validation loss for the epoch
+    """
+    ctx.model.eval()
     total_loss = 0.0
     total_samples = 0
 
     with torch.no_grad():
         for batch in val_loader:
-            loss, n_samples = process_batch(model, batch, criterion, device, training=False)
+            loss, n_samples = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=False)
 
             if loss is not None:
                 total_loss += loss.item() * n_samples
@@ -203,69 +235,69 @@ def validate_epoch(
     return total_loss / total_samples if total_samples > 0 else 0.0
 
 
-def train_model(
-    model: nn.Module,
+def _run_training_loop(
+    ctx: TrainingContext,
     train_loader: DataLoader,
     val_loader: DataLoader,
     config: TrainingConfig,
-    device: torch.device,
-    criterion: nn.Module,
-) -> tuple[nn.Module, dict[str, Any]]:
-    """Train the model and return trained model with history.
-
-    Args:
-        model: Model to train
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        config: Training configuration
-        device: Device to train on
-        criterion: Loss function
-
-    Returns:
-        Tuple of (trained_model, training_history)
-    """
-    optimizer = create_optimizer(model, config)
-    scheduler = create_scheduler(optimizer, config, len(train_loader))
+) -> dict[str, Any]:
+    """Run the main training loop."""
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
-
     history = {"train_loss": [], "val_loss": [], "epochs": []}
     best_val_loss = float("inf")
     best_model_state = None
 
-    logger.info(f"Starting training for {config.epochs} epochs")
-
     for epoch in range(1, config.epochs + 1):
-        # Train and validate
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device, scheduler)
-        val_loss = validate_epoch(model, val_loader, criterion, device)
+        train_loss = train_epoch(ctx, train_loader)
+        val_loss = validate_epoch(ctx, val_loader)
 
-        # Log progress
         logger.info(f"Epoch {epoch}/{config.epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
-        # Update history
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["epochs"].append(epoch)
 
-        # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            best_model_state = model.state_dict().copy()
+            best_model_state = ctx.model.state_dict().copy()
             logger.debug(f"New best model at epoch {epoch}")
 
-        # Step scheduler (except OneCycle which steps per batch)
-        if scheduler and not isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR):
-            scheduler.step()
+        if ctx.scheduler and not isinstance(ctx.scheduler, torch.optim.lr_scheduler.OneCycleLR):
+            ctx.scheduler.step()
 
-        # Check early stopping
         if early_stopping(val_loss):
             history["early_stopped"] = epoch
             break
 
-    # Load best model
     if best_model_state is not None:
-        model.load_state_dict(best_model_state)
+        ctx.model.load_state_dict(best_model_state)
         logger.info(f"Loaded best model with val loss {best_val_loss:.4f}")
         history["best_val_loss"] = best_val_loss
 
-    return model, history
+    return history
+
+
+def train_model(setup: TrainingSetup) -> TrainingResult:
+    """Train the model and return trained model with history.
+
+    Args:
+        setup: Training setup with all required components
+
+    Returns:
+        TrainingResult with trained model and history
+    """
+    optimizer = create_optimizer(setup.model, setup.config)
+    scheduler = create_scheduler(optimizer, setup.config, len(setup.train_loader))
+
+    ctx = TrainingContext(
+        model=setup.model,
+        criterion=setup.criterion,
+        device=setup.device,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
+
+    logger.info(f"Starting training for {setup.config.epochs} epochs")
+    history = _run_training_loop(ctx, setup.train_loader, setup.val_loader, setup.config)
+
+    return TrainingResult(model=setup.model, history=history)

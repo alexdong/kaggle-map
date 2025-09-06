@@ -46,8 +46,8 @@ def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
         logger.error(f"GPU memory cached: {torch.cuda.memory_reserved() / 1024**3:.2f}GB")
         torch.cuda.empty_cache()
 
-    trial.set_user_attr("oom_error", True)
-    trial.set_user_attr("oom_details", str(error))
+    trial.set_user_attr("oom_error", value=True)
+    trial.set_user_attr("oom_details", value=str(error))
 
     return 0.0
 

@@ -22,12 +22,14 @@ from kaggle_map.core.models import (
     SubmissionRow,
     TrainingRow,
 )
-from kaggle_map.mlp.dataset import MLPDataset
+from kaggle_map.mlp.dataset import DatasetArrays, DatasetEncoders, MLPDataset
 from kaggle_map.mlp.loss import ListMLELoss
 from kaggle_map.mlp.model import QuestionSpecificMLP
-from kaggle_map.mlp.trainer import TrainingConfig, train_model
+from kaggle_map.mlp.trainer import TrainingConfig, TrainingSetup, train_model
 from kaggle_map.utils.device import get_device
 from kaggle_map.utils.metrics import calculate_map_at_3
+
+MAX_PREDICTIONS = 3
 
 
 def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
@@ -37,7 +39,6 @@ def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[Ques
         pred_str = str(row.prediction)
         question_predictions[row.question_id].append(pred_str)
 
-    # Return unique predictions per question
     return {qid: list(set(preds)) for qid, preds in question_predictions.items()}
 
 
@@ -94,18 +95,15 @@ class Predictor:
         if config is None:
             config = TrainingConfig()
 
-        # Parse embedding strategy
         strategy = EmbeddingStrategy.from_string(embedding_strategy)
 
         device = get_device()
         logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
 
-        # Load training data
         training_data = load_training_data(config.train_csv_path)
         correct_answers = extract_correct_answers(training_data)
         question_predictions = _extract_question_predictions(training_data)
 
-        # Compute embeddings using selected strategy
         logger.info("Computing embeddings...")
         embeddings_list = []
         question_ids_list = []
@@ -113,7 +111,6 @@ class Predictor:
         mc_answers_list = []
 
         for row in training_data:
-            # Add correct answer for embedding computation
             eval_row = replace(row, correct_answer=correct_answers.get(row.question_id, ""))
             embedding = strategy.fn(eval_row)
             embeddings_list.append(embedding)
@@ -126,11 +123,9 @@ class Predictor:
         predictions = np.array(predictions_list)
         mc_answers = np.array(mc_answers_list)
 
-        # Get embedding dimension
         embedding_dim = embeddings.shape[1]
         logger.info(f"Embedding dimension: {embedding_dim}")
 
-        # Create model
         model = QuestionSpecificMLP(
             question_predictions,
             embedding_dim=embedding_dim,
@@ -144,42 +139,49 @@ class Predictor:
         total_params = sum(p.numel() for p in model.parameters())
         logger.info(f"Model parameters: {total_params:,}")
 
-        # Split data
         n_samples = len(embeddings)
         train_idx, val_idx, _ = _get_split_indices(n_samples, config.train_split, config.random_seed)
         logger.info(f"Data split - Train: {len(train_idx)}, Val: {len(val_idx)}")
 
-        # Create datasets
-        train_dataset = MLPDataset(
-            embeddings[train_idx],
-            question_ids[train_idx],
-            predictions[train_idx],
-            correct_answers,
-            mc_answers[train_idx],
-            model.true_label_encoders,
-            model.false_label_encoders,
+        train_arrays = DatasetArrays(
+            embeddings=embeddings[train_idx],
+            question_ids=question_ids[train_idx],
+            predictions=predictions[train_idx],
+            mc_answers=mc_answers[train_idx],
         )
 
-        val_dataset = MLPDataset(
-            embeddings[val_idx],
-            question_ids[val_idx],
-            predictions[val_idx],
-            correct_answers,
-            mc_answers[val_idx],
-            model.true_label_encoders,
-            model.false_label_encoders,
+        val_arrays = DatasetArrays(
+            embeddings=embeddings[val_idx],
+            question_ids=question_ids[val_idx],
+            predictions=predictions[val_idx],
+            mc_answers=mc_answers[val_idx],
         )
 
-        # Create data loaders
+        encoders = DatasetEncoders(
+            correct_answers=correct_answers,
+            true_label_encoders=model.true_label_encoders,
+            false_label_encoders=model.false_label_encoders,
+        )
+
+        train_dataset = MLPDataset(train_arrays, encoders)
+        val_dataset = MLPDataset(val_arrays, encoders)
+
         train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False, num_workers=0)
 
-        # Train model
-        model, history = train_model(model, train_loader, val_loader, config, device, ListMLELoss())
+        setup = TrainingSetup(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=device,
+            criterion=ListMLELoss(),
+        )
+        result = train_model(setup)
 
-        logger.info(f"Training complete. Best val loss: {history.get('best_val_loss', 'N/A')}")
+        logger.info(f"Training complete. Best val loss: {result.history.get('best_val_loss', 'N/A')}")
 
-        return cls(model=model, correct_answers=correct_answers, device=device, embedding_strategy=strategy)
+        return cls(model=result.model, correct_answers=correct_answers, device=device, embedding_strategy=strategy)
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
         """Make predictions for a single evaluation row.
@@ -190,20 +192,16 @@ class Predictor:
         Returns:
             SubmissionRow with top 3 predictions
         """
-        # Add correct answer for embedding computation
         eval_row_with_answer = replace(
             evaluation_row, correct_answer=self.correct_answers.get(evaluation_row.question_id, "")
         )
 
-        # Compute embedding
         embedding = self.embedding_strategy.fn(eval_row_with_answer)
         embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(self.device)
 
-        # Determine correctness
         is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
         correctness_idx = torch.tensor([1 if is_correct else 0], dtype=torch.long).to(self.device)
 
-        # Get predictions
         self.model.eval()
         with torch.no_grad():
             outputs = self.model(
@@ -212,17 +210,15 @@ class Predictor:
                 correctness_idx,
             )
 
-        # Extract top predictions
         predictions = []
         key = (evaluation_row.question_id, is_correct)
 
         if key in outputs:
             logits = outputs[key]
             probs = functional.softmax(logits, dim=-1)[0]
-            top_k = min(3, logits.size(-1))
+            top_k = min(MAX_PREDICTIONS, logits.size(-1))
             top_indices = torch.topk(probs, k=top_k)[1]
 
-            # Get label encoder
             encoder = (
                 self.model.true_label_encoders.get(evaluation_row.question_id)
                 if is_correct
@@ -230,18 +226,19 @@ class Predictor:
             )
 
             if encoder:
-                for pred_str in encoder.inverse_transform(top_indices.cpu().numpy()):
-                    predictions.append(Prediction.from_string(pred_str))
+                predictions.extend(
+                    Prediction.from_string(pred_str)
+                    for pred_str in encoder.inverse_transform(top_indices.cpu().numpy())
+                )
 
-        # Ensure 3 predictions
         default = Prediction(
             category=Category.TRUE_NEITHER if is_correct else Category.FALSE_NEITHER,
             misconception="NA",
         )
-        while len(predictions) < 3:
+        while len(predictions) < MAX_PREDICTIONS:
             predictions.append(default)
 
-        return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:3])
+        return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
 
     def evaluate(
         self,
@@ -258,13 +255,11 @@ class Predictor:
             Dictionary with evaluation metrics
         """
         if test_data is None:
-            # Load and split data
             training_data = load_training_data(train_csv_path)
             n_samples = len(training_data)
             _, val_idx, _ = _get_split_indices(n_samples, 0.7, 42)
             test_data = [training_data[i] for i in val_idx]
 
-        # Calculate MAP@3 for each sample
         map_scores = []
         for row in test_data:
             eval_row = EvaluationRow(
