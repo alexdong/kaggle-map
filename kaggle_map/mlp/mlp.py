@@ -346,9 +346,7 @@ class MLPStrategy:
             "early_stopping_patience": trial.suggest_int("patience", 10, 22),
             "epochs": trial.suggest_int("epochs", 28, 180),
             # Add embedding strategy selection
-            "embedding_strategy": trial.suggest_categorical(
-                "embedding_strategy", [s.value for s in EmbeddingStrategy]
-            ),
+            "embedding_strategy": trial.suggest_categorical("embedding_strategy", [s.value for s in EmbeddingStrategy]),
         }
 
     @classmethod
@@ -537,9 +535,7 @@ class MLPStrategy:
             logger.info(f"Using batch_size=256 for {device} (override with batch_size parameter)")
 
         # Get embedding strategy
-        embedding_strategy = EmbeddingStrategy.from_string(
-            kwargs.get("embedding_strategy")
-        )
+        embedding_strategy = EmbeddingStrategy.from_string(kwargs.get("embedding_strategy"))
 
         # Use create_config_from_hyperparams if architecture_size or embedding_model is provided (hyperparameter search)
         if "architecture_size" in kwargs or "embedding_model" in kwargs:
@@ -608,9 +604,7 @@ class MLPStrategy:
             n_samples, train_ratio=config.train_split, random_seed=config.random_seed
         )
 
-        logger.info(
-            f"Split - Train: {len(train_indices)}, Val: {len(val_indices)}, Test: {len(test_indices)}"
-        )
+        logger.info(f"Split - Train: {len(train_indices)}, Val: {len(val_indices)}, Test: {len(test_indices)}")
 
         # Create datasets
         train_dataset = MLPDataset(
@@ -697,9 +691,9 @@ class MLPStrategy:
         """Make predictions on a single evaluation row."""
         # Add correct answer to evaluation row if not present
         from dataclasses import replace
+
         eval_row_with_answer = replace(
-            evaluation_row,
-            correct_answer=self.correct_answers.get(evaluation_row.question_id, "")
+            evaluation_row, correct_answer=self.correct_answers.get(evaluation_row.question_id, "")
         )
 
         # Use embedding strategy to compute embeddings
@@ -777,9 +771,7 @@ class MLPStrategy:
             config = checkpoint["config"]
 
             # Get embedding strategy from checkpoint (default to DOUBLE_BLIND for backward compatibility)
-            embedding_strategy = EmbeddingStrategy.from_string(
-                checkpoint.get("embedding_strategy")
-            )
+            embedding_strategy = EmbeddingStrategy.from_string(checkpoint.get("embedding_strategy"))
 
             # Get embedding dimension from saved model state dict
             model_state = checkpoint["model_state_dict"]

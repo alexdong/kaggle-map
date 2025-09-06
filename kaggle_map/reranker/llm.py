@@ -103,9 +103,9 @@ if __name__ == "__main__":
     import pandas as pd
     from rich.table import Table
 
+    from kaggle_map.core.dataset import extract_correct_answers, load_training_data
     from kaggle_map.core.models import Category
     from kaggle_map.utils.metrics import calculate_map_at_3
-    from kaggle_map.core.dataset import load_training_data, extract_correct_answers
 
     # Check GPU support but don't require it
     has_gpu = llama_supports_gpu_offload()
@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     # Prepare benchmark results
     results = []
-    correct_answers = extract_correct_answers(load_training_data(Path("datasets/training_data.csv")))
+    correct_answers = extract_correct_answers(load_training_data(Path("datasets/train.csv")))
 
     # Download and benchmark all model variants
     for model_name in MODEL_OPTIONS:

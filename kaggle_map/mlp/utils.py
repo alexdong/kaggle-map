@@ -162,7 +162,6 @@ class TorchConfig:
     checkpoint_dir: Path = field(default_factory=lambda: Path("checkpoints"))
 
 
-
 class TrainingCallback(Protocol):
     """Protocol for training callbacks."""
 
