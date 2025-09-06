@@ -189,22 +189,6 @@ class TrainingRow(EvaluationRow):
             prediction=prediction,
         )
 
-    def as_training_input(self) -> TrainingInput:
-        from kaggle_map.embeddings.qwen import QwenEmbeddingModel
-
-        tokenizer = QwenEmbeddingModel()
-        text = self.to_embedding_text()
-
-        # Generate embeddings and convert to numpy array
-        embeddings_tensor = tokenizer.encode(text)
-        embeddings = np.array(embeddings_tensor)
-
-        return TrainingInput(
-            question_id=self.question_id,
-            embeddings=embeddings,
-            misconception=self.misconception,
-        )
-
 
 class SubmissionRow(NamedTuple):
     row_id: RowId

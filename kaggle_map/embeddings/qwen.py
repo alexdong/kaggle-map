@@ -15,11 +15,17 @@ from kaggle_map.utils.device import get_device
 
 
 class QwenEmbeddingModel:
-    """Qwen3-Embedding-8B model wrapper for generating embeddings."""
+    """Qwen3-Embedding-8B model wrapper for generating embeddings.
+
+    Uses a singleton pattern to avoid loading the heavy model multiple times.
+    Access the singleton instance via QwenEmbeddingModel.get_instance().
+    """
 
     MODEL_REPO = "JonathanMiddleton/Qwen3-Embedding-8B-GGUF"
     MODEL_FILE = "Qwen3-Embedding-8B-Q8_0.gguf"
     EMBEDDING_DIM = 4096  # Capped to max allowed dimension
+
+    _instance: "QwenEmbeddingModel | None" = None
 
     def __init__(
         self,
@@ -32,6 +38,13 @@ class QwenEmbeddingModel:
             model_path=str(model_path),
             embedding=True,
         )
+
+    @classmethod
+    def get_instance(cls) -> "QwenEmbeddingModel":
+        if cls._instance is None:
+            logger.info("Initializing Qwen3-8B embedding model (singleton)")
+            cls._instance = cls()
+        return cls._instance
 
     def _get_model_path(self) -> Path:
         cache_dir = Path.home() / ".cache" / "huggingface" / "hub"

@@ -71,7 +71,6 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
 )
-from kaggle_map.embeddings.utils import compute_concatenated_embeddings
 from kaggle_map.utils.device import get_device
 
 from .base import Strategy
@@ -167,7 +166,11 @@ class QuestionSpecificMLP(nn.Module):
         # Default case - scale based on embedding dimension
         elif embedding_dim == 384:  # MINI_LM model
             dims = [input_dim, 512, 256, 192, 128]
-        else:  # Larger models (768 dim)
+        elif embedding_dim == 768:  # Medium models
+            dims = [input_dim, 1024, 512, 256, 192]
+        elif embedding_dim == 8192:  # Qwen3-8B concatenated embeddings (4096 * 2)
+            dims = [input_dim, 2048, 1024, 512, 256, 192]
+        else:  # Other sizes - scale proportionally
             dims = [input_dim, 1024, 512, 256, 192]
 
         layers = []
@@ -607,8 +610,8 @@ class MLPStrategy(Strategy):
                 wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
             )
 
-        # Extract embedding model if present
-        embedding_model_name = getattr(config, "embedding_model", None) or kwargs.get("embedding_model", "MINI_LM")
+        # Using Qwen3-8B embeddings
+        embedding_model_name = "Qwen3-8B-Q8_0"
 
         logger.info(
             f"Fitting MLP strategy from {config.train_csv_path} with "
@@ -616,7 +619,8 @@ class MLPStrategy(Strategy):
         )
 
         # Get trunk_layers from config if available (from architecture scaling)
-        trunk_layers = getattr(config, "trunk_layers", [800, 1024, 512, 256, 192])
+        # Default assumes Qwen3-8B concatenated embeddings (8192 + 32 = 8224 input)
+        trunk_layers = getattr(config, "trunk_layers", [8224, 2048, 1024, 512, 256, 192])
 
         extra_config = {
             "architecture": "improved_mlp_with_correctness",
@@ -642,12 +646,26 @@ class MLPStrategy(Strategy):
         correct_answers = extract_correct_answers(training_data)
         question_predictions = extract_question_predictions(training_data)
 
-        # Use the standardized concatenated embeddings approach
-        embeddings, question_ids, extra_data = compute_concatenated_embeddings(
-            training_data, embedding_model_name, str(device)
-        )
-        predictions = extra_data.get("predictions", np.array([]))
-        mc_answers = extra_data.get("mc_answers", np.array([]))
+        # Compute embeddings using the double blind strategy
+        from kaggle_map.embeddings import compute_double_blind_strategy_embeddings
+
+        embeddings_list = []
+        question_ids_list = []
+        predictions_list = []
+        mc_answers_list = []
+
+        for row in training_data:
+            embedding = compute_double_blind_strategy_embeddings(row)
+            embeddings_list.append(embedding)
+            question_ids_list.append(row.question_id)
+            if row.prediction:
+                predictions_list.append(row.prediction)
+            mc_answers_list.append(row.mc_answer)
+
+        embeddings = np.array(embeddings_list)
+        question_ids = np.array(question_ids_list)
+        predictions = np.array(predictions_list) if predictions_list else np.array([])
+        mc_answers = np.array(mc_answers_list)
 
         # Get actual embedding dimension from the data
         embedding_dim = embeddings.shape[1] if embeddings.ndim > 1 else 768
@@ -860,7 +878,7 @@ class MLPStrategy(Strategy):
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
 
             from kaggle_map.embeddings.qwen import QwenEmbeddingModel
-            
+
             model = cls(
                 model=mlp_model.to(get_device()),
                 correct_answers=extract_correct_answers(training_data),
