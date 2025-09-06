@@ -1,3 +1,5 @@
+from pathlib import Path
+
 """Simplified LLM reranker using direct llama-cpp-python calls.
 
 This module provides reranking functionality using local GGUF models,
@@ -103,6 +105,7 @@ if __name__ == "__main__":
 
     from kaggle_map.core.models import Category
     from kaggle_map.utils.metrics import calculate_map_at_3
+    from kaggle_map.core.dataset import load_training_data, extract_correct_answers
 
     # Check GPU support but don't require it
     has_gpu = llama_supports_gpu_offload()
@@ -120,6 +123,7 @@ if __name__ == "__main__":
 
     # Prepare benchmark results
     results = []
+    correct_answers = extract_correct_answers(load_training_data(Path("datasets/training_data.csv")))
 
     # Download and benchmark all model variants
     for model_name in MODEL_OPTIONS:
@@ -167,7 +171,7 @@ if __name__ == "__main__":
                         question_text=row["QuestionText"],
                         mc_answer=row["MC_Answer"],
                         student_explanation=row["StudentExplanation"],
-                        correct_answer=row["CorrectAnswer"] if pd.notna(row["CorrectAnswer"]) else None,
+                        correct_answer=correct_answers[row["QuestionId"]],  # type: ignore
                     )
 
                     # Create reranking request
