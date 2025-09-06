@@ -50,7 +50,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import numpy as np
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from optuna import Trial
 from sklearn.preprocessing import LabelEncoder
@@ -58,6 +57,7 @@ from torch import nn
 from torch.nn import functional
 from torch.utils.data import DataLoader, Dataset
 
+import wandb
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     load_training_data,

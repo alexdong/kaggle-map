@@ -53,7 +53,6 @@ class QwenEmbeddingModel:
             repo_id=self.MODEL_REPO,
             filename=self.MODEL_FILE,
             cache_dir=cache_dir,
-            resume_download=True,
         )
         return Path(model_path)
 
