@@ -9,7 +9,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from .core.dataset import parse_training_data
+from .core.dataset import load_training_data
 from .strategies import get_all_strategies, get_strategy, list_strategies
 from .strategies.base import Strategy
 from .strategies.utils import TRAIN_RATIO, ModelParameters, get_split_indices
@@ -190,7 +190,7 @@ def _save_trained_model(model: Strategy, params: CLIParams) -> Path:
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Create model parameters for saving
-    all_data = parse_training_data(params.train_csv_path)
+    all_data = load_training_data(params.train_csv_path)
     train_indices, val_indices, test_indices = get_split_indices(
         len(all_data), train_ratio=params.train_split, random_seed=params.random_seed
     )

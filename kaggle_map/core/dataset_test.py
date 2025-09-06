@@ -11,7 +11,7 @@ from kaggle_map.core.dataset import (
     extract_correct_answers,
     extract_most_common_misconceptions,
     is_answer_correct,
-    parse_training_data,
+    load_training_data,
 )
 from kaggle_map.core.models import Category, Prediction, TrainingRow
 
@@ -148,13 +148,13 @@ def temp_training_csv():
 
 
 # =============================================================================
-# parse_training_data Function Tests
+# load_training_data Function Tests
 # =============================================================================
 
 
-def test_parse_training_data_creates_strongly_typed_training_rows(temp_training_csv):
-    """parse_training_data creates properly typed TrainingRow objects."""
-    training_rows = parse_training_data(temp_training_csv)
+def test_load_training_data_creates_strongly_typed_training_rows(temp_training_csv):
+    """load_training_data creates properly typed TrainingRow objects."""
+    training_rows = load_training_data(temp_training_csv)
     
     assert len(training_rows) == 8
     assert all(isinstance(row, TrainingRow) for row in training_rows)
@@ -169,9 +169,9 @@ def test_parse_training_data_creates_strongly_typed_training_rows(temp_training_
     assert first_row.misconception == "NA"
 
 
-def test_parse_training_data_handles_nan_misconceptions(temp_training_csv):
-    """parse_training_data properly converts pandas NaN to None for misconceptions."""
-    training_rows = parse_training_data(temp_training_csv)
+def test_load_training_data_handles_nan_misconceptions(temp_training_csv):
+    """load_training_data properly converts pandas NaN to None for misconceptions."""
+    training_rows = load_training_data(temp_training_csv)
     
     # Rows with None misconceptions should have misconception="NA"
     rows_without_misconceptions = [row for row in training_rows if row.misconception == "NA"]
@@ -182,16 +182,16 @@ def test_parse_training_data_handles_nan_misconceptions(temp_training_csv):
     assert len(rows_with_misconceptions) == 4  # Rows 2, 3, 5, 6
 
 
-def test_parse_training_data_raises_error_for_missing_file():
-    """parse_training_data raises clear error for non-existent files."""
+def test_load_training_data_raises_error_for_missing_file():
+    """load_training_data raises clear error for non-existent files."""
     missing_path = Path("nonexistent_file.csv")
     
     with pytest.raises(AssertionError, match="Training file not found"):
-        parse_training_data(missing_path)
+        load_training_data(missing_path)
 
 
-def test_parse_training_data_raises_error_for_empty_csv():
-    """parse_training_data raises error for empty CSV files."""
+def test_load_training_data_raises_error_for_empty_csv():
+    """load_training_data raises error for empty CSV files."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
         # Create empty CSV
         pd.DataFrame().to_csv(f.name, index=False)
@@ -199,7 +199,7 @@ def test_parse_training_data_raises_error_for_empty_csv():
         
         try:
             with pytest.raises(pd.errors.EmptyDataError):
-                parse_training_data(temp_path)
+                load_training_data(temp_path)
         finally:
             temp_path.unlink()
 

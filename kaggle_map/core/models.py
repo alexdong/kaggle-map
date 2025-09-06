@@ -9,7 +9,7 @@ import pandas as pd
 import pydash
 from pydantic import BaseModel, field_validator
 
-from kaggle_map.embeddings.normalise import normalize_latex_answer, normalize_text
+from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
 
 # ============================================================================
 # Type Aliases

@@ -17,7 +17,7 @@ from loguru import logger
 from kaggle_map.core.dataset import (
     extract_correct_answers,
     extract_misconceptions_by_popularity,
-    parse_training_data,
+    load_training_data,
 )
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
@@ -256,7 +256,7 @@ class LLMStrategy(Strategy):
         logger.info("Fitting LLM strategy")
         logger.info(f"Loading training data from {train_csv_path}")
 
-        all_training_data = parse_training_data(train_csv_path)
+        all_training_data = load_training_data(train_csv_path)
         logger.info(f"Parsed {len(all_training_data)} total training rows")
 
         # When train_split is 1.0, set val_ratio to 0 to avoid exceeding 1.0 total
@@ -329,7 +329,7 @@ class LLMStrategy(Strategy):
         # Ensure model is loaded
         if model.llm is None:
             model.load_model()
-        all_training_data = parse_training_data(train_csv_path)
+        all_training_data = load_training_data(train_csv_path)
 
         # When train_split is 1.0, set val_ratio to 0 to avoid exceeding 1.0 total
         val_ratio = 1.0 if train_split == 0.0 else VAL_RATIO

@@ -20,7 +20,7 @@ from kaggle_map.core.models import (
 )
 
 
-def parse_training_data(csv_path: Path) -> list[TrainingRow]:
+def load_training_data(csv_path: Path) -> list[TrainingRow]:
     assert csv_path.exists(), f"Training file not found: {csv_path}"
 
     training_df = pd.read_csv(csv_path)

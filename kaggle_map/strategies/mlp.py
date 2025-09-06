@@ -60,7 +60,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from kaggle_map.core.dataset import (
     extract_correct_answers,
-    parse_training_data,
+    load_training_data,
 )
 from kaggle_map.core.metrics import calculate_map_at_3
 from kaggle_map.core.models import (
@@ -640,7 +640,7 @@ class MLPStrategy(Strategy):
         logger.info(f"Using device: {device}")
         wandb.config.update({"device": str(device)})
 
-        training_data = parse_training_data(config.train_csv_path)
+        training_data = load_training_data(config.train_csv_path)
         pd.read_csv(config.train_csv_path)
 
         correct_answers = extract_correct_answers(training_data)
@@ -871,7 +871,7 @@ class MLPStrategy(Strategy):
             else:
                 embedding_dim = 768  # Default fallback
 
-            training_data = parse_training_data(train_csv_path)
+            training_data = load_training_data(train_csv_path)
             mlp_model = QuestionSpecificMLP(
                 extract_question_predictions(training_data), embedding_dim=embedding_dim, config=config
             )
@@ -889,7 +889,7 @@ class MLPStrategy(Strategy):
             train_split = config.train_split
             random_seed = config.random_seed
 
-        training_data = parse_training_data(train_csv_path)
+        training_data = load_training_data(train_csv_path)
         _, val_data, _ = split_training_data(training_data, train_ratio=train_split, random_seed=random_seed)
 
         map_scores = [
@@ -933,7 +933,7 @@ if __name__ == "__main__":
     model = MLPStrategy.load(model_path)
 
     logger.info(f"Loading training data from {train_csv_path}")
-    training_data = parse_training_data(train_csv_path)
+    training_data = load_training_data(train_csv_path)
 
     # Split data to get validation set
     from .utils import split_training_data
