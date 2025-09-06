@@ -7,7 +7,7 @@ import optuna
 import torch
 from loguru import logger
 
-from kaggle_map.strategies import get_strategy
+from kaggle_map.mlp.mlp import MLPStrategy
 
 from .utils import (
     STORAGE_URL,
@@ -89,7 +89,7 @@ def run_search(
     if train_data_path:
         logger.info(f"Using training data: {train_data_path}")
 
-    strategy_class = get_strategy(strategy_name)
+    strategy_class = MLPStrategy
 
     # Create timestamped study name
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")

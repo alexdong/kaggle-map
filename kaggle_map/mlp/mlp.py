@@ -74,7 +74,6 @@ from kaggle_map.core.models import (
 )
 from kaggle_map.utils.device import get_device
 
-from .base import Strategy
 from .utils import (
     TRAIN_RATIO,
     ModelParameters,
@@ -295,7 +294,7 @@ class MLPDataset(Dataset):
 
 
 @dataclass(frozen=True)
-class MLPStrategy(Strategy):
+class MLPStrategy:
     """MLP neural network strategy for misconception prediction.
 
     Uses a shared trunk with question-specific heads for multi-class

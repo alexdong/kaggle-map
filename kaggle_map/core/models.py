@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, NamedTuple, get_args
+from typing import Literal, NamedTuple, get_args
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ import pydash
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
-from kaggle_map.embeddings import compute_double_blind_strategy_embeddings, compute_semantic_strategy_embedding,
+from kaggle_map.embeddings import compute_double_blind_strategy_embeddings, compute_semantic_strategy_embedding
 
 # ============================================================================
 # Type Aliases
@@ -221,9 +221,11 @@ class EmbeddingStrategy(Enum):
         return cls(value)
 
     @property
-    def fn(self) -> Callable[["EvaluationRow"], np.ndarray]:
+    def fn(self) -> Callable[[EvaluationRow], np.ndarray]:
         """Return the embedding function for this strategy."""
-        return compute_double_blind_strategy_embeddings if self == EmbeddingStrategy.DOUBLE_BLIND else compute_semantic_strategy_embedding
+        if self == EmbeddingStrategy.DOUBLE_BLIND:
+            return compute_double_blind_strategy_embeddings
+        return compute_semantic_strategy_embedding
 
 
 # ============================================================================

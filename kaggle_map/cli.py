@@ -10,9 +10,8 @@ from rich.console import Console
 from rich.table import Table
 
 from .core.dataset import load_training_data
-from .strategies import get_all_strategies, get_strategy, list_strategies
-from .strategies.base import Strategy
-from .strategies.utils import TRAIN_RATIO, ModelParameters, get_split_indices
+from .mlp.mlp import MLPStrategy
+from .mlp.utils import TRAIN_RATIO, ModelParameters, get_split_indices
 
 
 @dataclass
@@ -20,7 +19,7 @@ class CLIParams:
     """CLI parameters for strategy operations."""
 
     strategy: str
-    strategy_class: type[Strategy]
+    strategy_class: type[MLPStrategy]
     console: Console
     train_split: float
     random_seed: int
@@ -36,7 +35,7 @@ def cli() -> None:
 
 
 @click.command()
-@click.argument("strategy", type=click.Choice(list_strategies(), case_sensitive=False))
+@click.argument("strategy", type=click.Choice(["mlp"], case_sensitive=False))
 @click.argument("action", type=click.Choice(["fit", "eval", "predict"], case_sensitive=False))
 @click.option(
     "--train-split",
@@ -75,7 +74,7 @@ def run(
     console = Console()
 
     try:
-        strategy_class = get_strategy(strategy)
+        strategy_class = MLPStrategy
         logger.info(f"Using strategy: {strategy} - {strategy_class}")
 
         # Convert train_data to Path if provided
@@ -109,7 +108,7 @@ def run(
 def list_strategies_cmd() -> None:
     """List all available strategies with descriptions."""
     console = Console()
-    strategies = get_all_strategies()
+    strategies = {"mlp": MLPStrategy}
 
     assert strategies, "No strategies found in strategies/ directory"
 
@@ -155,7 +154,7 @@ def _handle_fit(params: CLIParams) -> None:
     _save_trained_model(model, params)
 
 
-def _train_model(params: CLIParams) -> Strategy:
+def _train_model(params: CLIParams) -> MLPStrategy:
     """Train the model with given parameters."""
     status_msg = f"[bold green]Fitting {params.strategy} strategy using {params.train_csv_path}..."
     with params.console.status(status_msg):
@@ -167,7 +166,7 @@ def _train_model(params: CLIParams) -> Strategy:
     return model
 
 
-def _display_model_info(model: Strategy, console: Console, *, verbose: bool) -> None:
+def _display_model_info(model: MLPStrategy, console: Console, *, verbose: bool) -> None:
     """Display model information and statistics."""
     if hasattr(model, "display_stats"):
         model.display_stats(console)
@@ -179,7 +178,7 @@ def _display_model_info(model: Strategy, console: Console, *, verbose: bool) -> 
         model.demonstrate_predictions(console)
 
 
-def _save_trained_model(model: Strategy, params: CLIParams) -> Path:
+def _save_trained_model(model: MLPStrategy, params: CLIParams) -> Path:
     """Save the trained model and return the save path."""
     # Prepare save path - MLP uses .pkl, others use .json
     if params.output_path:
@@ -235,12 +234,12 @@ def _handle_eval(params: CLIParams) -> None:
 
 def _load_model_for_eval(
     strategy: str,
-    strategy_class: type[Strategy],
+    strategy_class: type[MLPStrategy],
     console: Console,
     model_path: str | None,
     train_split: float,
     random_seed: int,
-) -> tuple[Strategy | None, float, int]:
+) -> tuple[MLPStrategy | None, float, int]:
     """Load model for evaluation and return updated parameters."""
     # Determine model path
     if model_path:
@@ -269,12 +268,12 @@ def _load_model_for_eval(
 
 def _load_existing_model(
     strategy: str,
-    strategy_class: type[Strategy],
+    strategy_class: type[MLPStrategy],
     console: Console,
     model_file: Path,
     train_split: float,
     random_seed: int,
-) -> tuple[Strategy, float, int]:
+) -> tuple[MLPStrategy, float, int]:
     """Load an existing model and extract parameters."""
     with console.status(f"[bold blue]Loading {strategy} model..."):
         loaded_result = strategy_class.load(model_file)
@@ -305,7 +304,7 @@ def _extract_params_from_tuple(
 
 
 def _extract_params_from_model(
-    model: Strategy,
+    model: MLPStrategy,
     console: Console,
     train_split: float,
     random_seed: int,
@@ -321,8 +320,8 @@ def _extract_params_from_model(
 
 def _run_evaluation(
     strategy: str,
-    strategy_class: type[Strategy],
-    model: Strategy | None,
+    strategy_class: type[MLPStrategy],
+    model: MLPStrategy | None,
     console: Console,
     train_split: float,
     random_seed: int,
@@ -339,7 +338,7 @@ def _run_evaluation(
         # For MLP strategy, call with None model to use checkpoint loading
         # Cast None to Strategy for type checking - MLP strategy accepts None
         eval_results = strategy_class.evaluate(
-            cast("Strategy", None), train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
+            cast("MLPStrategy", None), train_split=train_split, random_seed=random_seed, train_csv_path=train_csv_path
         )
 
     console.print("\n[bold]Evaluation results:[/bold]")
