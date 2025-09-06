@@ -735,7 +735,7 @@ class MLPStrategy(Strategy):
         )
 
         # Get tokenizer for predictions
-        from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+        from kaggle_map.embeddings.qwen import QwenEmbeddingModel
         tokenizer = QwenEmbeddingModel()
 
         # Create model parameters for tracking
@@ -859,7 +859,7 @@ class MLPStrategy(Strategy):
             )
             mlp_model.load_state_dict(checkpoint["model_state_dict"])
 
-            from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+            from kaggle_map.embeddings.qwen import QwenEmbeddingModel
             
             model = cls(
                 model=mlp_model.to(get_device()),

@@ -190,7 +190,7 @@ class TrainingRow(EvaluationRow):
         )
 
     def as_training_input(self) -> TrainingInput:
-        from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+        from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
         tokenizer = QwenEmbeddingModel()
         text = self.to_embedding_text()

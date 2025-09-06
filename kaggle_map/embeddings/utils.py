@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 from loguru import logger
 
-from kaggle_map.embeddings.embedding_models import QwenEmbeddingModel
+from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 from kaggle_map.utils.device import get_device
 
 
