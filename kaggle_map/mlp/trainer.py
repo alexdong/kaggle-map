@@ -10,11 +10,13 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from kaggle_map.mlp.model import QuestionSpecificMLP
+from kaggle_map.utils.device import get_device
 
 
 @dataclass
 class TrainingContext:
     """Context for training operations."""
+
     model: nn.Module
     criterion: nn.Module
     device: torch.device
@@ -49,6 +51,7 @@ class TrainingConfig:
 @dataclass
 class TrainingResult:
     """Result from training a model."""
+
     model: nn.Module
     history: dict[str, Any]
 
@@ -56,6 +59,7 @@ class TrainingResult:
 @dataclass
 class TrainingSetup:
     """Setup for training a model."""
+
     model: nn.Module
     train_loader: DataLoader
     val_loader: DataLoader
@@ -68,7 +72,6 @@ def process_batch(
     model: QuestionSpecificMLP,
     batch: tuple,
     criterion: nn.Module,
-    device: torch.device,
     *,
     training: bool = True,
 ) -> tuple[torch.Tensor | None, int]:
@@ -84,6 +87,7 @@ def process_batch(
     Returns:
         Tuple of (loss, batch_size) or (None, 0) if no valid samples
     """
+    device = get_device()
     embeddings, question_ids, labels, is_correct = batch
     embeddings = embeddings.to(device)
     question_ids = question_ids.to(device)
@@ -107,14 +111,12 @@ def process_batch(
                 total_loss += loss * logits.size(0)
                 total_samples += logits.size(0)
 
-    if total_samples > 0:
-        avg_loss = total_loss / total_samples
-        # Detach for validation to save memory
-        if not training:
-            avg_loss = avg_loss.detach()
-        return avg_loss, embeddings.size(0)
-
-    return None, 0
+    assert total_samples > 0, "No valid samples in batch"
+    avg_loss = total_loss / total_samples
+    # Detach for validation to save memory
+    if not training:
+        avg_loss = avg_loss.detach()
+    return avg_loss, embeddings.size(0)
 
 
 def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
@@ -262,8 +264,8 @@ def _run_training_loop(
             best_model_state = ctx.model.state_dict().copy()
             logger.debug(f"New best model at epoch {epoch}")
 
-        if ctx.scheduler and not isinstance(ctx.scheduler, torch.optim.lr_scheduler.OneCycleLR):
-            ctx.scheduler.step()
+        assert ctx.scheduler is not None, "Scheduler should be set"
+        ctx.scheduler.step()
 
         if early_stopping(val_loss):
             history["early_stopped"] = epoch

@@ -2,14 +2,14 @@
 
 import better_exceptions
 
-better_exceptions.MAX_LENGTH = None
-
 from .core.models import (
     Category,
     EvaluationRow,
     Prediction,
     TrainingRow,
 )
+
+better_exceptions.MAX_LENGTH = None
 
 __all__ = [
     "Category",

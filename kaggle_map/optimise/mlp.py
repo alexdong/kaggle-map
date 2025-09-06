@@ -26,6 +26,7 @@ from .utils import (
 @dataclass
 class SearchConfig:
     """Configuration for hyperparameter search."""
+
     strategy_name: str
     n_trials: int
     n_jobs: int = 1
@@ -49,9 +50,7 @@ def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
         "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
         "early_stopping_patience": trial.suggest_int("early_stopping_patience", 10, 22),
         "epochs": trial.suggest_int("epochs", 28, 180),
-        "embedding_strategy": trial.suggest_categorical(
-            "embedding_strategy", ["double_blind", "semantic"]
-        ),
+        "embedding_strategy": trial.suggest_categorical("embedding_strategy", ["double_blind", "semantic"]),
     }
 
 

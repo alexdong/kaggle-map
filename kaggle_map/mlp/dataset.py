@@ -13,6 +13,7 @@ from kaggle_map.core.models import Answer, QuestionId
 @dataclass
 class DatasetArrays:
     """Arrays needed for dataset creation."""
+
     embeddings: np.ndarray
     question_ids: np.ndarray
     predictions: np.ndarray
@@ -22,6 +23,7 @@ class DatasetArrays:
 @dataclass
 class DatasetEncoders:
     """Encoders and reference data for the dataset."""
+
     correct_answers: dict[QuestionId, Answer]
     true_label_encoders: dict[QuestionId, LabelEncoder]
     false_label_encoders: dict[QuestionId, LabelEncoder]

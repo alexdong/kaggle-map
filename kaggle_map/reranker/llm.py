@@ -1,5 +1,3 @@
-from pathlib import Path
-
 """Simplified LLM reranker using direct llama-cpp-python calls.
 
 This module provides reranking functionality using local GGUF models,
@@ -9,6 +7,7 @@ replacing the complex HTTP/async implementation with direct model calls.
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from llama_cpp import Llama, llama_supports_gpu_offload
 from loguru import logger
@@ -123,7 +122,7 @@ if __name__ == "__main__":
 
     # Prepare benchmark results
     results = []
-    correct_answers = extract_correct_answers(load_training_data(Path("datasets/train.csv")))
+    correct_answers = extract_correct_answers(load_training_data(Path("datasets/training_data.csv")))
 
     # Download and benchmark all model variants
     for model_name in MODEL_OPTIONS:
