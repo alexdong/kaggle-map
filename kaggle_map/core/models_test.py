@@ -30,7 +30,9 @@ from kaggle_map.core.models import Category, compare_labels
     ],
 )
 def test_compare_labels(actual_label: str, predicted_label: str, expected: bool) -> None:
-    assert compare_labels(actual_label, predicted_label) == expected
+    assert compare_labels(actual_label, predicted_label) == expected, (
+        f"Label comparison failed: actual='{actual_label}' vs predicted='{predicted_label}' should be {expected}"
+    )
 
 
 @pytest.mark.parametrize(

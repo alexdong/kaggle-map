@@ -24,7 +24,7 @@ from kaggle_map.core.normalise import (
     ],
 )
 def test_normalize_latex_answer(inp: str, expected: str) -> None:
-    assert normalize_latex_answer(inp) == expected
+    assert normalize_latex_answer(inp) == expected, f"LaTeX normalization failed for input '{inp}'"
 
 
 @pytest.mark.parametrize(
@@ -37,7 +37,7 @@ def test_normalize_latex_answer(inp: str, expected: str) -> None:
     ],
 )
 def test_normalize_text(inp: str, expected: str) -> None:
-    assert normalize_text(inp) == expected
+    assert normalize_text(inp) == expected, f"Text normalization failed for input '{inp}'"
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_normalize_text(inp: str, expected: str) -> None:
 def test_compose_text_unit(q: str, a: str, e: str, expected_contains: list[str]) -> None:
     out = compose_text_unit(q, a, e)
     for token in expected_contains:
-        assert token in out
+        assert token in out, f"Expected token '{token}' not found in output: '{out}'"
 
 
 @pytest.mark.parametrize(
@@ -74,5 +74,5 @@ def test_compose_text_unit(q: str, a: str, e: str, expected_contains: list[str])
     ],
 )
 def test_number_normalize(inp: str, expected: str) -> None:
-    assert number_normalize(inp) == expected
+    assert number_normalize(inp) == expected, f"Number normalization failed for input '{inp}'"
 
