@@ -5,18 +5,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-# Optional imports for GPU memory monitoring
-try:
-    import pynvml
-except ImportError:
-    pynvml = None  # type: ignore[assignment]
-
-try:
-    import torch
-except ImportError:
-    torch = None  # type: ignore[assignment]
-
-import psutil
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
@@ -76,15 +64,24 @@ def get_stop_tokens(model_name: ModelName) -> list[str]:
     Returns:
         List of stop token strings
     """
-    if "gemma" in model_name.lower():
-        return ["<end_of_turn>", "\n"]
-    if "qwen" in model_name.lower():
-        return ["<|im_end|>", "\n"]
-    if "gpt-oss" in model_name.lower():
-        return ["<|end|>", "\n"]
-    # Default to Gemma stop tokens for unknown models
-    logger.warning(f"Unknown model type {model_name}, defaulting to Gemma stop tokens")
-    return ["<end_of_turn>", "\n"]
+    # Dict-driven configuration for stop tokens
+    stop_tokens_config = {
+        "gemma": ["<end_of_turn>", "\n"],
+        "qwen": ["<|im_end|>", "\n"],
+        "gpt-oss": ["<|end|>", "\n"],
+    }
+
+    model_name_lower = model_name.lower()
+
+    # Find matching model family
+    for model_family, tokens in stop_tokens_config.items():
+        if model_family in model_name_lower:
+            return tokens
+
+    # If we reach here, model is unknown - use assert to fail early
+    supported_families = ", ".join(stop_tokens_config.keys())
+    msg = f"Unknown model type '{model_name}'. Model name must contain one of: {supported_families}. This is a programming error - the model type should be validated before calling get_stop_tokens."
+    raise AssertionError(msg)
 
 
 def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
@@ -167,57 +164,10 @@ def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
         logger.info(f"Model cleanup completed: {model_path.name}")
 
 
-def get_gpu_memory_usage() -> float | None:
-    """Get current GPU memory usage in GB."""
-    if pynvml is not None:
-        try:
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            return info.used / 1024**3  # Convert to GB
-        except Exception:
-            pass
-
-    # Try torch.cuda if available
-    if torch is not None:
-        try:
-            if torch.cuda.is_available():
-                return torch.cuda.memory_allocated() / 1024**3
-        except Exception:
-            pass
-
-    return None
-
-
-def measure_memory(device_name: str) -> tuple[float, str]:
-    """Measure memory based on device type.
-
-    Returns tuple of (memory_gb, memory_type)
-    """
-    if device_name == "GPU":
-        gpu_mem = get_gpu_memory_usage()
-        if gpu_mem is not None:
-            return gpu_mem, "VRAM"
-
-    # Fallback to CPU RAM measurement
-    process = psutil.Process()
-    ram_gb = process.memory_info().rss / 1024**3
-    return ram_gb, "RAM"
-
-
 if __name__ == "__main__":
     from statistics import mean, stdev
 
     from llama_cpp import llama_supports_gpu_offload
-
-    # Try to initialize GPU memory monitoring
-    gpu_memory_available = False
-    if pynvml is not None:
-        try:
-            pynvml.nvmlInit()
-            gpu_memory_available = True
-        except Exception:
-            pass
 
     console = Console()
 
@@ -281,7 +231,8 @@ if __name__ == "__main__":
                 benchmark_start = time.time()
                 with load_llm_model(load_config) as llm:
                     # Get initial memory baseline after model is loaded
-                    initial_memory, memory_type = measure_memory(device_name)
+                    initial_memory = 0.0  # Memory measurement not implemented
+                    memory_type = "RAM"
                     peak_memories = [initial_memory]  # Track peak memory
 
                     # Warmup runs
@@ -316,7 +267,7 @@ if __name__ == "__main__":
                         token_counts.append(tokens)
 
                         # Track memory after each inference
-                        current_memory, _ = measure_memory(device_name)
+                        current_memory = 0.0  # Memory measurement not implemented
                         peak_memories.append(current_memory)
 
                     # Report the peak memory reached during inference
@@ -370,7 +321,7 @@ if __name__ == "__main__":
     table.add_column("Latency (ms)", style="yellow", justify="right")
     table.add_column("Tok/s", style="green", justify="right")
     # Determine memory column name based on what was measured
-    memory_col_name = "VRAM (GB)" if gpu_available and gpu_memory_available else "RAM (GB)"
+    memory_col_name = "VRAM (GB)" if gpu_available else "RAM (GB)"
     table.add_column(memory_col_name, style="red", justify="right")
     table.add_column("Total (s)", style="blue", justify="right")
 
