@@ -1,0 +1,127 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            kididue3f1h3gk7gmbawl7ogk5cozxb4:
+                args:
+                    - search
+                    - mlp
+                    - --trials
+                    - "500"
+                    - --jobs
+                    - "1"
+                    - --timeout
+                    - "14400"
+                cpu_count: 20
+                cpu_count_logical: 28
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "1966736678912"
+                        used: "234828189696"
+                email: alex@keepers.photos
+                executable: /home/alex/Projects/kaggle-map/.venv/bin/python3
+                git:
+                    commit: 0c7ae0ee291a65e31eb536fc43e03d5d74aae495
+                    remote: git@github.com:alexdong/kaggle-map.git
+                gpu: NVIDIA RTX 2000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 2816
+                      memoryTotal: "17175674880"
+                      name: NVIDIA RTX 2000 Ada Generation
+                      uuid: GPU-30063d03-3609-a2e1-9c77-d62a30fdcd4e
+                host: alex-dong-tower
+                memory:
+                    total: "65904627712"
+                os: Linux-6.14.0-28-generic-x86_64-with-glibc2.41
+                program: -m kaggle_map.optimise
+                python: CPython 3.13.3
+                root: /home/alex/Projects/kaggle-map
+                startedAt: "2025-08-28T04:08:53.784058Z"
+                writerId: kididue3f1h3gk7gmbawl7ogk5cozxb4
+        m: []
+        python_version: 3.13.3
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 35
+                - 49
+                - 53
+                - 75
+            "2":
+                - 1
+                - 5
+                - 11
+                - 35
+                - 49
+                - 53
+                - 75
+            "3":
+                - 2
+                - 13
+                - 15
+                - 16
+            "4": 3.13.3
+            "5": 0.21.1
+            "6": 4.55.2
+            "10":
+                - 20
+            "12": 0.21.1
+            "13": linux-x86_64
+architecture:
+    value: improved_mlp_with_correctness
+batch_size:
+    value: 512
+correctness_embedding_dim:
+    value: 32
+device:
+    value: cuda
+dropout:
+    value: 0.31431347099026147
+early_stopping_patience:
+    value: 17
+epochs:
+    value: 32
+include_question:
+    value: true
+layer_norm:
+    value: true
+learning_rate:
+    value: 0.0001783240095729472
+loss_function:
+    value: ListMLE
+num_questions:
+    value: 15
+optimizer:
+    value: adamw
+random_seed:
+    value: 42
+scheduler:
+    value: cosine
+test_samples:
+    value: 5505
+total_parameters:
+    value: 1553853
+total_samples:
+    value: 36696
+train_samples:
+    value: 25687
+train_split:
+    value: 0.7
+trainable_parameters:
+    value: 1553853
+trunk_layers:
+    value:
+        - 800
+        - 1024
+        - 512
+        - 256
+        - 192
+val_samples:
+    value: 5504
+weight_decay:
+    value: 0.012095335575578065

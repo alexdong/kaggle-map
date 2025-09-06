@@ -1,0 +1,47 @@
+{
+  "os": "Linux-6.14.0-28-generic-x86_64-with-glibc2.41",
+  "python": "CPython 3.13.3",
+  "startedAt": "2025-08-27T23:55:12.314187Z",
+  "args": [
+    "run",
+    "mlp",
+    "fit",
+    "--train-split",
+    "0.1",
+    "--random-seed",
+    "42"
+  ],
+  "program": "-m kaggle_map.cli",
+  "git": {
+    "remote": "git@github.com:alexdong/kaggle-map.git",
+    "commit": "6fae9ee8fe50ebe6c8bc16c210a398fcc9f3e1a6"
+  },
+  "email": "alex@keepers.photos",
+  "root": "/home/alex/Projects/kaggle-map",
+  "host": "alex-dong-tower",
+  "executable": "/home/alex/Projects/kaggle-map/.venv/bin/python3",
+  "cpu_count": 20,
+  "cpu_count_logical": 28,
+  "gpu": "NVIDIA RTX 2000 Ada Generation",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "1966736678912",
+      "used": "232534347776"
+    }
+  },
+  "memory": {
+    "total": "65904627712"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX 2000 Ada Generation",
+      "memoryTotal": "17175674880",
+      "cudaCores": 2816,
+      "architecture": "Ada",
+      "uuid": "GPU-30063d03-3609-a2e1-9c77-d62a30fdcd4e"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "ibbf7atseiz0oetnm83ab7sw5kzy6pfs"
+}

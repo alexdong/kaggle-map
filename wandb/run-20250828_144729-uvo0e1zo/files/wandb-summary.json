@@ -1,0 +1,1 @@
+{"epoch":33,"val_loss":0.1592978876690532,"_step":60,"best_val_loss":0.1592978876690532,"_runtime":65,"train_loss":0.25385819814364535,"_timestamp":1.756349311639705e+09,"learning_rate":2.031083197684542e-07,"_wandb":{"runtime":65}}

@@ -7,7 +7,6 @@ from typing import Literal, NamedTuple, get_args
 
 import numpy as np
 import pandas as pd
-import pydash
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
@@ -262,8 +261,10 @@ class EmbeddingStrategy(Enum):
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
-ModelName = Literal["gpt-oss-20b", "Qwen3-14B", "gemma-3-12b-it"]
-QuantizationLevel = Literal["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+ModelName = Literal["Qwen3-14B", "gemma-3-12b-it", "gpt-oss-20b"]
+# NOTE: Q4_K_XL and Q5_K_XL have sequential loading conflicts in llama-cpp-python
+# Use only one quantization per benchmark session to avoid GPU context corruption
+QuantizationLevel = Literal["Q5_K_XL", "Q4_K_XL", "Q6_K_XL"]
 
 # Available options derived from type definitions
 MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))
@@ -284,11 +285,13 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
         repo="unsloth/gpt-oss-20b-GGUF",
         filename_pattern="gpt-oss-20b-{quant}.gguf",
         # Q5_K_XL not available for this model
-        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
+        available_quantizations=["Q5_K_XL"],
     ),
     "Qwen3-14B": GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
         filename_pattern="Qwen3-14B-{quant}.gguf",
+        # Temporarily test only Q5_K_XL due to sequential loading conflicts
+        available_quantizations=["Q5_K_XL"],
     ),
     "gemma-3-12b-it": GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",

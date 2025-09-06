@@ -1,7 +1,5 @@
 """Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download
@@ -137,26 +135,17 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
     return model_path
 
 
-@contextmanager
-def load_llm_model(config: LLMModelLoadConfig) -> Iterator[Llama]:
-    """Load a GGUF model with llama-cpp-python as a context manager, downloading if necessary."""
+def load_llm_model(config: LLMModelLoadConfig) -> Llama:
+    """Load a GGUF model with automatic cleanup via context manager."""
     model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")
     assert model_path.exists(), f"Model file not found after download: {model_path}"
 
-    llm = Llama(
+    return Llama(
         model_path=str(model_path),
         n_ctx=config.n_ctx,
         n_batch=config.n_batch,
-        n_gpu_layers=config.n_gpu_layers,  # Use all GPU layers (Metal on Mac, CUDA on GPU)
+        n_gpu_layers=config.n_gpu_layers,
         verbose=config.verbose,
         n_threads=config.n_threads,
     )
-    logger.info(f"Model loaded successfully: {model_path.name}")
-
-    try:
-        yield llm
-    finally:
-        # Cleanup happens automatically when exiting the context
-        del llm
-        logger.info(f"Model cleanup completed: {model_path.name}")
