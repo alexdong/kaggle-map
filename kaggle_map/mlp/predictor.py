@@ -42,9 +42,32 @@ def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[Ques
     return {qid: list(set(preds)) for qid, preds in question_predictions.items()}
 
 
-def _get_split_indices(
-    n_samples: int, train_ratio: float = 0.7, random_seed: int = 42
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+@dataclass(frozen=True)
+class DataSplit:
+    """Train/validation/test split indices for dataset partitioning."""
+
+    train_indices: np.ndarray
+    val_indices: np.ndarray
+    test_indices: np.ndarray
+
+    @property
+    def train_size(self) -> int:
+        return len(self.train_indices)
+
+    @property
+    def val_size(self) -> int:
+        return len(self.val_indices)
+
+    @property
+    def test_size(self) -> int:
+        return len(self.test_indices)
+
+    @property
+    def total_size(self) -> int:
+        return self.train_size + self.val_size + self.test_size
+
+
+def _get_split_indices(n_samples: int, train_ratio: float = 0.7, random_seed: int = 42) -> DataSplit:
     """Get train/val/test split indices."""
     rng = np.random.Generator(np.random.PCG64(random_seed))
     indices = np.arange(n_samples)
@@ -53,10 +76,10 @@ def _get_split_indices(
     train_size = int(n_samples * train_ratio)
     val_size = int(n_samples * 0.15)
 
-    return (
-        indices[:train_size],
-        indices[train_size : train_size + val_size],
-        indices[train_size + val_size :],
+    return DataSplit(
+        train_indices=indices[:train_size],
+        val_indices=indices[train_size : train_size + val_size],
+        test_indices=indices[train_size + val_size :],
     )
 
 
@@ -147,21 +170,21 @@ class Predictor:
         logger.info(f"Model parameters: {total_params:,}")
 
         n_samples = len(embeddings)
-        train_idx, val_idx, _ = _get_split_indices(n_samples, config.train_split, config.random_seed)
-        logger.info(f"Data split - Train: {len(train_idx)}, Val: {len(val_idx)}")
+        split = _get_split_indices(n_samples, config.train_split, config.random_seed)
+        logger.info(f"Data split - Train: {split.train_size}, Val: {split.val_size}")
 
         train_arrays = DatasetArrays(
-            embeddings=embeddings[train_idx],
-            question_ids=question_ids[train_idx],
-            predictions=predictions[train_idx],
-            mc_answers=mc_answers[train_idx],
+            embeddings=embeddings[split.train_indices],
+            question_ids=question_ids[split.train_indices],
+            predictions=predictions[split.train_indices],
+            mc_answers=mc_answers[split.train_indices],
         )
 
         val_arrays = DatasetArrays(
-            embeddings=embeddings[val_idx],
-            question_ids=question_ids[val_idx],
-            predictions=predictions[val_idx],
-            mc_answers=mc_answers[val_idx],
+            embeddings=embeddings[split.val_indices],
+            question_ids=question_ids[split.val_indices],
+            predictions=predictions[split.val_indices],
+            mc_answers=mc_answers[split.val_indices],
         )
 
         encoders = DatasetEncoders(
@@ -269,8 +292,8 @@ class Predictor:
         if test_data is None:
             training_data = load_training_data(train_csv_path)
             n_samples = len(training_data)
-            _, val_idx, _ = _get_split_indices(n_samples, 0.7, 42)
-            test_data = [training_data[i] for i in val_idx]
+            split = _get_split_indices(n_samples, 0.7, 42)
+            test_data = [training_data[i] for i in split.val_indices]
 
         map_scores = []
         for row in test_data:

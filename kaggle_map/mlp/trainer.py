@@ -9,7 +9,26 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 
-from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
+from kaggle_map.mlp.model import ActivationType, ArchitectureSize, EvaluationResult, QuestionSpecificMLP
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    """Result from processing a single batch."""
+
+    loss: torch.Tensor | None
+    sample_count: int
+
+    @property
+    def is_valid(self) -> bool:
+        return self.loss is not None and self.sample_count > 0
+
+    @property
+    def avg_loss(self) -> torch.Tensor | None:
+        """Get average loss per sample."""
+        if self.loss is None or self.sample_count == 0:
+            return None
+        return self.loss
 
 
 @dataclass
@@ -42,9 +61,9 @@ class TrainingConfig:
     train_csv_path: Path = Path("datasets/train.csv")
     checkpoint_dir: Path = Path("checkpoints")
 
-    architecture_size: str = "xlarge"
+    architecture_size: ArchitectureSize = "xlarge"
     dropout: float = 0.3
-    activation: str = "gelu"
+    activation: ActivationType = "gelu"
 
 
 @dataclass
@@ -74,7 +93,7 @@ def process_batch(  # noqa: C901
     device: torch.device,
     *,
     training: bool = True,
-) -> tuple[torch.Tensor | None, int]:
+) -> BatchResult:
     """Process a single batch through the model.
 
     Args:
@@ -85,7 +104,7 @@ def process_batch(  # noqa: C901
         training: Whether in training mode (affects gradient tracking)
 
     Returns:
-        Tuple of (loss, batch_size) or (None, 0) if no valid samples
+        BatchResult containing loss and sample count
     """
     embeddings, question_ids, labels, is_correct = batch
     embeddings = embeddings.to(device)
@@ -110,7 +129,9 @@ def process_batch(  # noqa: C901
                 total_loss += loss * logits.size(0)
                 total_samples += logits.size(0)
 
-    assert total_samples > 0, "No valid samples in batch"
+    if total_samples == 0:
+        return BatchResult(loss=None, sample_count=0)
+
     avg_loss = total_loss / total_samples
     # Detach for validation to save memory
     if not training and isinstance(avg_loss, torch.Tensor):
@@ -118,7 +139,7 @@ def process_batch(  # noqa: C901
     # Ensure avg_loss is a torch.Tensor
     if not isinstance(avg_loss, torch.Tensor):
         avg_loss = torch.tensor(avg_loss)
-    return avg_loss, int(embeddings.size(0))
+    return BatchResult(loss=avg_loss, sample_count=int(embeddings.size(0)))
 
 
 def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
@@ -197,13 +218,14 @@ def train_epoch(
     for batch in train_loader:
         optimizer.zero_grad()
 
-        loss, n_samples = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=True)
+        result = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=True)
 
-        if loss is not None:
-            total_loss += loss.item() * n_samples
-            total_samples += n_samples
+        if result.is_valid:
+            assert result.loss is not None  # Type guard for type checker
+            total_loss += result.loss.item() * result.sample_count
+            total_samples += result.sample_count
 
-            loss.backward()
+            result.loss.backward()
             optimizer.step()
 
             if ctx.scheduler and isinstance(ctx.scheduler, torch.optim.lr_scheduler.OneCycleLR):
@@ -231,11 +253,12 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in val_loader:
-            loss, n_samples = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=False)
+            result = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=False)
 
-            if loss is not None:
-                total_loss += loss.item() * n_samples
-                total_samples += n_samples
+            if result.is_valid:
+                assert result.loss is not None  # Type guard for type checker
+                total_loss += result.loss.item() * result.sample_count
+                total_samples += result.sample_count
 
     return total_loss / total_samples if total_samples > 0 else 0.0
 

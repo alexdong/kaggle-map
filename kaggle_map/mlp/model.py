@@ -11,6 +11,7 @@ from torch import nn
 from kaggle_map.core.models import QuestionId
 
 ArchitectureSize = Literal["medium", "large", "xlarge"]
+ActivationType = Literal["relu", "gelu", "leaky_relu", "silu"]
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ class Architecture:
     size: ArchitectureSize
     layers: list[int]  # Layer dimensions including input
     dropout: float = 0.3
-    activation: str = "gelu"
+    activation: ActivationType = "gelu"
 
 
 # Simplified architectures for 4096+ dim embeddings only
@@ -53,7 +54,7 @@ ARCHITECTURES = {
 EMBEDDING_DIM_THRESHOLD = 6000  # Threshold to choose between 4096 and 8192 architectures
 
 
-def get_architecture(size: str, embedding_dim: int) -> Architecture:
+def get_architecture(size: ArchitectureSize, embedding_dim: int) -> Architecture:
     """Get architecture config for given size and embedding dimension."""
     dim_key = "4096" if embedding_dim <= EMBEDDING_DIM_THRESHOLD else "8192"
 
@@ -62,7 +63,7 @@ def get_architecture(size: str, embedding_dim: int) -> Architecture:
     return ARCHITECTURES[key]
 
 
-def get_activation(name: str) -> nn.Module:
+def get_activation(name: ActivationType) -> nn.Module:
     """Get activation function by name."""
     activations = {
         "relu": nn.ReLU(),
@@ -80,9 +81,9 @@ class QuestionSpecificMLP(nn.Module):
         self,
         question_predictions: dict[QuestionId, list[str]],
         embedding_dim: int,
-        architecture_size: str = "xlarge",
+        architecture_size: ArchitectureSize = "xlarge",
         dropout: float = 0.3,
-        activation: str = "gelu",
+        activation: ActivationType = "gelu",
     ) -> None:
         super().__init__()
 
