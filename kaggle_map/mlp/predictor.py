@@ -30,7 +30,7 @@ from kaggle_map.utils.device import get_device
 from kaggle_map.utils.metrics import calculate_map_at_3
 
 
-def extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
+def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
     """Extract unique prediction strings per question."""
     question_predictions = defaultdict(list)
     for row in training_data:
@@ -41,7 +41,7 @@ def extract_question_predictions(training_data: list[TrainingRow]) -> dict[Quest
     return {qid: list(set(preds)) for qid, preds in question_predictions.items()}
 
 
-def get_split_indices(
+def _get_split_indices(
     n_samples: int, train_ratio: float = 0.7, random_seed: int = 42
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Get train/val/test split indices."""
@@ -103,7 +103,7 @@ class Predictor:
         # Load training data
         training_data = load_training_data(config.train_csv_path)
         correct_answers = extract_correct_answers(training_data)
-        question_predictions = extract_question_predictions(training_data)
+        question_predictions = _extract_question_predictions(training_data)
 
         # Compute embeddings using selected strategy
         logger.info("Computing embeddings...")
@@ -146,7 +146,7 @@ class Predictor:
 
         # Split data
         n_samples = len(embeddings)
-        train_idx, val_idx, _ = get_split_indices(n_samples, config.train_split, config.random_seed)
+        train_idx, val_idx, _ = _get_split_indices(n_samples, config.train_split, config.random_seed)
         logger.info(f"Data split - Train: {len(train_idx)}, Val: {len(val_idx)}")
 
         # Create datasets
@@ -261,7 +261,7 @@ class Predictor:
             # Load and split data
             training_data = load_training_data(train_csv_path)
             n_samples = len(training_data)
-            _, val_idx, _ = get_split_indices(n_samples, 0.7, 42)
+            _, val_idx, _ = _get_split_indices(n_samples, 0.7, 42)
             test_data = [training_data[i] for i in val_idx]
 
         # Calculate MAP@3 for each sample

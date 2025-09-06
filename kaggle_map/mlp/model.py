@@ -26,13 +26,13 @@ class Architecture:
 # Simplified architectures for 4096+ dim embeddings only
 ARCHITECTURES = {
     # For 4096-dim embeddings (semantic strategy)
-    "medium_4096": Architecture("medium", [4128, 2048, 1024, 512, 256]),
-    "large_4096": Architecture("large", [4128, 3072, 1536, 768, 384]),
-    "xlarge_4096": Architecture("xlarge", [4128, 4096, 2048, 1024, 512]),
+    "medium_4096": Architecture("medium", [4128, 2048, 1024]),
+    "large_4096": Architecture("large", [4128, 2048, 1024, 512]),
+    "xlarge_4096": Architecture("xlarge", [4128, 2048, 1024, 512, 256]),
     # For 8192-dim embeddings (double-blind strategy)
-    "medium_8192": Architecture("medium", [8224, 4096, 2048, 1024, 512]),
-    "large_8192": Architecture("large", [8224, 6144, 3072, 1536, 768]),
-    "xlarge_8192": Architecture("xlarge", [8224, 8192, 4096, 2048, 1024]),
+    "medium_8192": Architecture("medium", [8224, 4096, 2048]),
+    "large_8192": Architecture("large", [8224, 4096, 2048, 1024]),
+    "xlarge_8192": Architecture("xlarge", [8224, 4096, 2048, 1024, 512]),
 }
 
 
