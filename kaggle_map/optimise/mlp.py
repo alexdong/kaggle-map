@@ -9,7 +9,9 @@ import torch
 from loguru import logger
 from optuna import Trial
 
+from kaggle_map.core.dataset import load_training_data
 from kaggle_map.mlp import Predictor
+from kaggle_map.mlp.predictor import _get_split_indices
 from kaggle_map.mlp.trainer import TrainingConfig
 
 from .utils import (
@@ -91,7 +93,14 @@ def objective_function(
     # Handle OOM gracefully but let other errors crash
     try:
         model = Predictor.fit(config, embedding_strategy=hyperparams["embedding_strategy"])
-        result = model.evaluate()
+
+        # Load test data for evaluation
+        training_data = load_training_data(config.train_csv_path)
+        n_samples = len(training_data)
+        split = _get_split_indices(n_samples, config.train_split, config.random_seed)
+        test_data = [training_data[i] for i in split.val_indices]
+
+        result = model.evaluate(test_data)
 
         # Track GPU utilization
         track_gpu_memory(trial)
