@@ -142,6 +142,7 @@ if __name__ == "__main__":
             with load_llm_model(load_config) as llm:
                 total_map_score = 0.0
                 valid_rows = 0
+                idx = 0
 
                 # Process each row
                 for _, row in eval_df.iterrows():
@@ -166,6 +167,7 @@ if __name__ == "__main__":
                         question_text=row["QuestionText"],
                         mc_answer=row["MC_Answer"],
                         student_explanation=row["StudentExplanation"],
+                        correct_answer=row["CorrectAnswer"] if pd.notna(row["CorrectAnswer"]) else None,
                     )
 
                     # Create reranking request
@@ -183,31 +185,22 @@ if __name__ == "__main__":
 
                     # Parse reranking response - skip if invalid
                     numbers = re.findall(r"\d+", response_text)
-                    if not numbers:
-                        logger.debug(f"No numbers in reranking response for row {idx}: '{response_text}'")
-                        reranked_predictions = candidate_predictions
-                    else:
-                        indices = [int(n) - 1 for n in numbers]
-                        valid_indices = all(0 <= i < len(candidate_predictions) for i in indices)
-                        if not valid_indices or len(set(indices)) != len(candidate_predictions):
-                            logger.debug(f"Invalid reranking indices for row {idx}: {indices}")
-                            reranked_predictions = candidate_predictions
-                        else:
-                            reranked_predictions = [candidate_predictions[i] for i in indices]
+                    indices = [int(n) - 1 for n in numbers]
+                    reranked_predictions = [candidate_predictions[i] for i in indices]
 
                     # Calculate MAP@3 score
                     map_score = calculate_map_at_3(ground_truth, reranked_predictions)
                     total_map_score += map_score
                     valid_rows += 1
+                    idx += 1
 
                     # Log progress every 10 rows
-                    if (idx + 1) % 10 == 0:
-                        console.print(f"  Processed {idx + 1}/{len(eval_df)} rows", style="dim")
+                    if idx % 10 == 0:
+                        console.print(f"  Processed {idx}/{len(eval_df)} rows", style="dim")
 
                 # Calculate average MAP@3
-                avg_map_score = total_map_score / valid_rows if valid_rows > 0 else 0.0
-
-                # Store results
+                assert valid_rows > 0, "No valid rows processed for MAP@3 calculation"
+                avg_map_score = total_map_score / valid_rows
                 results.append(
                     {
                         "Model": model_name,
@@ -217,7 +210,6 @@ if __name__ == "__main__":
                         "Time (s)": round(time.time() - benchmark_start, 2),
                     }
                 )
-
                 console.print(f"  Completed: MAP@3 = {avg_map_score:.4f} on {valid_rows} rows", style="green")
 
     # Display results table
