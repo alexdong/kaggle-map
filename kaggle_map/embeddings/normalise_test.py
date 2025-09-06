@@ -1,6 +1,6 @@
 import pytest
 
-from kaggle_map.embeddings.formula import (
+from kaggle_map.embeddings.normalise import (
     compose_text_unit,
     normalize_latex_answer,
     normalize_text,

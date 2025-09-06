@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from re import Match
 
 _FRAC_RE = re.compile(r"\\frac\s*\{\s*([^\}]+)\s*\}\s*\{\s*([^\}]+)\s*\}")
 _NUM_RE = re.compile(r"\d{2,}")
@@ -11,8 +12,7 @@ def normalize_latex_answer(s: str) -> str:
         return ""
     s = s.replace(r"\(", "").replace(r"\)", "").strip()
 
-    # Process all fractions in the string
-    def replace_frac(match) -> str:
+    def replace_frac(match: Match[str]) -> str:
         num, den = match.group(1).strip(), match.group(2).strip()
         # Check if both parts are numeric (integers)
         if (num.isdigit() or (num.startswith("-") and num[1:].isdigit())) and (
