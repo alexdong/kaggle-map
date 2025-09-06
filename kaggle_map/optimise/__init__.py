@@ -18,32 +18,32 @@ def list_studies() -> None:
     studies = list_all_studies()
 
     if not studies:
-        print("No optimization studies found")
+        logger.info("No optimization studies found")
         return
 
-    print("Available optimization studies:")
+    logger.info("Available optimization studies:")
     for study_name in studies:
-        print(f"  - {study_name}")
+        logger.info(f"  - {study_name}")
 
-    print(f"\nTotal: {len(studies)} studies")
-    print(f"Database: {STORAGE_URL}")
+    logger.info(f"Total: {len(studies)} studies")
+    logger.info(f"Database: {STORAGE_URL}")
 
 
 @click.command()
 def dashboard() -> None:
-    print("Launching Optuna dashboard...")
-    print(f"Database: {STORAGE_URL}")
-    print("\nDashboard will open in your browser at http://127.0.0.1:8080")
-    print("Press Ctrl+C to stop the dashboard\n")
+    logger.info("Launching Optuna dashboard...")
+    logger.info(f"Database: {STORAGE_URL}")
+    logger.info("Dashboard will open in your browser at http://127.0.0.1:8080")
+    logger.info("Press Ctrl+C to stop the dashboard")
 
     try:
         subprocess.run([sys.executable, "-m", "optuna", "dashboard", STORAGE_URL], check=True)
     except KeyboardInterrupt:
-        print("\nDashboard stopped")
+        logger.info("Dashboard stopped")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to launch dashboard: {e}")
-        print("\nError: Failed to launch dashboard")
-        print("Make sure optuna-dashboard is installed: pip install optuna-dashboard")
+        logger.error("Error: Failed to launch dashboard")
+        logger.error("Make sure optuna-dashboard is installed: pip install optuna-dashboard")
 
 
 # Register MLP commands

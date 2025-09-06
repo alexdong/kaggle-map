@@ -174,10 +174,10 @@ def search(trials: int, jobs: int, timeout: int | None, train_data: str | None) 
     )
     study = run_search(config)
 
-    print("\nSearch completed!")
-    print(f"Study name: {study.study_name}")
-    print(f"Best MAP@3: {study.best_value:.4f}")
-    print(f"Best parameters: {study.best_params}")
+    logger.info("Search completed!")
+    logger.info(f"Study name: {study.study_name}")
+    logger.info(f"Best MAP@3: {study.best_value:.4f}")
+    logger.info(f"Best parameters: {study.best_params}")
 
 
 @click.command("search-embeddings")
@@ -214,10 +214,10 @@ def search_embeddings(trials: int, jobs: int, timeout: int, train_data: str | No
     )
     study = run_search(config)
 
-    print("\nEmbedding search completed!")
-    print(f"Study name: {study.study_name}")
-    print(f"Best MAP@3: {study.best_value:.4f}")
-    print(f"Best embedding: {study.best_params.get('embedding_model', 'N/A')}")
+    logger.info("Embedding search completed!")
+    logger.info(f"Study name: {study.study_name}")
+    logger.info(f"Best MAP@3: {study.best_value:.4f}")
+    logger.info(f"Best embedding: {study.best_params.get('embedding_model', 'N/A')}")
 
 
 @click.command()
@@ -226,19 +226,19 @@ def analyze(study: str) -> None:
     study_obj = optuna.load_study(study_name=study, storage=STORAGE_URL)
 
     if len(study_obj.trials) == 0:
-        print(f"Study {study} has no trials")
+        logger.info(f"Study {study} has no trials")
         return
 
     # Basic info
-    print(f"\nStudy: {study}")
-    print(f"Trials: {len(study_obj.trials)}")
-    print(f"Best Value: {study_obj.best_value:.4f}")
-    print(f"Best Trial: #{study_obj.best_trial.number}")
+    logger.info(f"Study: {study}")
+    logger.info(f"Trials: {len(study_obj.trials)}")
+    logger.info(f"Best Value: {study_obj.best_value:.4f}")
+    logger.info(f"Best Trial: #{study_obj.best_trial.number}")
 
     # Best parameters
-    print("\nBest Parameters:")
+    logger.info("Best Parameters:")
     for param, value in study_obj.best_params.items():
-        print(f"  {param}: {value}")
+        logger.info(f"  {param}: {value}")
 
     # Detailed analysis available via optuna-dashboard:
     # Run 'make dashboard' to launch interactive visualizatio

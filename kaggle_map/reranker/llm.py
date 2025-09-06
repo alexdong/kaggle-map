@@ -112,13 +112,13 @@ if __name__ == "__main__":
         logger.warning("GPU support not available, running on CPU (will be slower)")
 
     console = Console()
-    console.print("🚀 LLM Model Benchmarking Tool", style="bold cyan")
-    console.print("=" * 50)
+    logger.info("🚀 LLM Model Benchmarking Tool")
+    logger.info("=" * 50)
 
     # Load evaluation dataset
-    console.print("Loading evaluation dataset...", style="cyan")
+    logger.info("Loading evaluation dataset...")
     eval_df = pd.read_csv("datasets/error_prediction.csv")
-    console.print(f"Loaded {len(eval_df)} rows from error_prediction.csv", style="green")
+    logger.info(f"Loaded {len(eval_df)} rows from error_prediction.csv")
 
     # Prepare benchmark results
     results = []
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     for model_name in MODEL_OPTIONS:
         gguf_repo_spec = GGUF_MODELS[model_name]
         for quantization in gguf_repo_spec.available_quantizations:
-            console.print(f"\nBenchmarking {model_name} with {quantization} quantization...", style="yellow")
+            logger.info(f"Benchmarking {model_name} with {quantization} quantization...")
 
             load_config = LLMModelLoadConfig(
                 model_name=model_name,
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
                     # Log progress every 10 rows
                     if idx % 10 == 0:
-                        console.print(f"  Processed {idx}/{len(eval_df)} rows", style="dim")
+                        logger.debug(f"Processed {idx}/{len(eval_df)} rows")
 
                 # Calculate average MAP@3
                 assert valid_rows > 0, "No valid rows processed for MAP@3 calculation"
@@ -227,12 +227,12 @@ if __name__ == "__main__":
                         "Time (s)": round(time.time() - benchmark_start, 2),
                     }
                 )
-                console.print(f"  Completed: MAP@3 = {avg_map_score:.4f} on {valid_rows} rows", style="green")
+                logger.info(f"Completed: MAP@3 = {avg_map_score:.4f} on {valid_rows} rows")
 
     # Display results table
-    console.print("\n" + "=" * 50, style="bold cyan")
-    console.print("📊 Benchmark Results", style="bold cyan")
-    console.print("=" * 50, style="bold cyan")
+    logger.info("=" * 50)
+    logger.info("📊 Benchmark Results")
+    logger.info("=" * 50)
 
     table = Table(title="Model Performance Comparison")
     table.add_column("Model", style="cyan", no_wrap=True)
