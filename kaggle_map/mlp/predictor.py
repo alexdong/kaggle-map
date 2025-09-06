@@ -29,6 +29,8 @@ from kaggle_map.mlp.trainer import TrainingConfig, TrainingSetup, train_model
 from kaggle_map.utils.device import get_device
 from kaggle_map.utils.metrics import calculate_map_at_3
 
+# Maximum predictions per question as required by Kaggle MAP competition format
+# MAP@3 evaluation metric requires exactly 3 predictions per question
 MAX_PREDICTIONS = 3
 
 

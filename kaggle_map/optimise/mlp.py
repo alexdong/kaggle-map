@@ -41,12 +41,17 @@ def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
         "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
         "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
         "dropout": trial.suggest_float("dropout", 0.10, 0.42),
+        # Weighted architecture sampling based on empirical performance
+        # xlarge (85%): Best performance but higher compute cost
+        # large (10%): Good balance of performance and speed
+        # medium (5%): Faster training for quick iterations
         "architecture_size": trial.suggest_categorical(
             "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["medium"]
         ),
         "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adam"]),
         "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
         "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
+        # Weighted scheduler sampling: cosine appears twice due to superior convergence in preliminary tests
         "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
         "early_stopping_patience": trial.suggest_int("early_stopping_patience", 10, 22),
         "epochs": trial.suggest_int("epochs", 28, 180),

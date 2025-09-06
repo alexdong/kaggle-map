@@ -51,7 +51,11 @@ ARCHITECTURES = {
 }
 
 
-EMBEDDING_DIM_THRESHOLD = 6000  # Threshold to choose between 4096 and 8192 architectures
+# Threshold for architecture selection based on embedding dimensionality
+# Embedding dimensions <= 6000 use 4096-based architectures (e.g., semantic embeddings)
+# Embedding dimensions > 6000 use 8192-based architectures (e.g., double-blind strategy with concatenated features)
+# This threshold balances model capacity with computational efficiency for different embedding types
+EMBEDDING_DIM_THRESHOLD = 6000
 
 
 def get_architecture(size: ArchitectureSize, embedding_dim: int) -> Architecture:
