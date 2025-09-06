@@ -50,13 +50,10 @@ class QwenEmbeddingModel:
 
 
 if __name__ == "__main__":
-    # Test the embedding model
     model = QwenEmbeddingModel()
-    
-    # Generate embedding for "hello world"
     text = "hello world"
     embedding = model.encode(text)
-    
+
     print(f"Text: '{text}'")
     print(f"Embedding shape: {embedding.shape}")
     print(f"Embedding dtype: {embedding.dtype}")
