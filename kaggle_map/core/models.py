@@ -263,6 +263,7 @@ class LLMModelLoadConfig:
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
     n_threads: int = 8  # CPU threads for inference
+    random_seed: int = 42
     verbose: bool = False  # Verbose llama.cpp output
 
     @property
