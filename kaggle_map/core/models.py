@@ -299,9 +299,17 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
 
 @dataclass
 class LLMModelLoadConfig:
-    """Configuration for loading GGUF models into memory."""
+    """Configuration for loading GGUF models into memory.
 
-    model_name: ModelName = "gpt-oss-20b"
+    gpt-oss-20b: doesn't follow instruction tuning well.
+    Qwen3-14B: Q4: 0.6005; Q6: 0.6021
+    gemma-3-12b-it: Q4: 0.6185; Q6: 0.6193
+
+    The Q4 is slightly worse but much much faster, so it's a good trade-off.
+    Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
+    """
+
+    model_name: ModelName = "gemma-3-12b-it"
     quantization: QuantizationLevel = "Q4_K_XL"
     n_ctx: int = 4096  # Context window size
     n_batch: int = 512  # Batch size for prompt processing
