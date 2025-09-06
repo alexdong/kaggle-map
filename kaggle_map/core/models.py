@@ -49,6 +49,33 @@ class Category(Enum):
         return self.value.startswith("True_")
 
     @classmethod
+    def from_csv_string(cls, csv_value: str) -> "Category":
+        """Convert CSV format category string to Category enum.
+
+        CSV files use ALL_CAPS format (e.g., 'TRUE_MISCONCEPTION') while
+        Category enum uses Title_Case format (e.g., 'True_Misconception').
+
+        Args:
+            csv_value: Category string from CSV file (e.g., 'TRUE_MISCONCEPTION')
+
+        Returns:
+            Category enum instance
+
+        Example:
+            >>> Category.from_csv_string('TRUE_MISCONCEPTION')
+            Category.TRUE_MISCONCEPTION
+        """
+        assert csv_value, "CSV category value cannot be empty"
+        assert "_" in csv_value, f"Invalid CSV category format: '{csv_value}'"
+
+        parts = csv_value.split("_")
+        expected_parts = 2
+        assert len(parts) == expected_parts, f"Invalid CSV category format: '{csv_value}'"
+
+        formatted_value = f"{parts[0].capitalize()}_{parts[1].capitalize()}"
+        return cls(formatted_value)
+
+    @classmethod
     def by_truth_value(cls, *, is_true: bool) -> list["Category"]:
         prefix = "True_" if is_true else "False_"
         return [category for category in cls if category.value.startswith(prefix)]
@@ -61,7 +88,7 @@ class Prediction(BaseModel):
     @classmethod
     def from_ground_truth_row(cls, row: pd.Series) -> "Prediction":
         """Create a Prediction from a ground truth CSV row."""
-        category = Category(row["Category"])
+        category = Category.from_csv_string(row["Category"])
         # Handle NaN misconceptions (pandas converts "NA" to NaN)
         misconception = row["Misconception"] if pd.notna(row["Misconception"]) else "NA"
         return cls(category=category, misconception=misconception)

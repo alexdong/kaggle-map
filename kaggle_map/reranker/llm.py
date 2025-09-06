@@ -156,12 +156,7 @@ if __name__ == "__main__":
                         Prediction.from_string(pred_str) for pred_str in predictions_str.split(" | ") if ":" in pred_str
                     ]
                     # Create ground truth prediction from Category and actual_misconception
-                    # Convert category string to proper case format (e.g., TRUE_MISCONCEPTION -> True_Misconception)
-                    category_str = row["Category"]
-                    if "_" in category_str:
-                        parts = category_str.split("_")
-                        category_str = f"{parts[0].capitalize()}_{parts[1].capitalize()}"
-                    category = Category(category_str)
+                    category = Category.from_csv_string(row["Category"])
                     misconception = row["actual_misconception"] if pd.notna(row["actual_misconception"]) else "NA"
                     ground_truth = Prediction(category=category, misconception=misconception)
 
