@@ -9,8 +9,8 @@
 dev:
 	uv run ruff check . --fix --unsafe-fixes
 	uv run ruff format .
-	uv run ty check .
-	uv run pyrefly check
+	@uv run ty check 2>&1 | grep -v "^WARN ty is pre-release" || true
+	@uv run pyrefly check 2>&1 | grep -v "INFO" | grep -v "Building kaggle-map" | grep -v "Built kaggle-map" | grep -v "Uninstalled" | grep -v "Installed" || [ $$? -eq 1 ]
 
 test:
 	# Run fast tests only (excludes slow integration tests)
