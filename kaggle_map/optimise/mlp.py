@@ -11,7 +11,6 @@ from kaggle_map.mlp.mlp import MLPStrategy
 
 from .utils import (
     STORAGE_URL,
-    build_wandb_run_name,
     cleanup_after_trial,
     clear_gpu_memory,
     create_study,
@@ -33,12 +32,7 @@ def objective_function(
     if train_data_path:
         hyperparams["train_csv_path"] = Path(train_data_path)
 
-    # Build wandb run name and metadata
-    wandb_run_name = build_wandb_run_name(trial, hyperparams)
-    hyperparams["wandb_run_name"] = wandb_run_name
-
-    # Add metadata for wandb tracking
-    hyperparams["wandb_tags"] = [f"study_{trial.study.study_name}", f"trial_{trial.number}", "hypersearch"]
+    # Add metadata for tracking
     hyperparams["study_id"] = trial.study.study_name
     hyperparams["trial_number"] = trial.number
 

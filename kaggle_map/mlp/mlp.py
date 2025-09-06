@@ -33,8 +33,7 @@ Training Process:
 1. Load or compute concatenated embeddings using standardized approach
 2. Create question-specific label encoders for full prediction mapping
 3. Train with mini-batches, routing by question ID and correctness to appropriate heads
-4. Track progress with Weights & Biases (wandb) integration
-5. Apply early stopping based on validation loss
+4. Apply early stopping based on validation loss
 6. Save model with pickle and parameters as JSON
 """
 
@@ -50,7 +49,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import numpy as np
 import pandas as pd
 import torch
-import wandb
 from loguru import logger
 from optuna import Trial
 from sklearn.preprocessing import LabelEncoder
@@ -81,7 +79,6 @@ from .utils import (
     extract_question_predictions,
     get_activation,
     get_split_indices,
-    init_wandb,
     load_torch_strategy,
     save_torch_strategy,
     split_training_data,
@@ -546,11 +543,9 @@ class MLPStrategy:
 
         # Use create_config_from_hyperparams if architecture_size or embedding_model is provided (hyperparameter search)
         if "architecture_size" in kwargs or "embedding_model" in kwargs:
-            config = cls.create_config_from_hyperparams(kwargs, wandb_project="kaggle-map-mlp")
+            config = cls.create_config_from_hyperparams(kwargs)
         else:
-            config = TorchConfig(
-                wandb_project="kaggle-map-mlp", **{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)}
-            )
+            config = TorchConfig(**{k: v for k, v in kwargs.items() if hasattr(TorchConfig, k)})
 
         # Using Qwen3-8B embeddings
         embedding_model_name = "Qwen3-8B-Q8_0"
@@ -564,26 +559,12 @@ class MLPStrategy:
         # Get trunk_layers from config if available (from architecture scaling)
         # Default input dimension based on embedding strategy
         default_input_dim = embedding_strategy.dimension + 32  # Add correctness embedding
-        trunk_layers = getattr(config, "trunk_layers", [default_input_dim, 2048, 1024, 512, 256, 192])
-
-        extra_config = {
-            "architecture": "improved_mlp_with_correctness",
-            "trunk_layers": trunk_layers,
-            "correctness_embedding_dim": 32,
-            "include_question": True,
-            "loss_function": "ListMLE",
-            "layer_norm": True,
-            "dropout": config.dropout,
-            "embedding_model": embedding_model_name,
-            "embedding_strategy": embedding_strategy.value,
-        }
-        init_wandb(config, extra_config)
+        getattr(config, "trunk_layers", [default_input_dim, 2048, 1024, 512, 256, 192])
 
         torch.manual_seed(config.random_seed)
 
         # Device was already obtained above for batch size adjustment
         logger.info(f"Using device: {device}")
-        wandb.config.update({"device": str(device)})
 
         training_data = load_training_data(config.train_csv_path)
         pd.read_csv(config.train_csv_path)
@@ -619,26 +600,16 @@ class MLPStrategy:
 
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        wandb.config.update(
-            {
-                "total_parameters": total_params,
-                "trainable_parameters": trainable_params,
-                "num_questions": len(question_predictions),
-                "total_samples": len(embeddings),
-            }
-        )
+        logger.info(f"Model parameters - Total: {total_params:,}, Trainable: {trainable_params:,}")
+        logger.info(f"Data - Questions: {len(question_predictions)}, Total samples: {len(embeddings)}")
 
         n_samples = len(embeddings)
         train_indices, val_indices, test_indices = get_split_indices(
             n_samples, train_ratio=config.train_split, random_seed=config.random_seed
         )
 
-        wandb.config.update(
-            {
-                "train_samples": len(train_indices),
-                "val_samples": len(val_indices),
-                "test_samples": len(test_indices),
-            }
+        logger.info(
+            f"Split - Train: {len(train_indices)}, Val: {len(val_indices)}, Test: {len(test_indices)}"
         )
 
         # Create datasets
@@ -709,9 +680,6 @@ class MLPStrategy:
             test_indices=list(test_indices),
             total_samples=n_samples,
         )
-
-        # Finish wandb run
-        wandb.finish()
 
         # Ensure model is the correct type
         assert isinstance(model, QuestionSpecificMLP), f"Expected QuestionSpecificMLP, got {type(model)}"

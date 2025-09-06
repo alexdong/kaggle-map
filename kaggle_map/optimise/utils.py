@@ -4,7 +4,6 @@ from pathlib import Path
 
 import optuna
 import torch
-import wandb
 from loguru import logger
 
 # Single consolidated database location
@@ -54,31 +53,8 @@ def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
 
 
 def cleanup_after_trial() -> None:
-    # Close wandb if it's running
-    if wandb.run is not None:
-        wandb.finish()
-
     # Clear GPU memory
     clear_gpu_memory()
-
-
-def _extract_key_params(hyperparams: dict) -> list[str]:
-    """Extract key parameters for wandb run name."""
-    param_mappings = [
-        ("embedding_model", lambda v: f"emb_{v}"),
-        ("learning_rate", lambda v: f"lr_{v:.1e}"),
-        ("batch_size", lambda v: f"bs_{v}"),
-        ("dropout", lambda v: f"do_{v:.2f}"),
-        ("architecture_size", lambda v: f"arch_{v}"),
-        ("num_layers", lambda v: f"layers_{v}"),
-    ]
-    return [formatter(hyperparams[param]) for param, formatter in param_mappings if param in hyperparams]
-
-
-def build_wandb_run_name(trial: optuna.Trial, hyperparams: dict) -> str:
-    trial_info = f"trial_{trial.number}"
-    key_params = _extract_key_params(hyperparams)
-    return f"hypersearch_{trial_info}_{'_'.join(key_params)}"
 
 
 def save_best_config(study: optuna.Study, strategy_name: str) -> Path:

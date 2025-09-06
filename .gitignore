@@ -5,7 +5,6 @@ models/gguf/
 .sesskey
 checkpoints/
 logs/
-wandb/
 
 # Model outputs and submissions
 submission.csv

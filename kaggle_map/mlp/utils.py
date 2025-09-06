@@ -11,7 +11,6 @@ from typing import Any, Protocol
 
 import numpy as np
 import torch
-import wandb
 from loguru import logger
 from pydantic import BaseModel
 from torch import nn
@@ -162,9 +161,6 @@ class TorchConfig:
     device: str = "auto"  # auto, cpu, cuda, mps
     checkpoint_dir: Path = field(default_factory=lambda: Path("checkpoints"))
 
-    # Wandb configuration
-    wandb_project: str = "kaggle-map"
-    wandb_run_name: str | None = None
 
 
 class TrainingCallback(Protocol):
@@ -188,29 +184,6 @@ class TorchStrategy(Protocol):
     def load(cls, filepath: Path) -> Any:
         """Load the strategy."""
         ...
-
-
-class WandbCallback:
-    """Wandb logging callback for training."""
-
-    def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize wandb run."""
-        self.run = wandb.init(
-            project=config.get("wandb_project", "kaggle-map"),
-            name=config.get("wandb_run_name"),
-            config=config,
-        )
-
-    def on_epoch_start(self, epoch: int) -> None:
-        """Log epoch start."""
-
-    def on_epoch_end(self, epoch: int, metrics: dict[str, float]) -> None:
-        """Log epoch metrics to wandb."""
-        wandb.log({"epoch": epoch, **metrics})
-
-    def on_training_end(self) -> None:
-        """Finish wandb run."""
-        wandb.finish()
 
 
 class CheckpointManager:
@@ -527,57 +500,6 @@ def log_model_info(model: nn.Module) -> dict[str, int]:
     }
 
 
-def init_wandb(config: TorchConfig, extra_config: dict[str, Any] | None = None) -> None:
-    """Initialize wandb with configuration.
-
-    Args:
-        config: Training configuration
-        extra_config: Additional configuration to log
-    """
-    # Generate run name if not provided
-    if not config.wandb_run_name:
-        config.wandb_run_name = (
-            f"{config.wandb_project.split('-')[-1]}-e{config.epochs}-"
-            f"bs{config.batch_size}-lr{config.learning_rate:.0e}-"
-            f"split{int(config.train_split * 100)}-seed{config.random_seed}"
-        )
-
-    # Build wandb config
-    wandb_config = {
-        "train_split": config.train_split,
-        "random_seed": config.random_seed,
-        "epochs": config.epochs,
-        "batch_size": config.batch_size,
-        "learning_rate": config.learning_rate,
-        "early_stopping_patience": config.early_stopping_patience,
-        "optimizer": config.optimizer,
-        "scheduler": config.scheduler,
-        "weight_decay": config.weight_decay,
-        "dropout": config.dropout,
-    }
-
-    # Add extra config if provided
-    if extra_config:
-        wandb_config.update(extra_config)
-
-    # Add metadata attributes if they exist
-    for attr in ["study_id", "stage", "trial_number"]:
-        if hasattr(config, attr):
-            wandb_config[attr] = getattr(config, attr)
-
-    # Finish any previous run and start new one
-    if wandb.run is not None:
-        wandb.finish()
-
-    wandb.init(
-        project=config.wandb_project,
-        name=config.wandb_run_name,
-        config=wandb_config,
-        tags=getattr(config, "wandb_tags", []),
-        resume="allow",
-    )
-
-
 def extract_question_predictions(training_data: list) -> dict[int, list[str]]:
     """Extract unique prediction strings per question.
 
@@ -674,20 +596,9 @@ def _log_epoch_metrics(
     config: TorchConfig,
     avg_train_loss: float,
     avg_val_loss: float,
-    optimizer: torch.optim.Optimizer,
 ) -> None:
     """Log metrics for the epoch."""
     logger.info(f"Epoch {epoch}/{config.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
-
-    if wandb.run is not None:
-        wandb.log(
-            {
-                "epoch": epoch,
-                "train_loss": avg_train_loss,
-                "val_loss": avg_val_loss,
-                "learning_rate": optimizer.param_groups[0]["lr"],
-            }
-        )
 
 
 def train_torch_model(
@@ -720,7 +631,7 @@ def train_torch_model(
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config, steps_per_epoch=len(train_loader))
 
-    checkpoint_manager = CheckpointManager(config.checkpoint_dir, config.wandb_run_name or "model")
+    checkpoint_manager = CheckpointManager(config.checkpoint_dir, "model")
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
 
     history: dict[str, Any] = {"train_loss": [], "val_loss": [], "epochs": []}
@@ -733,7 +644,7 @@ def train_torch_model(
             )
 
             # Log metrics
-            _log_epoch_metrics(epoch, config, avg_train_loss, avg_val_loss, optimizer)
+            _log_epoch_metrics(epoch, config, avg_train_loss, avg_val_loss)
 
             # Update history
             history["train_loss"].append(avg_train_loss)
@@ -746,17 +657,11 @@ def train_torch_model(
 
             # Save best model
             metrics = {"train_loss": avg_train_loss, "val_loss": avg_val_loss}
-            if (
-                checkpoint_manager.save_best_model(model, optimizer, epoch, avg_val_loss, metrics, config=config)
-                and wandb.run
-            ):
-                wandb.log({"best_val_loss": avg_val_loss})
+            checkpoint_manager.save_best_model(model, optimizer, epoch, avg_val_loss, metrics, config=config)
 
             # Check early stopping
             if early_stopping(avg_val_loss):
                 logger.info(f"Early stopping triggered at epoch {epoch}")
-                if wandb.run:
-                    wandb.log({"early_stopped_epoch": epoch})
                 history["early_stopped"] = epoch
                 break
 
@@ -767,8 +672,6 @@ def train_torch_model(
 
     except KeyboardInterrupt:
         logger.warning("Training interrupted by user!")
-        if wandb.run:
-            wandb.log({"interrupted": True})
         history["interrupted"] = True
 
     # Load best checkpoint

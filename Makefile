@@ -89,7 +89,6 @@ search:
 	@echo "- Max trials: 500 (or 4 hours)"
 	@echo "- Parallel jobs: 1"
 	@echo ""
-	@echo "Monitor at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
 	@echo ""
 	uv run -m kaggle_map.optimise mlp search \
 		--trials 500 \
@@ -109,7 +108,6 @@ search-balanced:
 	@echo "- Max trials: 500 (or 4 hours)"
 	@echo "- Parallel jobs: 1"
 	@echo ""
-	@echo "Monitor at: https://wandb.ai/alex-xun-dong/kaggle-map-mlp"
 	@echo ""
 	uv run -m kaggle_map.optimise mlp search \
 		--trials 500 \
