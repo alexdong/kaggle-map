@@ -25,7 +25,7 @@ uv run -m kaggle_map.cli list-strategies
 ### Model Training
 
 ```bash
-# Train a strategy with default settings (80% training split, seed 42)
+# Train a strategy with default settings (70% training split, seed 42)
 uv run -m kaggle_map.cli run <strategy> fit
 
 # Train with custom parameters
@@ -49,16 +49,6 @@ uv run -m kaggle_map.cli run <strategy> eval --model-path my_model.pkl
 
 # Evaluate with specific train/test split
 uv run -m kaggle_map.cli run <strategy> eval --train-split 0.7
-```
-
-### Prediction Generation
-
-```bash
-# Generate predictions (not yet implemented)
-uv run -m kaggle_map.cli run <strategy> predict
-
-# Generate predictions with custom model and output paths
-uv run -m kaggle_map.cli run <strategy> predict --model-path my_model.pkl --output-path predictions.csv
 ```
 
 ### Additional Options
