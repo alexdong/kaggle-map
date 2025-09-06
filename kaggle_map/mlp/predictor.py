@@ -128,11 +128,9 @@ class Predictor:
         question_predictions = _extract_question_predictions(training_data)
 
         logger.info("Computing embeddings...")
-        embeddings_list: list[np.ndarray] = []
-        question_ids_list: list[int] = []
-        predictions_list: list[str] = []
-        mc_answers_list: list[str] = []
 
+        # Process all rows to extract embeddings and metadata
+        processed_rows = []
         for row in training_data:
             eval_row = EvaluationRow(
                 row_id=row.row_id,
@@ -143,11 +141,12 @@ class Predictor:
                 correct_answer=correct_answers.get(row.question_id, ""),
             )
             embedding = strategy.fn(eval_row)
-            embeddings_list.append(embedding)
-            question_ids_list.append(row.question_id)
-            predictions_list.append(str(row.prediction))
-            mc_answers_list.append(row.mc_answer)
+            processed_rows.append((embedding, row.question_id, str(row.prediction), row.mc_answer))
 
+        # Unpack into arrays using zip
+        embeddings_list, question_ids_list, predictions_list, mc_answers_list = map(
+            list, zip(*processed_rows, strict=False)
+        )
         embeddings = np.array(embeddings_list)
         question_ids = np.array(question_ids_list)
         predictions = np.array(predictions_list)

@@ -27,9 +27,7 @@ def load_training_data(csv_path: Path) -> list[TrainingRow]:
     logger.debug(f"Loaded CSV with columns: {list(training_df.columns)}")
     assert not training_df.empty, "Training CSV cannot be empty"
 
-    training_rows = []
-    for _, row in training_df.iterrows():
-        training_rows.append(TrainingRow.from_dataframe_row(row))
+    training_rows = [TrainingRow.from_dataframe_row(row) for _, row in training_df.iterrows()]
 
     logger.debug(f"Parsed {len(training_rows)} training rows")
     assert training_rows, "Must parse at least one training row"
@@ -40,11 +38,11 @@ def extract_correct_answers(
     training_data: list[TrainingRow],
 ) -> dict[QuestionId, Answer]:
     assert training_data, "Training data cannot be empty"
-    correct_answers: dict[QuestionId, Answer] = {}
-
+    # Build correct answers dict using first-wins strategy
+    correct_answers = {}
     for row in training_data:
-        if row.category == Category.TRUE_CORRECT and row.question_id not in correct_answers:
-            correct_answers[row.question_id] = row.mc_answer
+        if row.category == Category.TRUE_CORRECT:
+            correct_answers.setdefault(row.question_id, row.mc_answer)
 
     logger.debug(f"Extracted correct answers for {len(correct_answers)} questions")
     assert correct_answers, "Must find at least one correct answer"
