@@ -88,7 +88,7 @@ class Prediction(BaseModel):
     @classmethod
     def from_ground_truth_row(cls, row: pd.Series) -> "Prediction":
         """Create a Prediction from a ground truth CSV row."""
-        category = Category.from_csv_string(row["Category"])
+        category = Category.from_csv_string(str(row["Category"]))
         # Handle NaN misconceptions (pandas converts "NA" to NaN)
         misconception = row["Misconception"] if pd.notna(row["Misconception"]) else "NA"
         return cls(category=category, misconception=misconception)

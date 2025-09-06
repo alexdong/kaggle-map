@@ -161,7 +161,7 @@ if __name__ == "__main__":
                     ]
 
                     # Create ground truth prediction from Category and actual_misconception
-                    category = Category.from_csv_string(row["Category"])
+                    category = Category.from_csv_string(str(row["Category"]))
                     misconception = row["actual_misconception"] if pd.notna(row["actual_misconception"]) else "NA"
                     ground_truth = Prediction(category=category, misconception=misconception)
 

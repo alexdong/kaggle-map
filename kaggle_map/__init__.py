@@ -9,7 +9,7 @@ from .core.models import (
     TrainingRow,
 )
 
-better_exceptions.MAX_LENGTH = None
+better_exceptions.MAX_LENGTH = None  # type: ignore[assignment]
 
 __all__ = [
     "Category",
