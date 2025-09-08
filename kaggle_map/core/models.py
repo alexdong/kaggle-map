@@ -228,6 +228,11 @@ class SubmissionRow(NamedTuple):
 # ============================================================================
 
 
+class EmbeddingModel(Enum):
+    QWEN = "qwen"
+    GEMMA = "gemma"
+
+
 class EmbeddingStrategy(Enum):
     """Strategies for computing embeddings from evaluation rows."""
 
@@ -245,13 +250,6 @@ class EmbeddingStrategy(Enum):
         if value is None:
             return cls.DOUBLE_BLIND
         return cls(value)
-
-    @property
-    def fn(self) -> Callable[[EvaluationRow], np.ndarray]:
-        """Return the embedding function for this strategy."""
-        if self == EmbeddingStrategy.DOUBLE_BLIND:
-            return compute_double_blind_strategy_embeddings
-        return compute_semantic_strategy_embedding
 
 
 # ============================================================================
