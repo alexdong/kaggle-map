@@ -264,7 +264,7 @@ LLMResponse = str
 ModelName = Literal["Qwen3-14B", "gemma-3-12b-it", "gpt-oss-20b"]
 # NOTE: Q4_K_XL and Q5_K_XL have sequential loading conflicts in llama-cpp-python
 # Use only one quantization per benchmark session to avoid GPU context corruption
-QuantizationLevel = Literal["Q5_K_XL", "Q4_K_XL", "Q6_K_XL"]
+QuantizationLevel = Literal["Q2_K_XL", "Q3_K_XL", "Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
 
 # Available options derived from type definitions
 MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))

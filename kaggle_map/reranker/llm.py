@@ -213,7 +213,7 @@ def benchmark_single_model(
 @click.option("--model", type=click.Choice(MODEL_OPTIONS), default="gemma-3-12b-it", help="Model to benchmark")
 @click.option(
     "--quantization",
-    type=click.Choice(["Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]),
+    type=click.Choice(["Q2_K_XL", "Q3_K_XL", "Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]),
     default="Q4_K_XL",
     help="Quantization level to use",
 )
