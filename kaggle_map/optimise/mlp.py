@@ -10,7 +10,13 @@ from loguru import logger
 from optuna import Trial
 
 from kaggle_map.core.dataset import load_training_data
-from kaggle_map.core.models import TrainingConfig
+from kaggle_map.core.models import (
+    ActivationType,
+    ArchitectureSize,
+    OptimizerType,
+    SchedulerType,
+    TrainingConfig,
+)
 from kaggle_map.mlp import Predictor
 from kaggle_map.mlp.predictor import _get_split_indices
 
@@ -47,14 +53,33 @@ def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
         # xlarge (85%): Best performance but higher compute cost
         # large (10%): Good balance of performance and speed
         # medium (5%): Faster training for quick iterations
-        "architecture_size": trial.suggest_categorical(
-            "architecture_size", ["xlarge"] * 17 + ["large"] * 2 + ["medium"]
+        "architecture_size": ArchitectureSize(
+            trial.suggest_categorical(
+                "architecture_size",
+                (
+                    [ArchitectureSize.XLARGE.value] * 17
+                    + [ArchitectureSize.LARGE.value] * 2
+                    + [ArchitectureSize.MEDIUM.value]
+                ),
+            )
         ),
-        "optimizer": trial.suggest_categorical("optimizer", ["adamw", "adam"]),
+        "optimizer": OptimizerType(
+            trial.suggest_categorical("optimizer", [OptimizerType.ADAMW.value, OptimizerType.ADAM.value])
+        ),
         "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-        "activation": trial.suggest_categorical("activation", ["gelu", "silu", "relu", "leaky_relu"]),
+        "activation": ActivationType(trial.suggest_categorical("activation", [a.value for a in ActivationType])),
         # Weighted scheduler sampling: cosine appears twice due to superior convergence in preliminary tests
-        "scheduler": trial.suggest_categorical("scheduler", ["cosine", "cosine", "onecycle", "none"]),
+        "scheduler": SchedulerType(
+            trial.suggest_categorical(
+                "scheduler",
+                [
+                    SchedulerType.COSINE.value,
+                    SchedulerType.COSINE.value,
+                    SchedulerType.ONECYCLE.value,
+                    SchedulerType.NONE.value,
+                ],
+            )
+        ),
         "early_stopping_patience": trial.suggest_int("early_stopping_patience", 10, 22),
         "epochs": trial.suggest_int("epochs", 28, 180),
         "embedding_strategy": trial.suggest_categorical("embedding_strategy", ["double_blind", "semantic"]),

@@ -257,28 +257,67 @@ class EmbeddingStrategy(Enum):
 # ============================================================================
 
 
-@dataclass
-class TrainingConfig:
+class ArchitectureSize(Enum):
+    """MLP architecture size options."""
+
+    MEDIUM = "medium"
+    LARGE = "large"
+    XLARGE = "xlarge"
+
+
+class ActivationType(Enum):
+    """Neural network activation function types."""
+
+    RELU = "relu"
+    GELU = "gelu"
+    LEAKY_RELU = "leaky_relu"
+    SILU = "silu"
+
+
+class OptimizerType(Enum):
+    """Optimizer types for training."""
+
+    ADAM = "adam"
+    ADAMW = "adamw"
+    SGD = "sgd"
+
+
+class SchedulerType(Enum):
+    """Learning rate scheduler types."""
+
+    NONE = "none"
+    COSINE = "cosine"
+    ONECYCLE = "onecycle"
+
+
+class TrainingConfig(BaseModel):
     """Configuration for MLP training."""
 
+    # Training parameters
     epochs: int = 50
     batch_size: int = 256
     learning_rate: float = 1e-4
     weight_decay: float = 0.01
 
-    optimizer: str = "adamw"
-    scheduler: str = "cosine"
+    # Optimizer and scheduler
+    optimizer: OptimizerType = OptimizerType.ADAMW
+    scheduler: SchedulerType = SchedulerType.COSINE
     early_stopping_patience: int = 15
 
+    # Data split and reproducibility
     train_split: float = 0.7
     random_seed: int = 42
 
+    # File paths
     train_csv_path: Path = Path("datasets/train.csv")
     checkpoint_dir: Path = Path("checkpoints")
 
-    architecture_size: Literal["medium", "large", "xlarge"] = "xlarge"
+    # Architecture configuration
+    architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
     dropout: float = 0.3
-    activation: Literal["relu", "gelu", "leaky_relu", "silu"] = "gelu"
+    activation: ActivationType = ActivationType.GELU
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 # ============================================================================

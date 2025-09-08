@@ -1,17 +1,13 @@
 """Neural network model for misconception prediction."""
 
 from dataclasses import dataclass
-from typing import Literal
 
 import torch
 from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 
-from kaggle_map.core.models import QuestionId
-
-ArchitectureSize = Literal["medium", "large", "xlarge"]
-ActivationType = Literal["relu", "gelu", "leaky_relu", "silu"]
+from kaggle_map.core.models import ActivationType, ArchitectureSize, QuestionId
 
 
 @dataclass(frozen=True)
@@ -35,19 +31,19 @@ class Architecture:
     size: ArchitectureSize
     layers: list[int]  # Layer dimensions including input
     dropout: float = 0.3
-    activation: ActivationType = "gelu"
+    activation: ActivationType = ActivationType.GELU
 
 
 # Simplified architectures for 4096+ dim embeddings only
 ARCHITECTURES = {
     # For 4096-dim embeddings (semantic strategy)
-    "medium_4096": Architecture("medium", [4128, 2048, 1024]),
-    "large_4096": Architecture("large", [4128, 2048, 1024, 512]),
-    "xlarge_4096": Architecture("xlarge", [4128, 2048, 1024, 512, 256]),
+    "medium_4096": Architecture(ArchitectureSize.MEDIUM, [4128, 2048, 1024]),
+    "large_4096": Architecture(ArchitectureSize.LARGE, [4128, 2048, 1024, 512]),
+    "xlarge_4096": Architecture(ArchitectureSize.XLARGE, [4128, 2048, 1024, 512, 256]),
     # For 8192-dim embeddings (double-blind strategy)
-    "medium_8192": Architecture("medium", [8224, 4096, 2048]),
-    "large_8192": Architecture("large", [8224, 4096, 2048, 1024]),
-    "xlarge_8192": Architecture("xlarge", [8224, 4096, 2048, 1024, 512]),
+    "medium_8192": Architecture(ArchitectureSize.MEDIUM, [8224, 4096, 2048]),
+    "large_8192": Architecture(ArchitectureSize.LARGE, [8224, 4096, 2048, 1024]),
+    "xlarge_8192": Architecture(ArchitectureSize.XLARGE, [8224, 4096, 2048, 1024, 512]),
 }
 
 
@@ -62,20 +58,20 @@ def get_architecture(size: ArchitectureSize, embedding_dim: int) -> Architecture
     """Get architecture config for given size and embedding dimension."""
     dim_key = "4096" if embedding_dim <= EMBEDDING_DIM_THRESHOLD else "8192"
 
-    key = f"{size}_{dim_key}"
+    key = f"{size.value}_{dim_key}"
     assert key in ARCHITECTURES, f"Architecture {key} not found"
     return ARCHITECTURES[key]
 
 
-def get_activation(name: ActivationType) -> nn.Module:
-    """Get activation function by name."""
+def get_activation(activation_type: ActivationType) -> nn.Module:
+    """Get activation function by type."""
     activations = {
-        "relu": nn.ReLU(),
-        "gelu": nn.GELU(),
-        "leaky_relu": nn.LeakyReLU(0.2),
-        "silu": nn.SiLU(),
+        ActivationType.RELU: nn.ReLU(),
+        ActivationType.GELU: nn.GELU(),
+        ActivationType.LEAKY_RELU: nn.LeakyReLU(0.2),
+        ActivationType.SILU: nn.SiLU(),
     }
-    return activations.get(name, nn.GELU())
+    return activations.get(activation_type, nn.GELU())
 
 
 class QuestionSpecificMLP(nn.Module):
@@ -85,9 +81,9 @@ class QuestionSpecificMLP(nn.Module):
         self,
         question_predictions: dict[QuestionId, list[str]],
         embedding_dim: int,
-        architecture_size: ArchitectureSize = "xlarge",
+        architecture_size: ArchitectureSize = ArchitectureSize.XLARGE,
         dropout: float = 0.3,
-        activation: ActivationType = "gelu",
+        activation: ActivationType = ActivationType.GELU,
     ) -> None:
         super().__init__()
 

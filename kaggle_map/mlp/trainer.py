@@ -8,7 +8,7 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 
-from kaggle_map.core.models import TrainingConfig
+from kaggle_map.core.models import OptimizerType, SchedulerType, TrainingConfig
 from kaggle_map.mlp.dataset import TrainingSample
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 
@@ -124,15 +124,15 @@ def process_batch(  # noqa: C901
 
 def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
     """Create optimizer based on configuration."""
-    if config.optimizer == "adam":
+    if config.optimizer == OptimizerType.ADAM:
         return torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
-    if config.optimizer == "adamw":
+    if config.optimizer == OptimizerType.ADAMW:
         return torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
-    if config.optimizer == "sgd":
+    if config.optimizer == OptimizerType.SGD:
         return torch.optim.SGD(
             model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay, momentum=0.9
         )
-    msg = f"Unknown optimizer '{config.optimizer}'. Supported optimizers: adam, adamw, sgd"
+    msg = f"Unknown optimizer '{config.optimizer}'. Supported optimizers: {[o.value for o in OptimizerType]}"
     raise AssertionError(msg)
 
 
@@ -140,15 +140,15 @@ def create_scheduler(
     optimizer: torch.optim.Optimizer, config: TrainingConfig, steps_per_epoch: int
 ) -> torch.optim.lr_scheduler.LRScheduler | None:
     """Create learning rate scheduler based on configuration."""
-    if config.scheduler == "none":
+    if config.scheduler == SchedulerType.NONE:
         return None
-    if config.scheduler == "cosine":
+    if config.scheduler == SchedulerType.COSINE:
         return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.epochs)
-    if config.scheduler == "onecycle":
+    if config.scheduler == SchedulerType.ONECYCLE:
         return torch.optim.lr_scheduler.OneCycleLR(
             optimizer, max_lr=config.learning_rate * 10, epochs=config.epochs, steps_per_epoch=steps_per_epoch
         )
-    msg = f"Unknown scheduler '{config.scheduler}'. Supported schedulers: none, cosine, onecycle"
+    msg = f"Unknown scheduler '{config.scheduler}'. Supported schedulers: {[s.value for s in SchedulerType]}"
     raise AssertionError(msg)
 
 
