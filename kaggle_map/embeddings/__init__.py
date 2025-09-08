@@ -17,22 +17,24 @@ with Q8_0 quantization for efficient processing.
   - Returns 4096-dimensional torch.Tensor
 """
 
-from typing import TYPE_CHECKING
-
 import torch
 
-from kaggle_map..core.models import EmbeddingModel, EmbeddingStrategy, EvaluationRow
-from kaggle_map.embeddings.qwen import QwenEmbeddingModel, GemmaEmbeddingModel
+from kaggle_map.core.models import EmbeddingModel, EmbeddingStrategy, EvaluationRow
+from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
+from kaggle_map.embeddings.qwen import QwenEmbeddingModel
+
 
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
     base_dimension = 8192 if model == EmbeddingModel.QWEN else 768
     return base_dimension * 2 if strategy == EmbeddingStrategy.DOUBLE_BLIND else base_dimension
+
 
 def get_model(model: EmbeddingModel) -> "QwenEmbeddingModel | GemmaEmbeddingModel":
     if model == EmbeddingModel.QWEN:
         return QwenEmbeddingModel.get_instance()
     else:
         return GemmaEmbeddingModel.get_instance()
+
 
 def encode(row: EvaluationRow, strategy: EmbeddingStrategy, model: EmbeddingModel) -> torch.Tensor:
     assert strategy in EmbeddingStrategy, f"Invalid embedding strategy: {strategy}"
@@ -47,7 +49,7 @@ def encode(row: EvaluationRow, strategy: EmbeddingStrategy, model: EmbeddingMode
             f"Student Explanation: {row.student_explanation}"
         )
         return torch.Tensor(get_model(model).encode(unified_text))
-    else: # DOUBLE_BLIND
+    else:  # DOUBLE_BLIND
         question_correct_text = f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}"
         answer_explanation_text = f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}"
         question_correct_embedding = torch.Tensor(get_model(model).encode(question_correct_text))
