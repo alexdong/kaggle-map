@@ -8,9 +8,9 @@ from loguru import logger
 
 from kaggle_map.core.models import (
     GGUF_MODELS,
-    LLMModelLoadConfig,
     ModelName,
     QuantizationLevel,
+    RerankerLLMLoadConfig,
 )
 
 
@@ -135,7 +135,7 @@ def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Pa
     return model_path
 
 
-def load_llm_model(config: LLMModelLoadConfig) -> Llama:
+def load_llm_model(config: RerankerLLMLoadConfig) -> Llama:
     """Load a GGUF model with automatic cleanup via context manager."""
     model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")

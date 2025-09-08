@@ -32,8 +32,7 @@ def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: Embedding
 def get_model(model: EmbeddingModel) -> "QwenEmbeddingModel | GemmaEmbeddingModel":
     if model == EmbeddingModel.QWEN:
         return QwenEmbeddingModel.get_instance()
-    else:
-        return GemmaEmbeddingModel.get_instance()
+    return GemmaEmbeddingModel.get_instance()
 
 
 def encode(row: EvaluationRow, strategy: EmbeddingStrategy, model: EmbeddingModel) -> torch.Tensor:
@@ -49,9 +48,9 @@ def encode(row: EvaluationRow, strategy: EmbeddingStrategy, model: EmbeddingMode
             f"Student Explanation: {row.student_explanation}"
         )
         return torch.Tensor(get_model(model).encode(unified_text))
-    else:  # DOUBLE_BLIND
-        question_correct_text = f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}"
-        answer_explanation_text = f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}"
-        question_correct_embedding = torch.Tensor(get_model(model).encode(question_correct_text))
-        answer_explanation_embedding = torch.Tensor(get_model(model).encode(answer_explanation_text))
-        return torch.cat([question_correct_embedding, answer_explanation_embedding])
+    # DOUBLE_BLIND
+    question_correct_text = f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}"
+    answer_explanation_text = f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}"
+    question_correct_embedding = torch.Tensor(get_model(model).encode(question_correct_text))
+    answer_explanation_embedding = torch.Tensor(get_model(model).encode(answer_explanation_text))
+    return torch.cat([question_correct_embedding, answer_explanation_embedding])

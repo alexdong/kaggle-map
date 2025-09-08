@@ -21,12 +21,12 @@ from kaggle_map.core.models import (
     MODEL_OPTIONS,
     Category,
     EvaluationRow,
-    LLMModelLoadConfig,
     LLMResponse,
     ModelName,
     Prediction,
     PromptTemplate,
     QuantizationLevel,
+    RerankerLLMLoadConfig,
 )
 from kaggle_map.reranker.utils import format_chat_prompt, load_llm_model
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -121,7 +121,7 @@ def benchmark_single_model(
     console = Console()
     console.print(f"\nBenchmarking {model_name} with {quantization} quantization...", style="yellow")
 
-    load_config = LLMModelLoadConfig(
+    load_config = RerankerLLMLoadConfig(
         model_name=model_name,
         quantization=quantization,
     )

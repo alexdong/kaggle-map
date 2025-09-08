@@ -131,7 +131,7 @@ class QuestionSpecificMLP(nn.Module):
         logger.info(f"Created model with {len(self.true_heads)} true heads and {len(self.false_heads)} false heads")
 
     def forward(
-        self, x: torch.Tensor, question_ids: torch.Tensor, is_correct: torch.Tensor
+        self, input_embeddings: torch.Tensor, question_ids: torch.Tensor, mc_answer_correctnesses: torch.Tensor
     ) -> dict[EvaluationResult, torch.Tensor]:
         """Forward pass returning logits per question, split by correctness.
 
@@ -143,9 +143,9 @@ class QuestionSpecificMLP(nn.Module):
         Returns:
             Dictionary mapping EvaluationResult to logits tensor
         """
-        correct_emb = self.correctness_embedding(is_correct.long())
+        correct_emb = self.correctness_embedding(mc_answer_correctnesses.long())
 
-        combined = torch.cat([x, correct_emb], dim=-1)
+        combined = torch.cat([input_embeddings, correct_emb], dim=-1)
 
         shared_features = self.trunk(combined)
 
@@ -160,7 +160,7 @@ class QuestionSpecificMLP(nn.Module):
                 continue
 
             question_features = shared_features[mask]
-            question_correctness = is_correct[mask]
+            question_correctness = mc_answer_correctnesses[mask]
 
             correct_mask = question_correctness > 0
             if correct_mask.any() and str(qid_int) in self.true_heads:

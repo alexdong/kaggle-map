@@ -10,9 +10,9 @@ from loguru import logger
 from optuna import Trial
 
 from kaggle_map.core.dataset import load_training_data
+from kaggle_map.core.models import TrainingConfig
 from kaggle_map.mlp import Predictor
 from kaggle_map.mlp.predictor import _get_split_indices
-from kaggle_map.mlp.trainer import TrainingConfig
 
 from .utils import (
     STORAGE_URL,

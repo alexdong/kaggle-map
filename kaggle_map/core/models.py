@@ -1,16 +1,16 @@
 """Core data structures for the Kaggle student misconception prediction competition."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Literal, NamedTuple, get_args
 
 import numpy as np
 import pandas as pd
+import pydash
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
-from kaggle_map.embeddings import compute_double_blind_strategy_embeddings, compute_semantic_strategy_embedding
 
 # ============================================================================
 # Type Aliases
@@ -253,7 +253,36 @@ class EmbeddingStrategy(Enum):
 
 
 # ============================================================================
-# Configuration Classes
+# Training Details
+# ============================================================================
+
+
+@dataclass
+class TrainingConfig:
+    """Configuration for MLP training."""
+
+    epochs: int = 50
+    batch_size: int = 256
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+
+    optimizer: str = "adamw"
+    scheduler: str = "cosine"
+    early_stopping_patience: int = 15
+
+    train_split: float = 0.7
+    random_seed: int = 42
+
+    train_csv_path: Path = Path("datasets/train.csv")
+    checkpoint_dir: Path = Path("checkpoints")
+
+    architecture_size: Literal["medium", "large", "xlarge"] = "xlarge"
+    dropout: float = 0.3
+    activation: Literal["relu", "gelu", "leaky_relu", "silu"] = "gelu"
+
+
+# ============================================================================
+# Reranker Classes
 # ============================================================================
 
 # LLM operation type aliases
@@ -282,14 +311,12 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
     "gpt-oss-20b": GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
         filename_pattern="gpt-oss-20b-{quant}.gguf",
-        # Q5_K_XL not available for this model
-        available_quantizations=["Q5_K_XL"],
+        available_quantizations=pydash.without(QUANTIZATION_OPTIONS, "Q5_K_XL"),
     ),
     "Qwen3-14B": GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
         filename_pattern="Qwen3-14B-{quant}.gguf",
         # Temporarily test only Q5_K_XL due to sequential loading conflicts
-        available_quantizations=["Q5_K_XL"],
     ),
     "gemma-3-12b-it": GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",
@@ -299,7 +326,7 @@ GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
 
 
 @dataclass
-class LLMModelLoadConfig:
+class RerankerLLMLoadConfig:
     """Configuration for loading GGUF models into memory.
 
     gpt-oss-20b: doesn't follow instruction tuning well.
@@ -323,15 +350,3 @@ class LLMModelLoadConfig:
     def model_filename(self) -> str:
         """Get the GGUF filename for this configuration."""
         return f"{self.model_name}-{self.quantization}.gguf"
-
-
-@dataclass
-class InferenceConfig:
-    """Configuration for text generation/inference."""
-
-    max_tokens: int = 100  # Maximum tokens to generate
-    temperature: float = 0.1  # Sampling temperature (0.0 = greedy)
-    stop: list[str] | None = None  # Stop sequences
-    echo: bool = False  # Include prompt in response
-    top_p: float = 0.95  # Nucleus sampling threshold
-    top_k: int = 40  # Top-k sampling

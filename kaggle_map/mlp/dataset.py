@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
-from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset
 
 from kaggle_map.core.models import Answer, QuestionId
+from kaggle_map.mlp.label_encoder import LabelEncoders
 
 __all__ = ["DatasetArrays", "MLPDataset", "TrainingSample"]
 
@@ -19,7 +19,7 @@ class TrainingSample:
     embedding: torch.Tensor
     question_id: torch.Tensor
     label: torch.Tensor
-    is_correct_idx: torch.Tensor
+    is_correct: torch.Tensor
 
 
 @dataclass
@@ -32,59 +32,50 @@ class DatasetArrays:
     mc_answers: np.ndarray
 
 
-@dataclass
-class DatasetEncoders:
-    """Encoders and reference data for the dataset."""
-
-    correct_answers: dict[QuestionId, Answer]
-    true_label_encoders: dict[QuestionId, LabelEncoder]
-    false_label_encoders: dict[QuestionId, LabelEncoder]
-
-
 class MLPDataset(Dataset):
     """PyTorch dataset for MLP training."""
 
-    def __init__(self, arrays: DatasetArrays, encoders: DatasetEncoders) -> None:
+    def __init__(
+        self,
+        arrays: DatasetArrays,
+        correct_answers: dict[QuestionId, Answer],
+        label_encoders: LabelEncoders,
+    ) -> None:
         """Initialize dataset with arrays and encoders.
 
         Args:
             arrays: Data arrays (embeddings, question_ids, predictions, mc_answers)
-            encoders: Label encoders and reference data
+            correct_answers: Mapping of question_id to correct answer
+            label_encoders: Encoder for converting predictions to labels
         """
+        assert len(arrays.embeddings) == len(arrays.question_ids) == len(arrays.predictions) == len(arrays.mc_answers)
+
+        # Convert to tensors
         self.embeddings = torch.FloatTensor(arrays.embeddings)
         self.question_ids = torch.LongTensor(arrays.question_ids)
-        self.predictions = arrays.predictions
-        self.correct_answers = encoders.correct_answers
-        self.mc_answers = arrays.mc_answers
-        self.true_label_encoders = encoders.true_label_encoders
-        self.false_label_encoders = encoders.false_label_encoders
+
+        # Pre-compute correctness flags and labels for efficiency
+        self.is_correct = torch.zeros(len(arrays.mc_answers), dtype=torch.long)
+        self.labels = torch.zeros(len(arrays.predictions), dtype=torch.long)
+
+        for i in range(len(arrays.mc_answers)):
+            qid = int(arrays.question_ids[i])
+            is_correct = arrays.mc_answers[i] == correct_answers.get(qid, "")
+            self.is_correct[i] = 1 if is_correct else 0
+            self.labels[i] = label_encoders.encode(qid, str(arrays.predictions[i]), is_correct=is_correct)
 
     def __len__(self) -> int:
         return len(self.embeddings)
 
     def __getitem__(self, idx: int) -> TrainingSample:
-        """Get a single training sample."""
-        qid = int(self.question_ids[idx].item())
-        prediction = self.predictions[idx]
-        mc_answer = self.mc_answers[idx]
+        """Get a single training sample.
 
-        is_correct = mc_answer == self.correct_answers.get(qid, "")
-        is_correct_idx = torch.tensor(1 if is_correct else 0, dtype=torch.long)
-
-        label_encoder = self.true_label_encoders.get(qid) if is_correct else self.false_label_encoders.get(qid)
-
-        if (
-            label_encoder is not None
-            and hasattr(label_encoder, "classes_")
-            and prediction in getattr(label_encoder, "classes_", [])
-        ):
-            label = label_encoder.transform([prediction])[0]
-        else:
-            label = 0  # Default to first class if not found
-
+        Returns:
+            TrainingSample with all necessary tensors
+        """
         return TrainingSample(
             embedding=self.embeddings[idx],
             question_id=self.question_ids[idx],
-            label=torch.tensor(label, dtype=torch.long),
-            is_correct_idx=is_correct_idx,
+            label=self.labels[idx],
+            is_correct=self.is_correct[idx],
         )

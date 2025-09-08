@@ -20,12 +20,13 @@ from kaggle_map.core.models import (
     Prediction,
     QuestionId,
     SubmissionRow,
+    TrainingConfig,
     TrainingRow,
 )
 from kaggle_map.mlp.dataset import DatasetArrays, DatasetEncoders, MLPDataset
 from kaggle_map.mlp.loss import ListMLELoss
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
-from kaggle_map.mlp.trainer import TrainingConfig, TrainingSetup, train_model
+from kaggle_map.mlp.trainer import TrainingSetup, train_model
 from kaggle_map.utils.device import get_device
 from kaggle_map.utils.metrics import calculate_map_at_3
 
@@ -111,15 +112,6 @@ class Predictor:
         config: TrainingConfig = _DEFAULT_TRAINING_CONFIG,
         embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND,
     ) -> "Predictor":
-        """Train a new predictor.
-
-        Args:
-            config: Training configuration
-            embedding_strategy: Embedding strategy to use
-
-        Returns:
-            Trained Predictor instance
-        """
         strategy = embedding_strategy
 
         device = get_device()
@@ -206,7 +198,7 @@ class Predictor:
             val_loader=val_loader,
             config=config,
             device=device,
-            criterion=ListMLELoss(),
+            loss_fn=ListMLELoss(),
         )
         result = train_model(setup)
 
@@ -215,14 +207,6 @@ class Predictor:
         return cls(model=result.model, correct_answers=correct_answers, device=device, embedding_strategy=strategy)
 
     def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
-        """Make predictions for a single evaluation row.
-
-        Args:
-            evaluation_row: Row to predict
-
-        Returns:
-            SubmissionRow with top 3 predictions
-        """
         eval_row_with_answer = EvaluationRow(
             row_id=evaluation_row.row_id,
             question_id=evaluation_row.question_id,
@@ -283,11 +267,7 @@ class Predictor:
         logger.debug(f"Final predictions for row {evaluation_row.row_id}: {prediction_strs}")
         return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
 
-    def evaluate(
-        self,
-        test_data: list[TrainingRow] | None = None,
-        train_csv_path: Path = Path("datasets/train.csv"),
-    ) -> dict[str, float]:
+    def evaluate(self, test_data: list[TrainingRow]) -> dict[str, float]:
         """Evaluate the predictor on test data.
 
         Args:
@@ -297,14 +277,6 @@ class Predictor:
         Returns:
             Dictionary with evaluation metrics
         """
-        if test_data is None:
-            test_data = []
-        if not test_data:
-            training_data = load_training_data(train_csv_path)
-            n_samples = len(training_data)
-            split = _get_split_indices(n_samples, 0.7, 42)
-            test_data = [training_data[i] for i in split.val_indices]
-
         map_scores = []
         for row in test_data:
             eval_row = EvaluationRow(

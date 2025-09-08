@@ -1,7 +1,6 @@
 """Training utilities for MLP model."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -9,8 +8,9 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 
+from kaggle_map.core.models import TrainingConfig
 from kaggle_map.mlp.dataset import TrainingSample
-from kaggle_map.mlp.model import ActivationType, ArchitectureSize, EvaluationResult, QuestionSpecificMLP
+from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 
 
 @dataclass(frozen=True)
@@ -37,34 +37,10 @@ class TrainingContext:
     """Context for training operations."""
 
     model: QuestionSpecificMLP
-    criterion: nn.Module
+    loss_fn: nn.Module
     device: torch.device
     optimizer: torch.optim.Optimizer | None = None
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None
-
-
-@dataclass
-class TrainingConfig:
-    """Configuration for MLP training."""
-
-    epochs: int = 50
-    batch_size: int = 256
-    learning_rate: float = 1e-4
-    weight_decay: float = 0.01
-
-    optimizer: str = "adamw"
-    scheduler: str = "cosine"
-    early_stopping_patience: int = 15
-
-    train_split: float = 0.7
-    random_seed: int = 42
-
-    train_csv_path: Path = Path("datasets/train.csv")
-    checkpoint_dir: Path = Path("checkpoints")
-
-    architecture_size: ArchitectureSize = "xlarge"
-    dropout: float = 0.3
-    activation: ActivationType = "gelu"
 
 
 @dataclass
@@ -84,13 +60,13 @@ class TrainingSetup:
     val_loader: DataLoader
     config: TrainingConfig
     device: torch.device
-    criterion: nn.Module
+    loss_fn: nn.Module
 
 
 def process_batch(  # noqa: C901
     model: QuestionSpecificMLP,
     batch: TrainingSample,
-    criterion: nn.Module,
+    loss_fn: nn.Module,
     device: torch.device,
     *,
     training: bool = True,
@@ -100,7 +76,7 @@ def process_batch(  # noqa: C901
     Args:
         model: The MLP model
         batch: TrainingSample with batched tensors
-        criterion: Loss function
+        loss_fn: Loss function
         device: Device to run on
         training: Whether in training mode (affects gradient tracking)
 
@@ -110,7 +86,7 @@ def process_batch(  # noqa: C901
     embeddings = batch.embedding
     question_ids = batch.question_id
     labels = batch.label
-    is_correct = batch.is_correct_idx
+    is_correct = batch.is_correct
     embeddings = embeddings.to(device)
     question_ids = question_ids.to(device)
     labels = labels.to(device)
@@ -129,7 +105,7 @@ def process_batch(  # noqa: C901
         if combined_mask.any():
             question_labels = labels[combined_mask]
             if logits.size(0) == question_labels.size(0):
-                loss = criterion(logits, question_labels)
+                loss = loss_fn(logits, question_labels)
                 total_loss += loss * logits.size(0)
                 total_samples += logits.size(0)
 
@@ -206,7 +182,7 @@ def train_epoch(
     """Train for one epoch.
 
     Args:
-        ctx: Training context with model, optimizer, criterion, device
+        ctx: Training context with model, optimizer, loss_fn, device
         train_loader: DataLoader for training data
 
     Returns:
@@ -222,7 +198,7 @@ def train_epoch(
     for batch in train_loader:
         optimizer.zero_grad()
 
-        result = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=True)
+        result = process_batch(ctx.model, batch, ctx.loss_fn, ctx.device, training=True)
 
         if result.is_valid:
             assert result.loss is not None  # Type guard for type checker
@@ -245,7 +221,7 @@ def validate_epoch(
     """Validate for one epoch.
 
     Args:
-        ctx: Training context with model, criterion, device
+        ctx: Training context with model, loss_fn, device
         val_loader: DataLoader for validation data
 
     Returns:
@@ -257,7 +233,7 @@ def validate_epoch(
 
     with torch.no_grad():
         for batch in val_loader:
-            result = process_batch(ctx.model, batch, ctx.criterion, ctx.device, training=False)
+            result = process_batch(ctx.model, batch, ctx.loss_fn, ctx.device, training=False)
 
             if result.is_valid:
                 assert result.loss is not None  # Type guard for type checker
@@ -323,7 +299,7 @@ def train_model(setup: TrainingSetup) -> TrainingResult:
 
     ctx = TrainingContext(
         model=setup.model,
-        criterion=setup.criterion,
+        loss_fn=setup.loss_fn,
         device=setup.device,
         optimizer=optimizer,
         scheduler=scheduler,
