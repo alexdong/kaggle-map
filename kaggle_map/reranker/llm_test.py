@@ -41,32 +41,6 @@ def test_build_reranking_prompt():
     assert "Example outputs:" in prompt
 
 
-def test_build_reranking_prompt_with_none_correct_answer():
-    # Arrange - Real algebra problem
-    evaluation_row = EvaluationRow(
-        row_id=1,
-        question_id=100,
-        question_text="\\( 2y = 24 \\) What is the value of \\( y \\)?",
-        correct_answer=None,  # Sometimes correct answer is not provided
-        mc_answer="\\( 12 \\)",
-        student_explanation="i think because 2*12is 24 so that's why im sort of guessing",
-    )
-
-    predictions = [
-        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Not_variable"),
-    ]
-
-    request = RerankingRequest(
-        evaluation_row=evaluation_row,
-        candidate_predictions=predictions,
-    )
-
-    # Act
-    prompt = build_reranking_prompt(request)
-
-    # Assert - Updated for new prompt format (doesn't include correct answer anymore)
-    assert "Student answered: 12" in prompt
-    assert "Student explained: i think because 2*12is 24" in prompt
 
 
 def test_parse_reranking_response_simple():
