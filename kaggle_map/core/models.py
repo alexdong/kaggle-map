@@ -8,6 +8,7 @@ from typing import Literal, NamedTuple, get_args
 import numpy as np
 import pandas as pd
 import pydash
+from optuna import Trial
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
@@ -317,7 +318,52 @@ class TrainingConfig(BaseModel):
     dropout: float = 0.3
     activation: ActivationType = ActivationType.GELU
 
+    # Embedding configuration
+    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
+
     model_config = {"arbitrary_types_allowed": True}
+
+    @classmethod
+    def get_sample_hyperparameters(cls, trial: Trial) -> "TrainingConfig":
+        """Sample hyperparameters from an Optuna trial."""
+        return cls(
+            epochs=trial.suggest_int("epochs", 28, 180),
+            batch_size=trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
+            learning_rate=trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
+            weight_decay=trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
+            optimizer=OptimizerType(
+                trial.suggest_categorical("optimizer", [OptimizerType.ADAMW.value, OptimizerType.ADAM.value])
+            ),
+            scheduler=SchedulerType(
+                trial.suggest_categorical(
+                    "scheduler",
+                    [
+                        SchedulerType.COSINE.value,
+                        SchedulerType.COSINE.value,
+                        SchedulerType.ONECYCLE.value,
+                        SchedulerType.NONE.value,
+                    ],
+                )
+            ),
+            early_stopping_patience=trial.suggest_int("early_stopping_patience", 10, 22),
+            architecture_size=ArchitectureSize(
+                trial.suggest_categorical(
+                    "architecture_size",
+                    (
+                        [ArchitectureSize.XLARGE.value] * 17
+                        + [ArchitectureSize.LARGE.value] * 2
+                        + [ArchitectureSize.MEDIUM.value]
+                    ),
+                )
+            ),
+            dropout=trial.suggest_float("dropout", 0.10, 0.42),
+            activation=ActivationType(trial.suggest_categorical("activation", [a.value for a in ActivationType])),
+            embedding_strategy=EmbeddingStrategy(
+                trial.suggest_categorical(
+                    "embedding_strategy", [EmbeddingStrategy.DOUBLE_BLIND.value, EmbeddingStrategy.SEMANTIC.value]
+                )
+            ),
+        )
 
 
 # ============================================================================

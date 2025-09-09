@@ -52,11 +52,6 @@ def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
     return 0.0
 
 
-def cleanup_after_trial() -> None:
-    # Clear GPU memory
-    clear_gpu_memory()
-
-
 def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
     best_config_path = Path(f"models/{strategy_name}_best_config.json")
     best_config_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,5 @@
 """MLP predictor for misconception prediction."""
 
-import pickle
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +12,6 @@ from torch.utils.data import DataLoader
 
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import (
-    Answer,
     Category,
     EmbeddingStrategy,
     EvaluationRow,
@@ -89,226 +87,258 @@ def _get_split_indices(n_samples: int, train_ratio: float = 0.7, random_seed: in
     )
 
 
-@dataclass(frozen=True)
-class Predictor:
-    """MLP predictor for misconception classification."""
+def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificMLP:
+    """Train an MLP model for misconception prediction.
 
-    model: QuestionSpecificMLP
-    correct_answers: dict[QuestionId, Answer]
-    device: torch.device
-    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
+    Args:
+        config: Training configuration
 
-    @property
-    def name(self) -> str:
-        return "mlp"
+    Returns:
+        Trained QuestionSpecificMLP model
+    """
+    strategy = config.embedding_strategy
 
-    @property
-    def description(self) -> str:
-        return "MLP with question-specific heads for misconception prediction"
+    device = get_device()
+    logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
 
-    @classmethod
-    def fit(
-        cls,
-        config: TrainingConfig = _DEFAULT_TRAINING_CONFIG,
-        embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND,
-    ) -> "Predictor":
-        strategy = embedding_strategy
+    training_data = load_training_data(config.train_csv_path)
+    correct_answers = extract_correct_answers(training_data)
+    question_predictions = _extract_question_predictions(training_data)
 
-        device = get_device()
-        logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
+    logger.info("Computing embeddings...")
 
-        training_data = load_training_data(config.train_csv_path)
-        correct_answers = extract_correct_answers(training_data)
-        question_predictions = _extract_question_predictions(training_data)
+    # Process all rows to extract embeddings and metadata
+    processed_rows = []
+    for row in training_data:
+        eval_row = EvaluationRow(
+            row_id=row.row_id,
+            question_id=row.question_id,
+            question_text=row.question_text,
+            mc_answer=row.mc_answer,
+            student_explanation=row.student_explanation,
+            correct_answer=correct_answers.get(row.question_id, ""),
+        )
+        embedding = strategy.fn(eval_row)
+        processed_rows.append((embedding, row.question_id, str(row.prediction), row.mc_answer))
 
-        logger.info("Computing embeddings...")
+    # Unpack into arrays using zip
+    embeddings_list, question_ids_list, predictions_list, mc_answers_list = map(
+        list, zip(*processed_rows, strict=False)
+    )
+    embeddings = np.array(embeddings_list)
+    question_ids = np.array(question_ids_list)
+    predictions = np.array(predictions_list)
+    mc_answers = np.array(mc_answers_list)
 
-        # Process all rows to extract embeddings and metadata
-        processed_rows = []
-        for row in training_data:
-            eval_row = EvaluationRow(
-                row_id=row.row_id,
-                question_id=row.question_id,
-                question_text=row.question_text,
-                mc_answer=row.mc_answer,
-                student_explanation=row.student_explanation,
-                correct_answer=correct_answers.get(row.question_id, ""),
+    embedding_dim = embeddings.shape[1]
+    logger.info(f"Embedding dimension: {embedding_dim}")
+
+    model = QuestionSpecificMLP(
+        question_predictions,
+        embedding_dim=embedding_dim,
+        architecture_size=config.architecture_size,
+        dropout=config.dropout,
+        activation=config.activation,
+    )
+    model = model.to(device)
+
+    # Log model info
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"Model parameters: {total_params:,}")
+
+    n_samples = len(embeddings)
+    split = _get_split_indices(n_samples, config.train_split, config.random_seed)
+    logger.info(f"Data split - Train: {split.train_size}, Val: {split.val_size}")
+
+    train_arrays = DatasetArrays(
+        embeddings=embeddings[split.train_indices],
+        question_ids=question_ids[split.train_indices],
+        predictions=predictions[split.train_indices],
+        mc_answers=mc_answers[split.train_indices],
+    )
+
+    val_arrays = DatasetArrays(
+        embeddings=embeddings[split.val_indices],
+        question_ids=question_ids[split.val_indices],
+        predictions=predictions[split.val_indices],
+        mc_answers=mc_answers[split.val_indices],
+    )
+
+    encoders = DatasetEncoders(
+        correct_answers=correct_answers,
+        true_label_encoders=model.true_label_encoders,
+        false_label_encoders=model.false_label_encoders,
+    )
+
+    train_dataset = MLPDataset(train_arrays, encoders)
+    val_dataset = MLPDataset(val_arrays, encoders)
+
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False, num_workers=0)
+
+    setup = TrainingSetup(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        config=config,
+        device=device,
+        loss_fn=ListMLELoss(),
+    )
+    result = train_model(setup)
+
+    logger.info(f"Training complete. Best val loss: {result.history.get('best_val_loss', 'N/A')}")
+
+    return result.model
+
+
+def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> SubmissionRow:
+    """Predict misconceptions for a single evaluation row.
+
+    Args:
+        model: Trained MLP model
+        evaluation_row: Input data for prediction
+
+    Returns:
+        Submission row with top 3 predictions
+    """
+    # Load training data to get correct answers
+    training_data = load_training_data(TrainingConfig().train_csv_path)
+    correct_answers = extract_correct_answers(training_data)
+    device = get_device()
+    embedding_strategy = EmbeddingStrategy.DOUBLE_BLIND  # Default, could be made configurable
+
+    eval_row_with_answer = EvaluationRow(
+        row_id=evaluation_row.row_id,
+        question_id=evaluation_row.question_id,
+        question_text=evaluation_row.question_text,
+        mc_answer=evaluation_row.mc_answer,
+        student_explanation=evaluation_row.student_explanation,
+        correct_answer=correct_answers.get(evaluation_row.question_id, ""),
+    )
+
+    embedding = embedding_strategy.fn(eval_row_with_answer)
+    logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding)}")
+    embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(device)
+
+    is_correct = evaluation_row.mc_answer == correct_answers.get(evaluation_row.question_id, "")
+    logger.debug(
+        f"Question {evaluation_row.question_id}: is_correct={is_correct}, mc_answer='{evaluation_row.mc_answer}'"
+    )
+    correctness_idx = torch.tensor([1 if is_correct else 0], dtype=torch.long).to(device)
+
+    model.eval()
+    with torch.no_grad():
+        outputs = model(
+            embedding_tensor,
+            torch.LongTensor([evaluation_row.question_id]).to(device),
+            correctness_idx,
+        )
+
+    predictions = []
+    key = EvaluationResult(question_id=evaluation_row.question_id, is_correct=is_correct)
+
+    if key in outputs:
+        logits = outputs[key]
+        probs = functional.softmax(logits, dim=-1)[0]
+        top_k = min(MAX_PREDICTIONS, logits.size(-1))
+        top_indices = torch.topk(probs, k=top_k)[1]
+        logger.debug(f"Model outputs for {key}: top_{top_k}_probs={probs[top_indices].tolist()}")
+
+        encoder = (
+            model.true_label_encoders.get(evaluation_row.question_id)
+            if is_correct
+            else model.false_label_encoders.get(evaluation_row.question_id)
+        )
+
+        if encoder:
+            predictions.extend(
+                Prediction.from_string(pred_str) for pred_str in encoder.inverse_transform(top_indices.cpu().numpy())
             )
-            embedding = strategy.fn(eval_row)
-            processed_rows.append((embedding, row.question_id, str(row.prediction), row.mc_answer))
 
-        # Unpack into arrays using zip
-        embeddings_list, question_ids_list, predictions_list, mc_answers_list = map(
-            list, zip(*processed_rows, strict=False)
+    default = Prediction(
+        category=Category.TRUE_NEITHER if is_correct else Category.FALSE_NEITHER,
+        misconception="NA",
+    )
+    while len(predictions) < MAX_PREDICTIONS:
+        predictions.append(default)
+
+    prediction_strs = [str(p) for p in predictions[:MAX_PREDICTIONS]]
+    logger.debug(f"Final predictions for row {evaluation_row.row_id}: {prediction_strs}")
+    return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
+
+
+def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow]) -> dict[str, float]:
+    """Evaluate model on test data.
+
+    Args:
+        model: Trained MLP model
+        test_data: Test data rows
+
+    Returns:
+        Dictionary with evaluation metrics
+    """
+    map_scores = []
+    for row in test_data:
+        eval_row = EvaluationRow(
+            row_id=row.row_id,
+            question_id=row.question_id,
+            question_text=row.question_text,
+            mc_answer=row.mc_answer,
+            student_explanation=row.student_explanation,
         )
-        embeddings = np.array(embeddings_list)
-        question_ids = np.array(question_ids_list)
-        predictions = np.array(predictions_list)
-        mc_answers = np.array(mc_answers_list)
+        prediction = predict(model, eval_row)
+        score = calculate_map_at_3(row.prediction, prediction.predicted_categories)
+        map_scores.append(score)
 
-        embedding_dim = embeddings.shape[1]
-        logger.info(f"Embedding dimension: {embedding_dim}")
+    avg_map = sum(map_scores) / len(map_scores) if map_scores else 0.0
+    logger.info(f"Evaluation MAP@3: {avg_map:.4f} on {len(test_data)} samples")
 
-        model = QuestionSpecificMLP(
-            question_predictions,
-            embedding_dim=embedding_dim,
-            architecture_size=config.architecture_size,
-            dropout=config.dropout,
-            activation=config.activation,
-        )
-        model = model.to(device)
+    return {
+        "validation_map@3": avg_map,
+        "validation_samples": len(test_data),
+    }
 
-        # Log model info
-        total_params = sum(p.numel() for p in model.parameters())
-        logger.info(f"Model parameters: {total_params:,}")
 
-        n_samples = len(embeddings)
-        split = _get_split_indices(n_samples, config.train_split, config.random_seed)
-        logger.info(f"Data split - Train: {split.train_size}, Val: {split.val_size}")
+def save(model: QuestionSpecificMLP, filepath: Path) -> None:
+    """Save model to disk.
 
-        train_arrays = DatasetArrays(
-            embeddings=embeddings[split.train_indices],
-            question_ids=question_ids[split.train_indices],
-            predictions=predictions[split.train_indices],
-            mc_answers=mc_answers[split.train_indices],
-        )
+    Args:
+        model: Model to save
+        filepath: Path to save the model
+    """
+    logger.info(f"Saving model to {filepath}")
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), filepath)
 
-        val_arrays = DatasetArrays(
-            embeddings=embeddings[split.val_indices],
-            question_ids=question_ids[split.val_indices],
-            predictions=predictions[split.val_indices],
-            mc_answers=mc_answers[split.val_indices],
-        )
 
-        encoders = DatasetEncoders(
-            correct_answers=correct_answers,
-            true_label_encoders=model.true_label_encoders,
-            false_label_encoders=model.false_label_encoders,
-        )
+def load(filepath: Path) -> QuestionSpecificMLP:
+    """Load model from disk.
 
-        train_dataset = MLPDataset(train_arrays, encoders)
-        val_dataset = MLPDataset(val_arrays, encoders)
+    Args:
+        filepath: Path to the saved model
 
-        train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
-        val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False, num_workers=0)
+    Returns:
+        Loaded model
+    """
+    logger.info(f"Loading model from {filepath}")
+    assert filepath.exists(), f"Model file not found: {filepath}"
 
-        setup = TrainingSetup(
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            config=config,
-            device=device,
-            loss_fn=ListMLELoss(),
-        )
-        result = train_model(setup)
+    # Need to reconstruct the model architecture
+    # This requires knowing the question predictions, which we get from training data
+    training_data = load_training_data(TrainingConfig().train_csv_path)
+    question_predictions = _extract_question_predictions(training_data)
 
-        logger.info(f"Training complete. Best val loss: {result.history.get('best_val_loss', 'N/A')}")
+    # Use default config for architecture (could be saved with model for better reconstruction)
+    config = TrainingConfig()
+    embedding_dim = 8192 if config.embedding_strategy == EmbeddingStrategy.DOUBLE_BLIND else 4096
 
-        return cls(model=result.model, correct_answers=correct_answers, device=device, embedding_strategy=strategy)
+    model = QuestionSpecificMLP(
+        question_predictions,
+        embedding_dim=embedding_dim,
+        architecture_size=config.architecture_size,
+        dropout=config.dropout,
+        activation=config.activation,
+    )
 
-    def predict(self, evaluation_row: EvaluationRow) -> SubmissionRow:
-        eval_row_with_answer = EvaluationRow(
-            row_id=evaluation_row.row_id,
-            question_id=evaluation_row.question_id,
-            question_text=evaluation_row.question_text,
-            mc_answer=evaluation_row.mc_answer,
-            student_explanation=evaluation_row.student_explanation,
-            correct_answer=self.correct_answers.get(evaluation_row.question_id, ""),
-        )
-
-        embedding = self.embedding_strategy.fn(eval_row_with_answer)
-        logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding)}")
-        embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(self.device)
-
-        is_correct = evaluation_row.mc_answer == self.correct_answers.get(evaluation_row.question_id, "")
-        logger.debug(
-            f"Question {evaluation_row.question_id}: is_correct={is_correct}, mc_answer='{evaluation_row.mc_answer}'"
-        )
-        correctness_idx = torch.tensor([1 if is_correct else 0], dtype=torch.long).to(self.device)
-
-        self.model.eval()
-        with torch.no_grad():
-            outputs = self.model(
-                embedding_tensor,
-                torch.LongTensor([evaluation_row.question_id]).to(self.device),
-                correctness_idx,
-            )
-
-        predictions = []
-        key = EvaluationResult(question_id=evaluation_row.question_id, is_correct=is_correct)
-
-        if key in outputs:
-            logits = outputs[key]
-            probs = functional.softmax(logits, dim=-1)[0]
-            top_k = min(MAX_PREDICTIONS, logits.size(-1))
-            top_indices = torch.topk(probs, k=top_k)[1]
-            logger.debug(f"Model outputs for {key}: top_{top_k}_probs={probs[top_indices].tolist()}")
-
-            encoder = (
-                self.model.true_label_encoders.get(evaluation_row.question_id)
-                if is_correct
-                else self.model.false_label_encoders.get(evaluation_row.question_id)
-            )
-
-            if encoder:
-                predictions.extend(
-                    Prediction.from_string(pred_str)
-                    for pred_str in encoder.inverse_transform(top_indices.cpu().numpy())
-                )
-
-        default = Prediction(
-            category=Category.TRUE_NEITHER if is_correct else Category.FALSE_NEITHER,
-            misconception="NA",
-        )
-        while len(predictions) < MAX_PREDICTIONS:
-            predictions.append(default)
-
-        prediction_strs = [str(p) for p in predictions[:MAX_PREDICTIONS]]
-        logger.debug(f"Final predictions for row {evaluation_row.row_id}: {prediction_strs}")
-        return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
-
-    def evaluate(self, test_data: list[TrainingRow]) -> dict[str, float]:
-        """Evaluate the predictor on test data.
-
-        Args:
-            test_data: Test data rows. If empty, uses validation split from train.csv
-            train_csv_path: Path to training data (used when test_data is empty)
-
-        Returns:
-            Dictionary with evaluation metrics
-        """
-        map_scores = []
-        for row in test_data:
-            eval_row = EvaluationRow(
-                row_id=row.row_id,
-                question_id=row.question_id,
-                question_text=row.question_text,
-                mc_answer=row.mc_answer,
-                student_explanation=row.student_explanation,
-            )
-            prediction = self.predict(eval_row)
-            score = calculate_map_at_3(row.prediction, prediction.predicted_categories)
-            map_scores.append(score)
-
-        avg_map = sum(map_scores) / len(map_scores) if map_scores else 0.0
-        logger.info(f"Evaluation MAP@3: {avg_map:.4f} on {len(test_data)} samples")
-
-        return {
-            "validation_map@3": avg_map,
-            "validation_samples": len(test_data),
-        }
-
-    def save(self, filepath: Path) -> None:
-        """Save predictor to disk."""
-        logger.info(f"Saving predictor to {filepath}")
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with filepath.open("wb") as f:
-            pickle.dump(self, f)
-
-    @classmethod
-    def load(cls, filepath: Path) -> "Predictor":
-        """Load predictor from disk."""
-        logger.info(f"Loading predictor from {filepath}")
-        assert filepath.exists(), f"Model file not found: {filepath}"
-        with filepath.open("rb") as f:
-            return pickle.load(f)
+    model.load_state_dict(torch.load(filepath))
+    return model

@@ -1,28 +1,18 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import click
 import optuna
 import torch
 from loguru import logger
-from optuna import Trial
 
 from kaggle_map.core.dataset import load_training_data
-from kaggle_map.core.models import (
-    ActivationType,
-    ArchitectureSize,
-    OptimizerType,
-    SchedulerType,
-    TrainingConfig,
-)
-from kaggle_map.mlp import Predictor
-from kaggle_map.mlp.predictor import _get_split_indices
+from kaggle_map.core.models import TrainingConfig
+from kaggle_map.mlp.predictor import _get_split_indices, evaluate, fit
 
 from .utils import (
     STORAGE_URL,
-    cleanup_after_trial,
     clear_gpu_memory,
     create_study,
     handle_oom_error,
@@ -43,111 +33,27 @@ class SearchConfig:
     search_type: str = "regular"
 
 
-def get_hyperparameter_search_space(trial: Trial) -> dict[str, Any]:
-    """Get hyperparameter search space for MLP."""
-    return {
-        "learning_rate": trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
-        "batch_size": trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
-        "dropout": trial.suggest_float("dropout", 0.10, 0.42),
-        # Weighted architecture sampling based on empirical performance
-        # xlarge (85%): Best performance but higher compute cost
-        # large (10%): Good balance of performance and speed
-        # medium (5%): Faster training for quick iterations
-        "architecture_size": ArchitectureSize(
-            trial.suggest_categorical(
-                "architecture_size",
-                (
-                    [ArchitectureSize.XLARGE.value] * 17
-                    + [ArchitectureSize.LARGE.value] * 2
-                    + [ArchitectureSize.MEDIUM.value]
-                ),
-            )
-        ),
-        "optimizer": OptimizerType(
-            trial.suggest_categorical("optimizer", [OptimizerType.ADAMW.value, OptimizerType.ADAM.value])
-        ),
-        "weight_decay": trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-        "activation": ActivationType(trial.suggest_categorical("activation", [a.value for a in ActivationType])),
-        # Weighted scheduler sampling: cosine appears twice due to superior convergence in preliminary tests
-        "scheduler": SchedulerType(
-            trial.suggest_categorical(
-                "scheduler",
-                [
-                    SchedulerType.COSINE.value,
-                    SchedulerType.COSINE.value,
-                    SchedulerType.ONECYCLE.value,
-                    SchedulerType.NONE.value,
-                ],
-            )
-        ),
-        "early_stopping_patience": trial.suggest_int("early_stopping_patience", 10, 22),
-        "epochs": trial.suggest_int("epochs", 28, 180),
-        "embedding_strategy": trial.suggest_categorical("embedding_strategy", ["double_blind", "semantic"]),
-    }
-
-
-def objective_function(
-    trial: optuna.Trial,
-    train_data_path: str | None = None,
-) -> float:
-    # Get hyperparameters
-    hyperparams = get_hyperparameter_search_space(trial)
-
-    # Create training config
-    config = TrainingConfig(
-        epochs=hyperparams["epochs"],
-        batch_size=hyperparams["batch_size"],
-        learning_rate=hyperparams["learning_rate"],
-        weight_decay=hyperparams["weight_decay"],
-        optimizer=hyperparams["optimizer"],
-        scheduler=hyperparams["scheduler"],
-        early_stopping_patience=hyperparams["early_stopping_patience"],
-        architecture_size=hyperparams["architecture_size"],
-        dropout=hyperparams["dropout"],
-        activation=hyperparams["activation"],
-    )
-
-    if train_data_path:
-        config.train_csv_path = Path(train_data_path)
-
-    # Clear GPU memory before training
+def objective(config: TrainingConfig) -> float:
+    """Evaluate a single configuration."""
     clear_gpu_memory()
 
-    logger.info(f"Starting trial {trial.number}")
-
-    # Handle OOM gracefully but let other errors crash
     try:
-        model = Predictor.fit(config, embedding_strategy=hyperparams["embedding_strategy"])
+        model = fit(config)
 
-        # Load test data for evaluation
         training_data = load_training_data(config.train_csv_path)
         n_samples = len(training_data)
         split = _get_split_indices(n_samples, config.train_split, config.random_seed)
         test_data = [training_data[i] for i in split.val_indices]
 
-        result = model.evaluate(test_data)
-
-        # Track GPU utilization
-        track_gpu_memory(trial)
-
+        result = evaluate(model, test_data)
         map_score = result["validation_map@3"]
-        logger.info(f"Trial {trial.number} completed: MAP@3={map_score:.4f}")
+        logger.info(f"Evaluation completed: MAP@3={map_score:.4f}")
 
         return map_score
 
-    except torch.cuda.OutOfMemoryError as e:
-        return handle_oom_error(trial, e)
-
-    except Exception as e:
-        # Log any other exceptions and ensure cleanup
-        logger.error(f"Trial {trial.number} failed with error: {e}")
-        raise
-
-    finally:
-        cleanup_after_trial()
-
-    # This should never be reached due to return/raise above, but pyrefly requires it
-    return 0.0
+    except torch.cuda.OutOfMemoryError:
+        logger.error("Out of memory during evaluation")
+        return 0.0
 
 
 def run_search(config: SearchConfig) -> optuna.Study:
@@ -155,8 +61,6 @@ def run_search(config: SearchConfig) -> optuna.Study:
     search_desc = "embedding model comparison" if config.search_type == "embedding" else "hyperparameter"
     logger.info(f"Starting {search_desc} search for {config.strategy_name}")
     logger.info(f"Trials: {config.n_trials}, Jobs: {config.n_jobs}, Timeout: {config.timeout}s")
-    if config.train_data_path:
-        logger.info(f"Using training data: {config.train_data_path}")
 
     # Create timestamped study name
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
@@ -167,14 +71,25 @@ def run_search(config: SearchConfig) -> optuna.Study:
 
     study = create_study(study_name)
 
-    # Create objective with bound parameters
-    def objective(trial: optuna.Trial) -> float:
-        return objective_function(trial, config.train_data_path)
+    def objective_wrapper(trial: optuna.Trial) -> float:
+        training_config = TrainingConfig.get_sample_hyperparameters(trial)
+        if config.train_data_path:
+            training_config.train_csv_path = Path(config.train_data_path)
+
+        logger.info(f"Starting trial {trial.number}")
+
+        try:
+            score = objective(training_config)
+            track_gpu_memory(trial)
+            logger.info(f"Trial {trial.number} completed: MAP@3={score:.4f}")
+            return score
+        except torch.cuda.OutOfMemoryError as e:
+            return handle_oom_error(trial, e)
 
     logger.info(f"Starting optimization with study: {study.study_name}")
 
     study.optimize(
-        objective,
+        objective_wrapper,
         n_trials=config.n_trials,
         n_jobs=config.n_jobs,
         timeout=config.timeout,

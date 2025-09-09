@@ -1,5 +1,5 @@
 """MLP module for misconception prediction."""
 
-from kaggle_map.mlp.predictor import Predictor
+from kaggle_map.mlp.predictor import evaluate, fit, load, predict, save
 
-__all__ = ["Predictor"]
+__all__ = ["fit", "predict", "evaluate", "save", "load"]
