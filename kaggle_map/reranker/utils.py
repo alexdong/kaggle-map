@@ -6,11 +6,11 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
-from kaggle_map.core.models import (
+from kaggle_map.reranker.models import (
     GGUF_MODELS,
+    RerankerLLMLoadConfig,
     RerankerModelName,
     RerankerModelQuantizationLevel,
-    RerankerLLMLoadConfig,
 )
 
 

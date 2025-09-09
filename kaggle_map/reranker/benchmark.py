@@ -1,107 +1,31 @@
-"""Simplified LLM reranker using direct llama-cpp-python calls.
+"""Benchmarking tools for evaluating LLM reranking performance.
 
-This module provides reranking functionality using local GGUF models,
-replacing the complex HTTP/async implementation with direct model calls.
+This module provides functionality to benchmark different LLM models and
+quantization levels for the reranking task, measuring MAP@3 scores.
 """
 
 import re
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import click
 import pandas as pd
-from llama_cpp import Llama, llama_supports_gpu_offload
+from llama_cpp import llama_supports_gpu_offload
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
-from kaggle_map.core.models import (
+from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.reranker.models import (
     MODEL_OPTIONS,
-    Category,
-    EvaluationRow,
-    LLMResponse,
-    RerankerModelName,
-    Prediction,
-    PromptTemplate,
-    RerankerModelQuantizationLevel,
     RerankerLLMLoadConfig,
+    RerankerModelName,
+    RerankerModelQuantizationLevel,
 )
+from kaggle_map.reranker.rerank import RerankingRequest, build_reranking_prompt
 from kaggle_map.reranker.utils import format_chat_prompt, load_llm_model
 from kaggle_map.utils.metrics import calculate_map_at_3
-
-
-@dataclass(frozen=True)
-class RerankingRequest:
-    """Complete request for reranking predictions."""
-
-    evaluation_row: EvaluationRow
-    candidate_predictions: list[Prediction]
-
-    @property
-    def top_prediction(self) -> Prediction | None:
-        """Get the current top prediction."""
-        return self.candidate_predictions[0] if self.candidate_predictions else None
-
-
-def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
-    """Build a concise prompt for reranking predictions."""
-    # Format predictions as numbered list
-    predictions_text = "\n".join(f"{i + 1}. {pred!s}" for i, pred in enumerate(request.candidate_predictions))
-
-    row = request.evaluation_row
-    # Simpler, more direct prompt
-    return f"""Reorder these predictions based on the student's answer.
-
-Student answered: {row.mc_answer}
-Student explained: {row.student_explanation}
-
-Predictions:
-{predictions_text}
-
-Output format: numbers only, comma-separated
-Example outputs: "2,1,3" or "3,1,2" or "1,3,2"
-
-Your output:"""
-
-
-def parse_reranking_response(response: LLMResponse, original_predictions: list[Prediction]) -> list[Prediction]:
-    numbers = re.findall(r"\d+", response)
-    assert numbers, "No numbers found in reranking response"
-
-    indices = [int(n) - 1 for n in numbers]
-    valid_indices = all(0 <= i < len(original_predictions) for i in indices)
-    assert valid_indices, (
-        f"Invalid indices in reranking response: {indices} for {len(original_predictions)} predictions"
-    )
-
-    # Ensure all indices are present (no missing predictions)
-    unique = dict.fromkeys(indices)
-    assert len(unique) == len(original_predictions), (
-        f"Missing indices in reranking: expected {len(original_predictions)}, got {len(unique)}"
-    )
-
-    # Simple reordering since all indices are guaranteed to be present
-    return [original_predictions[i] for i in unique]
-
-
-def rerank_predictions(
-    llm: Llama,
-    request: RerankingRequest,
-) -> list[Prediction]:
-    prompt = build_reranking_prompt(request)
-
-    output = llm(
-        prompt,
-        max_tokens=50,  # Increased to ensure we get the full response
-        temperature=0.01,  # Very low temperature for deterministic output
-        stop=["\n", ".", ";"],  # Stop at newline, period, or semicolon
-        echo=False,
-    )
-    response = output["choices"][0]["text"].strip()  # type: ignore
-
-    return parse_reranking_response(response, request.candidate_predictions)
 
 
 def benchmark_single_model(
