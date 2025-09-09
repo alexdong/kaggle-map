@@ -2,4 +2,4 @@
 
 from kaggle_map.mlp.predictor import evaluate, fit, load, predict, save
 
-__all__ = ["fit", "predict", "evaluate", "save", "load"]
+__all__ = ["evaluate", "fit", "load", "predict", "save"]

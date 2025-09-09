@@ -8,13 +8,13 @@ from loguru import logger
 
 from kaggle_map.core.models import (
     GGUF_MODELS,
-    ModelName,
-    QuantizationLevel,
+    RerankerModelName,
+    RerankerModelQuantizationLevel,
     RerankerLLMLoadConfig,
 )
 
 
-def format_chat_prompt(model_name: ModelName, user_content: str) -> str:
+def format_chat_prompt(model_name: RerankerModelName, user_content: str) -> str:
     """Format chat prompt according to the model's expected template.
 
     Different models use different chat template formats:
@@ -43,7 +43,7 @@ def format_chat_prompt(model_name: ModelName, user_content: str) -> str:
     return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
 
 
-def get_stop_tokens(model_name: ModelName) -> list[str]:
+def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
     """Get the appropriate stop tokens for a model.
 
     Different models use different stop tokens:
@@ -80,12 +80,12 @@ def get_stop_tokens(model_name: ModelName) -> list[str]:
     raise AssertionError(msg)
 
 
-def get_model_path(model_name: ModelName, quantization: QuantizationLevel) -> Path:
+def get_model_path(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
     """Get the local path for a GGUF model file."""
     return Path(f"models/gguf/{model_name}-{quantization}.gguf")
 
 
-def download_model(model_name: ModelName, quantization: QuantizationLevel) -> Path:
+def download_model(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
     """Download GGUF model from Hugging Face Hub if it doesn't exist."""
     model_path = get_model_path(model_name, quantization)
 

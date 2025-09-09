@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import (
+    RANDOM_SEED,
     Category,
     EmbeddingStrategy,
     EvaluationRow,
@@ -71,9 +72,9 @@ class DataSplit:
         return self.train_size + self.val_size + self.test_size
 
 
-def _get_split_indices(n_samples: int, train_ratio: float = 0.7, random_seed: int = 42) -> DataSplit:
+def _get_split_indices(n_samples: int, train_ratio: float = 0.7) -> DataSplit:
     """Get train/val/test split indices."""
-    rng = np.random.Generator(np.random.PCG64(random_seed))
+    rng = np.random.Generator(np.random.PCG64(RANDOM_SEED))
     indices = np.arange(n_samples)
     rng.shuffle(indices)
 
@@ -147,7 +148,7 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
     logger.info(f"Model parameters: {total_params:,}")
 
     n_samples = len(embeddings)
-    split = _get_split_indices(n_samples, config.train_split, config.random_seed)
+    split = _get_split_indices(n_samples, config.train_split)
     logger.info(f"Data split - Train: {split.train_size}, Val: {split.val_size}")
 
     train_arrays = DatasetArrays(

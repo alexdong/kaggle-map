@@ -22,10 +22,10 @@ from kaggle_map.core.models import (
     Category,
     EvaluationRow,
     LLMResponse,
-    ModelName,
+    RerankerModelName,
     Prediction,
     PromptTemplate,
-    QuantizationLevel,
+    RerankerModelQuantizationLevel,
     RerankerLLMLoadConfig,
 )
 from kaggle_map.reranker.utils import format_chat_prompt, load_llm_model
@@ -105,7 +105,10 @@ def rerank_predictions(
 
 
 def benchmark_single_model(
-    model_name: ModelName, quantization: QuantizationLevel, eval_df: pd.DataFrame, correct_answers: dict
+    model_name: RerankerModelName,
+    quantization: RerankerModelQuantizationLevel,
+    eval_df: pd.DataFrame,
+    correct_answers: dict,
 ) -> dict:
     """Benchmark a single model/quantization combination.
 

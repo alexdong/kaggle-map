@@ -8,10 +8,15 @@ from typing import Literal, NamedTuple, get_args
 import numpy as np
 import pandas as pd
 import pydash
-from optuna import Trial
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+RANDOM_SEED = 42  # Fixed seed for reproducibility across all experiments
 
 # ============================================================================
 # Type Aliases
@@ -297,6 +302,8 @@ class TrainingConfig(BaseModel):
     # Training parameters
     epochs: int = 50
     batch_size: int = 256
+    dropout: float = 0.3
+    activation: ActivationType = ActivationType.GELU
     learning_rate: float = 1e-4
     weight_decay: float = 0.01
 
@@ -305,65 +312,18 @@ class TrainingConfig(BaseModel):
     scheduler: SchedulerType = SchedulerType.COSINE
     early_stopping_patience: int = 15
 
-    # Data split and reproducibility
+    # Data split
     train_split: float = 0.7
-    random_seed: int = 42
+
+    # Architecture and embedding
+    embedding_model: EmbeddingModel = EmbeddingModel.QWEN
+    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
+    architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
 
     # File paths
     train_csv_path: Path = Path("datasets/train.csv")
-    checkpoint_dir: Path = Path("checkpoints")
-
-    # Architecture configuration
-    architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
-    dropout: float = 0.3
-    activation: ActivationType = ActivationType.GELU
-
-    # Embedding configuration
-    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
 
     model_config = {"arbitrary_types_allowed": True}
-
-    @classmethod
-    def get_sample_hyperparameters(cls, trial: Trial) -> "TrainingConfig":
-        """Sample hyperparameters from an Optuna trial."""
-        return cls(
-            epochs=trial.suggest_int("epochs", 28, 180),
-            batch_size=trial.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
-            learning_rate=trial.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
-            weight_decay=trial.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-            optimizer=OptimizerType(
-                trial.suggest_categorical("optimizer", [OptimizerType.ADAMW.value, OptimizerType.ADAM.value])
-            ),
-            scheduler=SchedulerType(
-                trial.suggest_categorical(
-                    "scheduler",
-                    [
-                        SchedulerType.COSINE.value,
-                        SchedulerType.COSINE.value,
-                        SchedulerType.ONECYCLE.value,
-                        SchedulerType.NONE.value,
-                    ],
-                )
-            ),
-            early_stopping_patience=trial.suggest_int("early_stopping_patience", 10, 22),
-            architecture_size=ArchitectureSize(
-                trial.suggest_categorical(
-                    "architecture_size",
-                    (
-                        [ArchitectureSize.XLARGE.value] * 17
-                        + [ArchitectureSize.LARGE.value] * 2
-                        + [ArchitectureSize.MEDIUM.value]
-                    ),
-                )
-            ),
-            dropout=trial.suggest_float("dropout", 0.10, 0.42),
-            activation=ActivationType(trial.suggest_categorical("activation", [a.value for a in ActivationType])),
-            embedding_strategy=EmbeddingStrategy(
-                trial.suggest_categorical(
-                    "embedding_strategy", [EmbeddingStrategy.DOUBLE_BLIND.value, EmbeddingStrategy.SEMANTIC.value]
-                )
-            ),
-        )
 
 
 # ============================================================================
@@ -373,14 +333,14 @@ class TrainingConfig(BaseModel):
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
-ModelName = Literal["Qwen3-14B", "gemma-3-12b-it", "gpt-oss-20b"]
+RerankerModelName = Literal["Qwen3-14B", "gemma-3-12b-it", "gpt-oss-20b"]
 # NOTE: Q4_K_XL and Q5_K_XL have sequential loading conflicts in llama-cpp-python
 # Use only one quantization per benchmark session to avoid GPU context corruption
-QuantizationLevel = Literal["Q2_K_XL", "Q3_K_XL", "Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
+RerankerModelQuantizationLevel = Literal["Q2_K_XL", "Q3_K_XL", "Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]
 
 # Available options derived from type definitions
-MODEL_OPTIONS: list[ModelName] = list(get_args(ModelName))
-QUANTIZATION_OPTIONS: list[QuantizationLevel] = list(get_args(QuantizationLevel))
+MODEL_OPTIONS: list[RerankerModelName] = list(get_args(RerankerModelName))
+QUANTIZATION_OPTIONS: list[RerankerModelQuantizationLevel] = list(get_args(RerankerModelQuantizationLevel))
 
 
 class GGUFRepoSpec(NamedTuple):
@@ -388,11 +348,11 @@ class GGUFRepoSpec(NamedTuple):
 
     repo: str  # HuggingFace repository ID
     filename_pattern: str  # Pattern with {quant} placeholder for quantization level
-    available_quantizations: list[QuantizationLevel] = QUANTIZATION_OPTIONS
+    available_quantizations: list[RerankerModelQuantizationLevel] = QUANTIZATION_OPTIONS
 
 
 # Model configurations with their HuggingFace patterns
-GGUF_MODELS: dict[ModelName, GGUFRepoSpec] = {
+GGUF_MODELS: dict[RerankerModelName, GGUFRepoSpec] = {
     "gpt-oss-20b": GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
         filename_pattern="gpt-oss-20b-{quant}.gguf",
@@ -422,8 +382,8 @@ class RerankerLLMLoadConfig:
     Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
     """
 
-    model_name: ModelName = "gemma-3-12b-it"
-    quantization: QuantizationLevel = "Q4_K_XL"
+    model_name: RerankerModelName = "gemma-3-12b-it"
+    quantization: RerankerModelQuantizationLevel = "Q4_K_XL"
     n_ctx: int = 4096  # Context window size
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
