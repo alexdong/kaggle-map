@@ -1,3 +1,4 @@
+from kaggle_map..core.models import TrainingConfig
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,19 +38,6 @@ def track_gpu_memory(trial: optuna.Trial) -> None:
         peak_memory = torch.cuda.max_memory_allocated() / 1024**3
         trial.set_user_attr("peak_gpu_memory_gb", peak_memory)
         logger.info(f"Trial {trial.number} peak GPU memory: {peak_memory:.2f}GB")
-
-
-def handle_oom_error(trial: optuna.Trial, error: Exception) -> float:
-    if torch.cuda.is_available():
-        logger.error(f"Trial {trial.number} OOM: {error}")
-        logger.error(f"GPU memory allocated: {torch.cuda.memory_allocated() / 1024**3:.2f}GB")
-        logger.error(f"GPU memory cached: {torch.cuda.memory_reserved() / 1024**3:.2f}GB")
-        torch.cuda.empty_cache()
-
-    trial.set_user_attr("oom_error", value=True)
-    trial.set_user_attr("oom_details", value=str(error))
-
-    return 0.0
 
 
 def save_best_config(study: optuna.Study, strategy_name: str) -> Path:
