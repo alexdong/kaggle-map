@@ -1,7 +1,7 @@
 """Hyperparameter sampling and search space definitions."""
 
+from enum import Enum
 from pathlib import Path
-from typing import Literal
 
 from optuna import Trial
 
@@ -14,38 +14,44 @@ from kaggle_map.core.models import (
     SchedulerType,
 )
 
-TunableParameters = Literal[
-    "epochs",
-    "batch_size",
-    "dropout",
-    "activation",
-    "learning_rate",
-    "weight_decay",
-    "optimizer",
-    "scheduler",
-    "early_stopping_patience",
-    "train_split",
-    "train_csv_path",
-    "architecture_size",
-    "embedding_model",
-    "embedding_strategy",
-]
+
+class TunableParameters(str, Enum):
+    """Parameters that can be tuned during hyperparameter optimization."""
+
+    EPOCHS = "epochs"
+    BATCH_SIZE = "batch_size"
+    DROPOUT = "dropout"
+    ACTIVATION = "activation"
+    LEARNING_RATE = "learning_rate"
+    WEIGHT_DECAY = "weight_decay"
+    OPTIMIZER = "optimizer"
+    SCHEDULER = "scheduler"
+    EARLY_STOPPING_PATIENCE = "early_stopping_patience"
+    TRAIN_SPLIT = "train_split"
+    TRAIN_CSV_PATH = "train_csv_path"
+    ARCHITECTURE_SIZE = "architecture_size"
+    EMBEDDING_MODEL = "embedding_model"
+    EMBEDDING_STRATEGY = "embedding_strategy"
 
 
 def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -> dict:
     """Sample hyperparameters from an Optuna trial for specified parameters."""
 
     suggestions = {
-        "epochs": lambda t: t.suggest_int("epochs", 28, 180),
-        "batch_size": lambda t: t.suggest_categorical("batch_size", [224, 256, 288, 320, 384, 448, 512]),
-        "dropout": lambda t: t.suggest_float("dropout", 0.10, 0.42),
-        "activation": lambda t: ActivationType(t.suggest_categorical("activation", [a.value for a in ActivationType])),
-        "learning_rate": lambda t: t.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
-        "weight_decay": lambda t: t.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
-        "optimizer": lambda t: OptimizerType(
+        TunableParameters.EPOCHS: lambda t: t.suggest_int("epochs", 28, 180),
+        TunableParameters.BATCH_SIZE: lambda t: t.suggest_categorical(
+            "batch_size", [224, 256, 288, 320, 384, 448, 512]
+        ),
+        TunableParameters.DROPOUT: lambda t: t.suggest_float("dropout", 0.10, 0.42),
+        TunableParameters.ACTIVATION: lambda t: ActivationType(
+            t.suggest_categorical("activation", [a.value for a in ActivationType])
+        ),
+        TunableParameters.LEARNING_RATE: lambda t: t.suggest_float("learning_rate", 8e-5, 3e-4, log=True),
+        TunableParameters.WEIGHT_DECAY: lambda t: t.suggest_float("weight_decay", 3e-3, 1.5e-2, log=True),
+        TunableParameters.OPTIMIZER: lambda t: OptimizerType(
             t.suggest_categorical("optimizer", [OptimizerType.ADAMW.value, OptimizerType.ADAM.value])
         ),
-        "scheduler": lambda t: SchedulerType(
+        TunableParameters.SCHEDULER: lambda t: SchedulerType(
             t.suggest_categorical(
                 "scheduler",
                 [
@@ -56,9 +62,9 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
                 ],
             )
         ),
-        "early_stopping_patience": lambda t: t.suggest_int("early_stopping_patience", 10, 22),
-        "train_split": lambda t: t.suggest_float("train_split", 0.6, 0.85),
-        "train_csv_path": lambda t: Path(
+        TunableParameters.EARLY_STOPPING_PATIENCE: lambda t: t.suggest_int("early_stopping_patience", 10, 22),
+        TunableParameters.TRAIN_SPLIT: lambda t: t.suggest_float("train_split", 0.6, 0.85),
+        TunableParameters.TRAIN_CSV_PATH: lambda t: Path(
             t.suggest_categorical(
                 "train_csv_path",
                 [
@@ -69,7 +75,7 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
                 ],
             )
         ),
-        "architecture_size": lambda t: ArchitectureSize(
+        TunableParameters.ARCHITECTURE_SIZE: lambda t: ArchitectureSize(
             t.suggest_categorical(
                 "architecture_size",
                 [ArchitectureSize.XLARGE.value] * 17
@@ -77,10 +83,10 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
                 + [ArchitectureSize.MEDIUM.value],
             )
         ),
-        "embedding_model": lambda t: EmbeddingModel(
+        TunableParameters.EMBEDDING_MODEL: lambda t: EmbeddingModel(
             t.suggest_categorical("embedding_model", [EmbeddingModel.QWEN.value, EmbeddingModel.GEMMA.value])
         ),
-        "embedding_strategy": lambda t: EmbeddingStrategy(
+        TunableParameters.EMBEDDING_STRATEGY: lambda t: EmbeddingStrategy(
             t.suggest_categorical(
                 "embedding_strategy", [EmbeddingStrategy.DOUBLE_BLIND.value, EmbeddingStrategy.SEMANTIC.value]
             )
@@ -89,6 +95,6 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
 
     sampled = {}
     for field in search_scope:
-        sampled[field] = suggestions[field](trial)
+        sampled[field.value] = suggestions[field](trial)
 
     return sampled

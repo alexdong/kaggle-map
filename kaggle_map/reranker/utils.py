@@ -29,12 +29,12 @@ def format_chat_prompt(model_name: RerankerModelName, user_content: str) -> str:
     Returns:
         Formatted prompt string with appropriate chat markers
     """
-    if "gemma" in model_name.lower():
+    if "gemma" in model_name.value.lower():
         return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
-    if "qwen" in model_name.lower():
+    if "qwen" in model_name.value.lower():
         # Include empty think tags to disable thinking mode (per Qwen3 documentation)
         return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
-    if "gpt-oss" in model_name.lower():
+    if "gpt-oss" in model_name.value.lower():
         # gpt-oss uses a more complex format with system/developer messages
         # For simplicity, using basic user/assistant format here
         return f"<|start|>user<|message|>{user_content}<|end|><|start|>assistant"
@@ -64,7 +64,7 @@ def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
         "gpt-oss": ["<|end|>", "\n"],
     }
 
-    model_name_lower = model_name.lower()
+    model_name_lower = model_name.value.lower()
 
     # Find matching model family
     for model_family, tokens in stop_tokens_config.items():
@@ -82,7 +82,7 @@ def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
 
 def get_model_path(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
     """Get the local path for a GGUF model file."""
-    return Path(f"models/gguf/{model_name}-{quantization}.gguf")
+    return Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
 
 
 def download_model(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
@@ -108,7 +108,7 @@ def download_model(model_name: RerankerModelName, quantization: RerankerModelQua
     assert quantization in config.available_quantizations, error_msg
 
     repo_id = config.repo
-    filename = config.filename_pattern.format(quant=quantization)
+    filename = config.filename_pattern.format(quant=quantization.value)
 
     logger.info(f"Downloading {filename} from {repo_id}")
 

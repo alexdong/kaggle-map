@@ -48,5 +48,9 @@ if __name__ == "__main__":
     run_search(
         "embedding_models_exploration",
         n_trials=50,
-        scope={"embedding_strategy", "architecture_size", "embedding_model"},
+        scope={
+            TunableParameters.EMBEDDING_STRATEGY,
+            TunableParameters.ARCHITECTURE_SIZE,
+            TunableParameters.EMBEDDING_MODEL,
+        },
     )

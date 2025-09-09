@@ -6,7 +6,9 @@ including prompt building, response parsing, and prediction reordering.
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
+from jinja2 import Template
 from llama_cpp import Llama
 
 from kaggle_map.core.models import EvaluationRow, Prediction
@@ -26,25 +28,24 @@ class RerankingRequest:
         return self.candidate_predictions[0] if self.candidate_predictions else None
 
 
+EXPECTED_PREDICTIONS = 3
+
+
 def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
     """Build a concise prompt for reranking predictions."""
-    # Format predictions as numbered list
-    predictions_text = "\n".join(f"{i + 1}. {pred!s}" for i, pred in enumerate(request.candidate_predictions))
+    n_predictions = len(request.candidate_predictions)
+    assert n_predictions == EXPECTED_PREDICTIONS, (
+        f"Expected exactly {EXPECTED_PREDICTIONS} predictions, got {n_predictions}"
+    )
+
+    # Load Jinja2 template
+    template_path = Path(__file__).parent / "prompt.j2"
+    template = Template(template_path.read_text())
 
     row = request.evaluation_row
-    # Simpler, more direct prompt
-    return f"""Reorder these predictions based on the student's answer.
-
-Student answered: {row.mc_answer}
-Student explained: {row.student_explanation}
-
-Predictions:
-{predictions_text}
-
-Output format: numbers only, comma-separated
-Example outputs: "2,1,3" or "3,1,2" or "1,3,2"
-
-Your output:"""
+    return template.render(
+        mc_answer=row.mc_answer, student_explanation=row.student_explanation, predictions=request.candidate_predictions
+    )
 
 
 def parse_reranking_response(response: LLMResponse, original_predictions: list[Prediction]) -> list[Prediction]:
