@@ -104,6 +104,7 @@ extend-select = [
 ]
 extend-ignore = [
     "COM812",   # flake8-commas - allow trailing commas in function calls
+    "DTZ005",   # flake8-datetimez - allow naive datetime in files
 ]
 
 [tool.ruff.lint.mccabe]
