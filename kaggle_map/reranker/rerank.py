@@ -108,9 +108,10 @@ def rerank_predictions(
 
 
 if __name__ == "__main__":
+    from pathlib import Path
+
     import pandas as pd
     from loguru import logger
-    from pathlib import Path
 
     from kaggle_map.core.dataset import extract_correct_answers
     from kaggle_map.core.models import Category, EvaluationRow, Prediction
