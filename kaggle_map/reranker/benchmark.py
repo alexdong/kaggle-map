@@ -18,13 +18,13 @@ from rich.table import Table
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
 from kaggle_map.reranker.models import (
-    MODEL_OPTIONS,
     RerankerLLMLoadConfig,
     RerankerModelName,
     RerankerModelQuantizationLevel,
 )
 from kaggle_map.reranker.rerank import RerankingRequest, build_reranking_prompt
 from kaggle_map.reranker.utils import format_chat_prompt, load_llm_model
+from kaggle_map.utils.cli import EnumChoice
 from kaggle_map.utils.metrics import calculate_map_at_3
 
 
@@ -137,11 +137,16 @@ def benchmark_single_model(
 
 
 @click.command()
-@click.option("--model", type=click.Choice(MODEL_OPTIONS), default="gemma-3-12b-it", help="Model to benchmark")
+@click.option(
+    "--model",
+    type=EnumChoice(RerankerModelName),
+    default=RerankerModelName.GEMMA_3_12B_IT,
+    help="Model to benchmark"
+)
 @click.option(
     "--quantization",
-    type=click.Choice(["Q2_K_XL", "Q3_K_XL", "Q4_K_XL", "Q5_K_XL", "Q6_K_XL"]),
-    default="Q4_K_XL",
+    type=EnumChoice(RerankerModelQuantizationLevel),
+    default=RerankerModelQuantizationLevel.Q4_K_XL,
     help="Quantization level to use",
 )
 @click.option(
@@ -150,7 +155,7 @@ def benchmark_single_model(
     default=0.01,
     help="Ratio of dataset to sample (0.01 = 1%, 1.0 = 100%)",
 )
-def main(model: str, quantization: str, sample_ratio: float) -> None:
+def main(model: RerankerModelName, quantization: RerankerModelQuantizationLevel, sample_ratio: float) -> None:
     """Benchmark LLM model reranking performance."""
     # Check GPU support but don't require it
     has_gpu = llama_supports_gpu_offload()
@@ -176,13 +181,8 @@ def main(model: str, quantization: str, sample_ratio: float) -> None:
     # Prepare benchmark results
     correct_answers = extract_correct_answers(load_training_data(Path("datasets/train.csv")))
 
-    # Convert string arguments to enum values
-    # The model comes as enum name from Click, quantization as string value
-    model_enum = RerankerModelName[model]
-    quantization_enum = RerankerModelQuantizationLevel(quantization)
-
     # Run benchmark for single model/quantization combination
-    result = benchmark_single_model(model_enum, quantization_enum, eval_df, correct_answers)
+    result = benchmark_single_model(model, quantization, eval_df, correct_answers)
     results = [result]
 
     # Display results table
