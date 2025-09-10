@@ -17,6 +17,7 @@ from rich.table import Table
 
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.evolution.sampling import stratified_sample
 from kaggle_map.reranker.models import (
     RerankerLLMLoadConfig,
     RerankerModelName,
@@ -33,6 +34,7 @@ def benchmark_single_model(
     quantization: RerankerModelQuantizationLevel,
     eval_df: pd.DataFrame,
     correct_answers: dict,
+    prompt_template_path: Path | None = None,
 ) -> dict:
     """Benchmark a single model/quantization combination.
 
@@ -41,6 +43,7 @@ def benchmark_single_model(
         quantization: Quantization level to use
         eval_df: DataFrame with evaluation data
         correct_answers: Dictionary of correct answers by question ID
+        prompt_template_path: Optional path to custom prompt template
 
     Returns:
         Dictionary with benchmark results including MAP@3 score
@@ -90,7 +93,7 @@ def benchmark_single_model(
         request = RerankingRequest(evaluation_row=eval_row, candidate_predictions=candidate_predictions)
 
         # Build prompt and wrap with chat format
-        base_prompt = build_reranking_prompt(request)
+        base_prompt = build_reranking_prompt(request, template_path=prompt_template_path)
         full_prompt = format_chat_prompt(model_name, base_prompt)
 
         response = llm(
@@ -155,7 +158,25 @@ def benchmark_single_model(
     default=0.01,
     help="Ratio of dataset to sample (0.01 = 1%, 1.0 = 100%)",
 )
-def main(model: RerankerModelName, quantization: RerankerModelQuantizationLevel, sample_ratio: float) -> None:
+@click.option(
+    "--prompt-template",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Path to custom Jinja2 prompt template",
+)
+@click.option(
+    "--use-stratified",
+    is_flag=True,
+    default=True,
+    help="Use stratified sampling to preserve distribution",
+)
+def main(
+    model: RerankerModelName,
+    quantization: RerankerModelQuantizationLevel,
+    sample_ratio: float,
+    prompt_template: Path,
+    use_stratified: bool,  # noqa: FBT001
+) -> None:
     """Benchmark LLM model reranking performance."""
     # Check GPU support but don't require it
     has_gpu = llama_supports_gpu_offload()
@@ -171,18 +192,36 @@ def main(model: RerankerModelName, quantization: RerankerModelQuantizationLevel,
     eval_df = pd.read_csv("datasets/error_prediction.csv")
     console.print(f"Loaded {len(eval_df)} rows from error_prediction.csv", style="green")
 
-    # Calculate sample size from ratio and sample with fixed seed for consistency
-    sample_size = max(1, int(len(eval_df) * sample_ratio))
-    eval_df = eval_df.sample(n=min(sample_size, len(eval_df)), random_state=42).reset_index(drop=True)
+    # Sample the dataset
+    if use_stratified:
+        console.print("Using stratified sampling to preserve distribution...", style="cyan")
+        eval_df = stratified_sample(
+            eval_df,
+            sample_ratio=sample_ratio,
+            stratify_cols=["QuestionId", "Category", "MC_Answer"],
+            min_samples_per_stratum=3,
+            random_seed=42,
+        )
+    else:
+        # Simple random sampling
+        sample_size = max(1, int(len(eval_df) * sample_ratio))
+        eval_df = eval_df.sample(n=min(sample_size, len(eval_df)), random_state=42).reset_index(drop=True)
+
+    total_rows = len(pd.read_csv("datasets/error_prediction.csv"))
+    pct = len(eval_df) / total_rows * 100
     console.print(
-        f"Using {len(eval_df)} sampled rows ({sample_ratio * 100:.1f}% of dataset) for benchmarking", style="yellow"
+        f"Using {len(eval_df)} sampled rows ({pct:.1f}% of dataset) for benchmarking",
+        style="yellow",
     )
+
+    if prompt_template:
+        console.print(f"Using custom prompt template: {prompt_template}", style="cyan")
 
     # Prepare benchmark results
     correct_answers = extract_correct_answers(load_training_data(Path("datasets/train.csv")))
 
     # Run benchmark for single model/quantization combination
-    result = benchmark_single_model(model, quantization, eval_df, correct_answers)
+    result = benchmark_single_model(model, quantization, eval_df, correct_answers, prompt_template)
     results = [result]
 
     # Display results table

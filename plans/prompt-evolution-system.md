@@ -109,6 +109,8 @@ All code must be type-annotated and use Pydantic for data models.
 Avoid `try/except` unless absolutely necessary. Instead, use `assert`. 
 Also, add plenty of loguru logging for observability and debuggability.
 
+Avoid unnecessary complexity. No async, no `| None` types, no fancy patterns.
+
 Before you generate any code, produce the failing test cases first. Keep the tests minimum. 
 We DO NOT need to be 100% coverage. This is a one-man project. We just need to catch obvious mistakes.
 
@@ -128,32 +130,25 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 2.3. [x] Save JSON metadata to `prompts/generations/gen_XX/`
 2.5. [x] Create helper to load/save EvolutionContext
 
-**Unclear items:**
-- None - storage structure is now fully specified
-
-### Task 3: Evaluation Pipeline (SIMPLIFIED)
+### Task 3: Evaluation Pipeline 
 **Goal:** Benchmark candidates with consistent methodology
 
-3.1. [ ] Modify `benchmark.py` to accept `--prompt-template` parameter
-3.2. [ ] Create `kaggle_map/evolution/evaluator.py`
-3.3. [ ] Implement balanced sampling: 10% stratified by (QuestionId, Category, MC_Answer). Ensure at least 3-5 samples per combination if possible.
-3.4. [ ] Run benchmark for each candidate, capture MAP@3 score only
-3.5. [ ] Extract 10 failure cases per candidate using selection rule
-3.6. [ ] Add progress logging with ETA
+3.1. [x] Modify `benchmark.py` to accept `--prompt-template` parameter
+3.2. [x] Implement balanced sampling: 10% stratified by (QuestionId, Category, MC_Answer). Ensure at least 3-5 samples per combination if possible.
+3.3. [x] Create `kaggle_map/evolution/evaluator.py`
+3.4. [x] Run benchmark for each candidate, capture MAP@3 score only
+3.5. [x] Extract 10 failure cases per candidate using selection rule
 
-**Unclear items:**
-- Exact stratification implementation when some combinations are rare
-
-### Task 4: Failure Analysis (SIMPLIFIED)
+### Task 4: Failure Analysis 
 **Goal:** Extract actionable patterns from prediction failures
+Summarize error_prediction.csv with top 5-10 diverse patterns, grouped by (QuestionId, Category, MC_Answer).
 
 4.1. [ ] Create `kaggle_map/evolution/analysis.py`
-4.2. [ ] Summarize error_prediction.csv for initial bootstrap by grouping by (QuestionId, Category, MC_Answer) and extract top 5-10 most common error patterns
+4.2. [ ] Summarize error_prediction.csv for initial bootstrap 
 4.3. [ ] Group failures by error type (wrong category vs wrong misconception)
-4.4. [ ] Generate simple failure summary for GPT-5 context
+4.4. [ ] Generate simple failure summary for GPT-5 context.
+4.5. [ ] Implement __main__ entry point for manual runs but also the function to be called by evolve.py to enrich context.
 
-**Unclear items:**
-- How to summarize error_prediction.csv effectively (top N patterns?)
 
 ### Task 5: GPT-5 Prompt Generator
 **Goal:** Generate diverse, hypothesis-driven prompt variations
@@ -161,18 +156,22 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 5.1. [ ] Create `kaggle_map/evolution/generator.py`
 5.2. [ ] Set up OpenAI client with GPT-5 configuration
 5.3. [ ] Use OpenAI's new Responses API (`client.responses.create()`)
-5.4. [ ] Design meta-prompt for GPT-5 that explains the task
-5.5. [ ] Parse response to extract 7 candidates with hypotheses
+5.4. [ ] Design meta-prompt for GPT-5 that explains the task. Emphasize:
+   - Generate 7 distinct candidates
+   - Emphasize diversity and novelty
+   - Each with clear hypothesis
+   - Use Jinja2 syntax
+   - Reference failure patterns and parent prompts
+   - Maintain required template variables (Question, Category, etc.)
+5.5. [ ] Use pydantic to parse response and extract 7 candidates with hypotheses
 5.6. [ ] Validate generated prompts maintain required template variables
 5.7. [ ] Implement exponential backoff retry (max 3 attempts)
 5.8. [ ] Log all GPT-5 interactions
+5.9. [ ] Add __main__ entry point for manual runs
 
-**Unclear items:**
-- Exact meta-prompt structure for GPT-5
-- How to ensure diversity in generated candidates
 
 ### Task 6: Evolution Orchestrator
-**Goal:** Coordinate the complete evolution cycle
+**Goal:** Coordinate the complete evolution cycle. If there is a score tie, prefer the earlier candidate or the one with fewer characters in the prompt.
 
 6.1. [ ] Create `kaggle_map/evolution/evolve.py` with `if __name__ == "__main__"`
 6.2. [ ] Implement generation loop (max 10 generations)
@@ -182,8 +181,6 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 6.6. [ ] Stop if improvement < 1% over 3 consecutive generations
 6.7. [ ] Log progress to console and file
 
-**Unclear items:**
-- How to handle tie scores when selecting top performers
 
 ## Features to DROP for Simplicity
 

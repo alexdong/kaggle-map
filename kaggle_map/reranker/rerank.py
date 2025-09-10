@@ -31,15 +31,26 @@ class RerankingRequest:
 EXPECTED_PREDICTIONS = 3
 
 
-def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
-    """Build a concise prompt for reranking predictions."""
+def build_reranking_prompt(request: RerankingRequest, template_path: Path | None = None) -> PromptTemplate:
+    """Build a concise prompt for reranking predictions.
+
+    Args:
+        request: Reranking request with evaluation row and predictions
+        template_path: Optional path to custom Jinja2 template. Defaults to baseline.j2
+
+    Returns:
+        Rendered prompt template
+    """
     n_predictions = len(request.candidate_predictions)
     assert n_predictions == EXPECTED_PREDICTIONS, (
         f"Expected exactly {EXPECTED_PREDICTIONS} predictions, got {n_predictions}"
     )
 
     # Load Jinja2 template
-    template_path = Path(__file__).parent / "prompts" / "baseline.j2"
+    if template_path is None:
+        template_path = Path(__file__).parent / "prompts" / "baseline.j2"
+
+    assert template_path.exists(), f"Template not found: {template_path}"
     template = Template(template_path.read_text())
 
     row = request.evaluation_row
