@@ -143,31 +143,31 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 **Goal:** Extract actionable patterns from prediction failures
 Summarize error_prediction.csv with top 5-10 diverse patterns, grouped by (QuestionId, Category, MC_Answer).
 
-4.1. [ ] Create `kaggle_map/evolution/analysis.py`
-4.2. [ ] Summarize error_prediction.csv for initial bootstrap 
-4.3. [ ] Group failures by error type (wrong category vs wrong misconception)
-4.4. [ ] Generate simple failure summary for GPT-5 context.
-4.5. [ ] Implement __main__ entry point for manual runs but also the function to be called by evolve.py to enrich context.
+4.1. [x] Create `kaggle_map/evolution/analysis.py`
+4.2. [x] Summarize error_prediction.csv for initial bootstrap 
+4.3. [x] Group failures by error type (wrong category vs wrong misconception)
+4.4. [x] Generate simple failure summary for GPT-5 context.
+4.5. [x] Implement __main__ entry point for manual runs but also the function to be called by evolve.py to enrich context.
 
 
 ### Task 5: GPT-5 Prompt Generator
 **Goal:** Generate diverse, hypothesis-driven prompt variations
 
-5.1. [ ] Create `kaggle_map/evolution/generator.py`
-5.2. [ ] Set up OpenAI client with GPT-5 configuration
-5.3. [ ] Use OpenAI's new Responses API (`client.responses.create()`)
-5.4. [ ] Design meta-prompt for GPT-5 that explains the task. Emphasize:
+5.1. [x] Create `kaggle_map/evolution/generator.py`
+5.2. [x] Set up OpenAI client with GPT-5 configuration
+5.3. [x] Use OpenAI's new Responses API (`client.responses.create()`)
+5.4. [x] Design meta-prompt for GPT-5 that explains the task. Emphasize:
    - Generate 7 distinct candidates
    - Emphasize diversity and novelty
    - Each with clear hypothesis
    - Use Jinja2 syntax
    - Reference failure patterns and parent prompts
    - Maintain required template variables (Question, Category, etc.)
-5.5. [ ] Use pydantic to parse response and extract 7 candidates with hypotheses
-5.6. [ ] Validate generated prompts maintain required template variables
-5.7. [ ] Implement exponential backoff retry (max 3 attempts)
-5.8. [ ] Log all GPT-5 interactions
-5.9. [ ] Add __main__ entry point for manual runs
+5.5. [x] Use pydantic to parse response and extract 7 candidates with hypotheses
+5.6. [x] Validate generated prompts maintain required template variables
+5.7. [x] Implement exponential backoff retry (max 3 attempts)
+5.8. [x] Log all GPT-5 interactions
+5.9. [x] Add __main__ entry point for manual runs
 
 
 ### Task 6: Evolution Orchestrator
