@@ -176,8 +176,13 @@ def main(model: str, quantization: str, sample_ratio: float) -> None:
     # Prepare benchmark results
     correct_answers = extract_correct_answers(load_training_data(Path("datasets/train.csv")))
 
+    # Convert string arguments to enum values
+    # The model comes as enum name from Click, quantization as string value
+    model_enum = RerankerModelName[model]
+    quantization_enum = RerankerModelQuantizationLevel(quantization)
+
     # Run benchmark for single model/quantization combination
-    result = benchmark_single_model(model, quantization, eval_df, correct_answers)  # type: ignore
+    result = benchmark_single_model(model_enum, quantization_enum, eval_df, correct_answers)
     results = [result]
 
     # Display results table

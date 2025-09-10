@@ -5,30 +5,30 @@
 
 echo "========================================="
 echo "LLM Quantization Comparison"
-echo "Model: gemma-3-12b-it"
+echo "Model: GEMMA_3_12B_IT"
 echo "Start time: $(date)"
 echo "========================================="
 echo ""
 
 # Run benchmarks for each quantization level
-# Using 10% sample ratio for faster testing (adjust as needed)
-SAMPLE_RATIO=1
+# Using 100% sample ratio for full dataset testing
+SAMPLE_RATIO=1.0
 
 echo "Testing Q2_K_XL (smallest, fastest, lowest quality)..."
-uv run -m kaggle_map.reranker.llm \
-    --model gemma-3-12b-it \
+uv run -m kaggle_map.reranker.benchmark \
+    --model GEMMA_3_12B_IT \
     --quantization Q2_K_XL \
     --sample-ratio $SAMPLE_RATIO > results_q2.txt 2>&1
 
 echo "Testing Q3_K_XL (balanced size/quality)..."
-uv run -m kaggle_map.reranker.llm \
-    --model gemma-3-12b-it \
+uv run -m kaggle_map.reranker.benchmark \
+    --model GEMMA_3_12B_IT \
     --quantization Q3_K_XL \
     --sample-ratio $SAMPLE_RATIO > results_q3.txt 2>&1
 
 echo "Testing Q4_K_XL (good quality/speed balance)..."
-uv run -m kaggle_map.reranker.llm \
-    --model gemma-3-12b-it \
+uv run -m kaggle_map.reranker.benchmark \
+    --model GEMMA_3_12B_IT \
     --quantization Q4_K_XL \
     --sample-ratio $SAMPLE_RATIO > results_q4.txt 2>&1
 
