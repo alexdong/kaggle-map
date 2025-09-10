@@ -3,6 +3,7 @@
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 
 from kaggle_map.core.models import Category, Prediction
 from kaggle_map.evolution import (
@@ -53,14 +54,14 @@ def test_evaluation_result_map_score_validation() -> None:
     assert result.map_score == 0.75
 
     # Invalid scores should raise validation error
-    with pytest.raises(ValueError, match="less than or equal to 1"):
+    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1, got 1.5"):
         EvaluationResult(
             candidate_id="gen_00_candidate_0",
             map_score=1.5,  # Too high
             failure_samples=[],
         )
 
-    with pytest.raises(ValueError, match="greater than or equal to 0"):
+    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1, got -0.1"):
         EvaluationResult(
             candidate_id="gen_00_candidate_0",
             map_score=-0.1,  # Negative

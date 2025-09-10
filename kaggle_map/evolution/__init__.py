@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from loguru import logger
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.models import Prediction, TrainingRow
 
@@ -80,8 +80,14 @@ class EvaluationResult(BaseModel):
     """Performance metrics for a prompt candidate."""
 
     candidate_id: CandidateID
-    map_score: MAPScore = Field(ge=0.0, le=1.0)  # Mean Average Precision @ 3
+    map_score: MAPScore  # Mean Average Precision @ 3
     failure_samples: list[FailureCase]  # 10 diverse failures
+
+    @field_validator("map_score")
+    @classmethod
+    def validate_map_score(cls, v: float) -> float:
+        assert 0.0 <= v <= 1.0, f"MAP score must be between 0 and 1, got {v}"
+        return v
 
     @field_validator("failure_samples")
     @classmethod
@@ -134,11 +140,17 @@ class EvolutionContext(BaseModel):
     """Context for generating next batch of prompts."""
 
     current_best_prompt: CandidateID
-    current_best_score: MAPScore = Field(ge=0.0, le=1.0)
+    current_best_score: MAPScore
     parent_prompts: list[PromptCandidate]  # Top 3 across ALL generations
     failure_patterns: dict[CandidateID, list[FailureCase]]  # 10 failures per top candidate
     competition_context: str  # Content from @docs/competition.md
     next_generation_id: GenerationID
+
+    @field_validator("current_best_score")
+    @classmethod
+    def validate_current_best_score(cls, v: float) -> float:
+        assert 0.0 <= v <= 1.0, f"Current best score must be between 0 and 1, got {v}"
+        return v
 
     @field_validator("parent_prompts")
     @classmethod
