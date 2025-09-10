@@ -14,6 +14,7 @@ from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import (
     RANDOM_SEED,
     Category,
+    EmbeddingModel,
     EmbeddingStrategy,
     EvaluationRow,
     Prediction,
@@ -22,7 +23,9 @@ from kaggle_map.core.models import (
     TrainingConfig,
     TrainingRow,
 )
-from kaggle_map.mlp.dataset import DatasetArrays, DatasetEncoders, MLPDataset
+from kaggle_map.embeddings import encode
+from kaggle_map.mlp.dataset import DatasetArrays, MLPDataset
+from kaggle_map.mlp.label_encoder import LabelEncoders
 from kaggle_map.mlp.loss import ListMLELoss
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 from kaggle_map.mlp.trainer import TrainingSetup, train_model
@@ -119,8 +122,8 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
             student_explanation=row.student_explanation,
             correct_answer=correct_answers.get(row.question_id, ""),
         )
-        embedding = strategy.fn(eval_row)
-        processed_rows.append((embedding, row.question_id, str(row.prediction), row.mc_answer))
+        embedding = encode(eval_row, strategy, config.embedding_model)
+        processed_rows.append((embedding.numpy(), row.question_id, str(row.prediction), row.mc_answer))
 
     # Unpack into arrays using zip
     embeddings_list, question_ids_list, predictions_list, mc_answers_list = map(
@@ -165,14 +168,13 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
         mc_answers=mc_answers[split.val_indices],
     )
 
-    encoders = DatasetEncoders(
-        correct_answers=correct_answers,
+    label_encoders = LabelEncoders(
         true_label_encoders=model.true_label_encoders,
         false_label_encoders=model.false_label_encoders,
     )
 
-    train_dataset = MLPDataset(train_arrays, encoders)
-    val_dataset = MLPDataset(val_arrays, encoders)
+    train_dataset = MLPDataset(train_arrays, correct_answers, label_encoders)
+    val_dataset = MLPDataset(val_arrays, correct_answers, label_encoders)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False, num_workers=0)
@@ -217,7 +219,10 @@ def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> Submis
         correct_answer=correct_answers.get(evaluation_row.question_id, ""),
     )
 
-    embedding = embedding_strategy.fn(eval_row_with_answer)
+    # Use default embedding model (QWEN) - could be made configurable
+    embedding_model = EmbeddingModel.QWEN
+    embedding = encode(eval_row_with_answer, embedding_strategy, embedding_model)
+    embedding = embedding.numpy()
     logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding)}")
     embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(device)
 
