@@ -39,7 +39,7 @@ def build_reranking_prompt(request: RerankingRequest) -> PromptTemplate:
     )
 
     # Load Jinja2 template
-    template_path = Path(__file__).parent / "prompts" / "prompt.j2"
+    template_path = Path(__file__).parent / "prompts" / "baseline.j2"
     template = Template(template_path.read_text())
 
     row = request.evaluation_row

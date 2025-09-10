@@ -123,11 +123,10 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 ### Task 2: Storage Layer
 **Goal:** Reliable persistence of prompts and evaluation results
 
-2.1. [ ] Create `kaggle_map/evolution/storage.py` with path management
-2.2. [ ] Save .j2 templates to `prompts/` directory (alongside baseline.j2)
-2.3. [ ] Save JSON metadata to `prompts/generations/gen_XX/`
-2.4. [ ] Implement atomic writes (write to temp, then rename)
-2.5. [ ] Create helper to load/save EvolutionContext
+2.1. [x] Create `kaggle_map/evolution/storage.py` with path management. Use Pathlib.Path.
+2.2. [x] Save .j2 templates to `prompts/` directory (alongside baseline.j2)
+2.3. [x] Save JSON metadata to `prompts/generations/gen_XX/`
+2.5. [x] Create helper to load/save EvolutionContext
 
 **Unclear items:**
 - None - storage structure is now fully specified
