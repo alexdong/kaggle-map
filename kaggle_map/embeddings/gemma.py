@@ -17,7 +17,8 @@ class GemmaEmbeddingModel:
         return cls._instance
 
     def encode(self, text: str) -> torch.Tensor:
-        return self.model.encode(text)
+        embedding = self.model.encode(text)
+        return torch.from_numpy(embedding)
 
 
 if __name__ == "__main__":
