@@ -140,13 +140,13 @@ def benchmark_single_model(
 @click.option(
     "--model",
     type=EnumChoice(RerankerModelName),
-    default=RerankerModelName.GEMMA_3_12B_IT,
-    help="Model to benchmark"
+    default=RerankerModelName.GEMMA_3_12B_IT.value,
+    help="Model to benchmark",
 )
 @click.option(
     "--quantization",
     type=EnumChoice(RerankerModelQuantizationLevel),
-    default=RerankerModelQuantizationLevel.Q4_K_XL,
+    default=RerankerModelQuantizationLevel.Q4_K_XL.value,
     help="Quantization level to use",
 )
 @click.option(
