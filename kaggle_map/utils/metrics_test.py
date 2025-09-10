@@ -2,25 +2,25 @@
 
 import pytest
 
-from kaggle_map.utils.metrics import calculate_map_at_3
 from kaggle_map.core.models import Category, Prediction
+from kaggle_map.utils.metrics import calculate_map_at_3
 
 
-def test_calculate_map_at_3():
+def test_calculate_map_at_3() -> None:
     """Test the calculate_map_at_3 function for single predictions."""
     ground_truth = Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
 
     # First position match
     predictions1 = [
         Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across"),
-        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag")
+        Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
     ]
     assert calculate_map_at_3(ground_truth, predictions1) == 1.0, "First position match should return 1.0"
 
     # Second position match
     predictions2 = [
         Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
-        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
+        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across"),
     ]
     assert calculate_map_at_3(ground_truth, predictions2) == 0.5, "Second position match should return 0.5"
 
@@ -28,14 +28,16 @@ def test_calculate_map_at_3():
     predictions3 = [
         Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_tag"),
-        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across")
+        Prediction(category=Category.TRUE_CORRECT, misconception="Adding_across"),
     ]
-    assert calculate_map_at_3(ground_truth, predictions3) == pytest.approx(1/3), "Third position match should return 1/3"
+    assert calculate_map_at_3(ground_truth, predictions3) == pytest.approx(1 / 3), (
+        "Third position match should return 1/3"
+    )
 
     # No match
     predictions4 = [
         Prediction(category=Category.FALSE_NEITHER, misconception="Other_tag"),
-        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_tag")
+        Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_tag"),
     ]
     assert calculate_map_at_3(ground_truth, predictions4) == 0.0, "No match should return 0.0"
 
@@ -43,7 +45,7 @@ def test_calculate_map_at_3():
     assert calculate_map_at_3(ground_truth, []) == 0.0, "Empty predictions should return 0.0"
 
 
-def test_calculate_map_at_3_prediction_matching():
+def test_calculate_map_at_3_prediction_matching() -> None:
     """Test that prediction matching works correctly for different cases."""
     # Test exact matches
     pred1 = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Adding_across")

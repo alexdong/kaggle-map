@@ -6,7 +6,7 @@ from kaggle_map.core.models import Category, EvaluationRow, Prediction
 from kaggle_map.reranker.rerank import RerankingRequest, build_reranking_prompt, parse_reranking_response
 
 
-def test_build_reranking_prompt():
+def test_build_reranking_prompt() -> None:
     # Arrange - Real fraction division problem
     evaluation_row = EvaluationRow(
         row_id=1,
@@ -41,9 +41,7 @@ def test_build_reranking_prompt():
     assert "Example outputs:" in prompt
 
 
-
-
-def test_parse_reranking_response_simple():
+def test_parse_reranking_response_simple() -> None:
     # Arrange - Real misconception types
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="SwapDividend"),
@@ -62,7 +60,7 @@ def test_parse_reranking_response_simple():
     assert reordered[2].misconception == "Mult"
 
 
-def test_parse_reranking_response_with_extra_text():
+def test_parse_reranking_response_with_extra_text() -> None:
     # Arrange - Real fraction misconceptions
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Wrong_Fraction"),
@@ -79,7 +77,7 @@ def test_parse_reranking_response_with_extra_text():
     assert reordered[1].misconception == "Wrong_Fraction"
 
 
-def test_parse_reranking_response_no_numbers():
+def test_parse_reranking_response_no_numbers() -> None:
     # Arrange - Single misconception case
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="FlipChange"),
@@ -91,7 +89,7 @@ def test_parse_reranking_response_no_numbers():
         parse_reranking_response(response, original_predictions)
 
 
-def test_parse_reranking_response_invalid_index():
+def test_parse_reranking_response_invalid_index() -> None:
     # Arrange - Common misconceptions for fractions
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="WNB"),
@@ -104,7 +102,7 @@ def test_parse_reranking_response_invalid_index():
         parse_reranking_response(response, original_predictions)
 
 
-def test_parse_reranking_response_missing_indices():
+def test_parse_reranking_response_missing_indices() -> None:
     # Arrange - Mix of real misconception categories
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="SwapDividend"),
@@ -118,7 +116,7 @@ def test_parse_reranking_response_missing_indices():
         parse_reranking_response(response, original_predictions)
 
 
-def test_parse_reranking_response_duplicate_indices():
+def test_parse_reranking_response_duplicate_indices() -> None:
     # Arrange - Common algebra misconceptions
     original_predictions = [
         Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Additive"),

@@ -9,7 +9,7 @@ from kaggle_map.core.normalise import (
 
 
 @pytest.mark.parametrize(
-    "inp, expected",
+    ("inp", "expected"),
     [
         (r"\( \\frac{3}{6} \)", "3/6"),
         (r"\( \\frac{1}{3} \)", "1/3"),
@@ -28,7 +28,7 @@ def test_normalize_latex_answer(inp: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "inp, expected",
+    ("inp", "expected"),
     [
         ("  hello   world ", "hello world"),
         ("A\nB\tC", "A B C"),
@@ -41,7 +41,7 @@ def test_normalize_text(inp: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "q, a, e, expected_contains",
+    ("q", "a", "e", "expected_contains"),
     [
         (
             "What fraction?",
@@ -64,7 +64,7 @@ def test_compose_text_unit(q: str, a: str, e: str, expected_contains: list[str])
 
 
 @pytest.mark.parametrize(
-    "inp, expected",
+    ("inp", "expected"),
     [
         ("There are 20 apples and 7 pears", "There are <NUM> apples and 7 pears"),
         ("Year 2024-08-19", "Year <NUM>-<NUM>-<NUM>"),
@@ -75,4 +75,3 @@ def test_compose_text_unit(q: str, a: str, e: str, expected_contains: list[str])
 )
 def test_number_normalize(inp: str, expected: str) -> None:
     assert number_normalize(inp) == expected, f"Number normalization failed for input '{inp}'"
-

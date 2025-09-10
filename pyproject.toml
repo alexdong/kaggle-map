@@ -62,7 +62,7 @@ dev-dependencies = [
 
 [tool.ruff]
 line-length = 120
-exclude = [".venv", "**/*_test.py"]
+exclude = [".venv"]
 
 [tool.ruff.lint]
 extend-select = [
@@ -109,6 +109,19 @@ extend-ignore = [
 
 [tool.ruff.lint.mccabe]
 max-complexity = 5
+
+[tool.ruff.lint.per-file-ignores]
+# Test files - consistent *_test.py naming pattern
+"**/*_test.py" = [
+    "PLR2004",  # Magic values are acceptable in tests
+    "S101",     # Assert statements are expected in tests
+    "ANN001",   # Missing type annotations for fixtures are OK
+    "ANN201",   # Missing return type for fixtures is OK
+    "FBT001",   # Boolean parameters are fine in tests
+    "PT011",    # Broad pytest.raises is sometimes necessary
+    "PT014",    # Duplicate test cases might be intentional for clarity
+    "E501",     # Long lines in test data are sometimes necessary
+]
 
 [tool.pytest.ini_options]
 testpaths = ["kaggle_map", "tests"]
