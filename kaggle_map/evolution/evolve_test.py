@@ -41,36 +41,43 @@ def test_select_top_performers() -> None:
             PromptCandidate(
                 generation=0,
                 candidate_id="gen_00_candidate_0",
-                prompt="Template 0",
+                prompt="Question: {{ question_text }}\nCategory: {{ category }}\nMC Answer: {{ mc_answer }}\nStudent: {{ student_explanation }}",
                 hypothesis="Hypothesis 0",
                 parent_ids=[],
             ),
             PromptCandidate(
                 generation=0,
                 candidate_id="gen_00_candidate_1",
-                prompt="Template 1",
+                prompt="Q: {{ question_text }}\nCat: {{ category }}\nAnswer: {{ mc_answer }}\nExplanation: {{ student_explanation }}",
                 hypothesis="Hypothesis 1",
                 parent_ids=[],
             ),
             PromptCandidate(
                 generation=0,
                 candidate_id="gen_00_candidate_2",
-                prompt="Template 2",
+                prompt="{{ question_text }}\n{{ category }}\n{{ mc_answer }}\n{{ student_explanation }}",
                 hypothesis="Hypothesis 2",
                 parent_ids=[],
             ),
         ],
-        evaluations=[],
+        evaluations=[
+            EvaluationResult(candidate_id="gen_00_candidate_0", map_score=0.9, failure_samples=[]),
+            EvaluationResult(candidate_id="gen_00_candidate_1", map_score=0.8, failure_samples=[]),
+            EvaluationResult(candidate_id="gen_00_candidate_2", map_score=0.7, failure_samples=[]),
+        ],
         timestamp=datetime.now(),
     )
 
     # Select top 40% (should be 1 out of 3)
     selected = select_top_performers(generation, top_percentage=0.4)
     assert len(selected) == 1
+    assert selected[0].candidate_id == "gen_00_candidate_0"
 
     # Select top 70% (should be 2 out of 3)
     selected = select_top_performers(generation, top_percentage=0.7)
     assert len(selected) == 2
+    assert selected[0].candidate_id == "gen_00_candidate_0"
+    assert selected[1].candidate_id == "gen_00_candidate_1"
 
 
 @patch("kaggle_map.evolution.evolve.evaluate_all_candidates")
@@ -85,7 +92,7 @@ def test_run_generation(
         PromptCandidate(
             generation=0,
             candidate_id="gen_00_candidate_0",
-            prompt="Template",
+            prompt="Question: {{ question_text }}\nCategory: {{ category }}\nMC Answer: {{ mc_answer }}\nStudent: {{ student_explanation }}",
             hypothesis="Test",
             parent_ids=[],
         )
@@ -141,7 +148,7 @@ def test_evolve_prompts(
             PromptCandidate(
                 generation=0,
                 candidate_id="gen_00_candidate_0",
-                prompt="Template",
+                prompt="Question: {{ question_text }}\nCategory: {{ category }}\nMC Answer: {{ mc_answer }}\nStudent: {{ student_explanation }}",
                 hypothesis="Test",
                 parent_ids=[],
             )

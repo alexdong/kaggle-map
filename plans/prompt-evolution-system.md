@@ -173,13 +173,13 @@ Summarize error_prediction.csv with top 5-10 diverse patterns, grouped by (Quest
 ### Task 6: Evolution Orchestrator
 **Goal:** Coordinate the complete evolution cycle. If there is a score tie, prefer the earlier candidate or the one with fewer characters in the prompt.
 
-6.1. [ ] Create `kaggle_map/evolution/evolve.py` with `if __name__ == "__main__"`
-6.2. [ ] Implement generation loop (max 10 generations)
-6.3. [ ] Track top 5 performers across all generations
-6.4. [ ] Select top 40% from each generation as parents
-6.5. [ ] Build enriched context for next generation
-6.6. [ ] Stop if improvement < 1% over 3 consecutive generations
-6.7. [ ] Log progress to console and file
+6.1. [x] Create `kaggle_map/evolution/evolve.py` with `if __name__ == "__main__"`
+6.2. [x] Implement generation loop (max 10 generations)
+6.3. [x] Track top 5 performers across all generations
+6.4. [x] Select top 40% from each generation as parents
+6.5. [x] Build enriched context for next generation
+6.6. [x] Stop if improvement < 1% over 3 consecutive generations
+6.7. [x] Log progress to console and file
 
 
 ## Features to DROP for Simplicity
