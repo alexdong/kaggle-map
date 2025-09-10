@@ -134,12 +134,13 @@ if __name__ == "__main__":
     logger.info("Loading real data from datasets/train.csv")
     train_df = pd.read_csv("datasets/train.csv")
     from kaggle_map.core.dataset import load_training_data
+
     training_rows = load_training_data(Path("datasets/train.csv"))
     correct_answers = extract_correct_answers(training_rows)
-    
+
     # Get a sample row that has a misconception
     sample_row = train_df[train_df["Category"] == "True_Misconception"].iloc[0]
-    
+
     # Create evaluation row from real data
     eval_row = EvaluationRow(
         row_id=int(sample_row["row_id"]),
@@ -149,7 +150,7 @@ if __name__ == "__main__":
         student_explanation=str(sample_row["StudentExplanation"]),
         correct_answer=correct_answers.get(int(sample_row["QuestionId"]), ""),
     )
-    
+
     logger.info(f"Using question {eval_row.question_id}: {eval_row.question_text[:100]}...")
     logger.info(f"Student answer: {eval_row.mc_answer}")
     logger.info(f"Student explanation: {eval_row.student_explanation[:100]}...")
@@ -159,7 +160,7 @@ if __name__ == "__main__":
     candidate_predictions = [
         Prediction(
             category=Category.TRUE_MISCONCEPTION,
-            misconception=str(sample_row["Misconception"]) if pd.notna(sample_row["Misconception"]) else "Student misunderstands the concept",
+            misconception=str(sample_row["Misconception"]) if pd.notna(sample_row["Misconception"]) else "NA",
         ),
         Prediction(
             category=Category.TRUE_CORRECT,
@@ -189,11 +190,11 @@ if __name__ == "__main__":
     # Perform reranking
     logger.info("\nPerforming reranking...")
     from kaggle_map.reranker.utils import format_chat_prompt
-    
+
     # Build prompt and wrap with chat format (like in benchmark.py)
     base_prompt = build_reranking_prompt(request)
     full_prompt = format_chat_prompt(load_config.model_name, base_prompt)
-    
+
     # Call LLM directly to see what response we get
     response = llm(
         full_prompt,
@@ -204,11 +205,8 @@ if __name__ == "__main__":
     )
     response_text = response["choices"][0]["text"].strip()  # type: ignore
     logger.info(f"Raw LLM response: {response_text!r}")
-    
-    # Now parse the response
-    from kaggle_map.reranker.rerank import parse_reranking_response
-    reranked = parse_reranking_response(response_text, request.candidate_predictions)
 
+    reranked = parse_reranking_response(response_text, request.candidate_predictions)
     logger.info("\nReranked predictions:")
     for i, pred in enumerate(reranked, 1):
         logger.info(f"  {i}. {pred}")

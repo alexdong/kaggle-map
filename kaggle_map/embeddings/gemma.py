@@ -41,7 +41,7 @@ if __name__ == "__main__":
         logger.info(f"  Min: {embedding.min():.4f}, Max: {embedding.max():.4f}")
         logger.info(f"  Mean: {embedding.mean():.4f}, Std: {embedding.std():.4f}")
         logger.info(f"  First 5 values: {embedding[:5].tolist()}")
-        
+
         assert isinstance(embedding, torch.Tensor)
         assert embedding.dim() == 1, f"Expected 1D tensor, got {embedding.dim()}D"
         assert embedding.shape[0] > 0, "Embedding dimension should be positive"
