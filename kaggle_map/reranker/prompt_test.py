@@ -11,13 +11,13 @@ from kaggle_map.reranker.rerank import RerankingRequest, build_reranking_prompt
 
 def test_prompt_template_exists():
     """Test that the prompt template file exists."""
-    template_path = Path(__file__).parent / "prompt.j2"
+    template_path = Path(__file__).parent / "prompts" / "prompt.j2"
     assert template_path.exists(), "prompt.j2 template file should exist"
 
 
 def test_template_renders_all_parameters():
     """Test that the template correctly renders all required parameters."""
-    template_path = Path(__file__).parent / "prompt.j2"
+    template_path = Path(__file__).parent / "prompts" / "prompt.j2"
     template = Template(template_path.read_text())
     
     # Test data
@@ -87,7 +87,7 @@ def test_build_reranking_prompt_integration():
 
 def test_template_handles_special_characters():
     """Test that the template correctly handles special characters."""
-    template_path = Path(__file__).parent / "prompt.j2"
+    template_path = Path(__file__).parent / "prompts" / "prompt.j2"
     template = Template(template_path.read_text())
     
     # Test with special characters that might break templating
