@@ -2,7 +2,7 @@
 
 import better_exceptions
 
-from .core.models import (
+from kaggle_map.core.models import (
     Category,
     EvaluationRow,
     Prediction,
