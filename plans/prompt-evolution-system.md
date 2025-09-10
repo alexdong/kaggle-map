@@ -115,13 +115,10 @@ We DO NOT need to be 100% coverage. This is a one-man project. We just need to c
 ### Task 1: Data Models Foundation
 **Goal:** Define core data structures with full type safety and validation
 
-1.1. [ ] Create `kaggle_map/evolution/__init__.py` with all dataclasses
-1.2. [ ] Use Pydantic for validation (MAP score 0-1, generation >= 0)
-1.3. [ ] Add assertions for data integrity
-1.4. [ ] Implement __str__ methods for readable logging
-
-**Unclear items:**
-- None - all models are well defined with clear imports
+1.1. [x] Create `kaggle_map/evolution/__init__.py` with all dataclasses
+1.2. [x] Use Pydantic for validation (MAP score 0-1, generation >= 0)
+1.3. [x] Add assertions for data integrity
+1.4. [x] Implement __str__ methods for readable logging
 
 ### Task 2: Storage Layer
 **Goal:** Reliable persistence of prompts and evaluation results
