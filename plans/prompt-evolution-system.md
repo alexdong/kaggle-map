@@ -105,6 +105,12 @@ kaggle_map/
 ## Implementation Tasks
 
 Keep the code generated as simple and minimal as possible. Avoid over-engineering.
+All code must be type-annotated and use Pydantic for data models.
+Avoid `try/except` unless absolutely necessary. Instead, use `assert`. 
+Also, add plenty of loguru logging for observability and debuggability.
+
+Before you generate any code, produce the failing test cases first. Keep the tests minimum. 
+We DO NOT need to be 100% coverage. This is a one-man project. We just need to catch obvious mistakes.
 
 ### Task 1: Data Models Foundation
 **Goal:** Define core data structures with full type safety and validation
