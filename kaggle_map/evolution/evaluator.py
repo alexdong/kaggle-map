@@ -8,11 +8,7 @@ from loguru import logger
 
 from kaggle_map.core.models import Category, Prediction
 from kaggle_map.evolution import (
-    EXCELLENT_MAP_THRESHOLD,
-    GOOD_MAP_THRESHOLD,
     PARTIAL_HIT_THRESHOLD,
-    POOR_MAP_THRESHOLD,
-    STRONG_RESULT_THRESHOLD,
     EvaluationResult,
     FailureCase,
     PromptCandidate,

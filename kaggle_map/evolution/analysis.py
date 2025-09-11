@@ -115,6 +115,28 @@ def analyze_error_patterns(  # noqa: C901
     return patterns
 
 
+def _classify_failure(row: pd.Series) -> str | None:
+    """Classify a single failure into type."""
+    actual_cat = row.get("Category")
+    pred_cat = row.get("predicted_category")
+    actual_misc = row.get("actual_misconception")
+    pred_misc = row.get("predicted_misconception")
+
+    if actual_cat is None or pred_cat is None:
+        return None
+
+    category_match = actual_cat == pred_cat
+    misconception_match = actual_misc == pred_misc
+
+    if not category_match and not misconception_match:
+        return "both_wrong"
+    if not category_match:
+        return "wrong_category"
+    if not misconception_match:
+        return "wrong_misconception"
+    return None
+
+
 def group_failures_by_type(
     failures_df: pd.DataFrame,
 ) -> dict[str, list[int]]:
@@ -131,27 +153,13 @@ def group_failures_by_type(
     }
 
     for idx, row in failures_df.iterrows():
-        actual_cat = row.get("Category")
-        pred_cat = row.get("predicted_category")
-        actual_misc = row.get("actual_misconception")
-        pred_misc = row.get("predicted_misconception")
-
-        # Check if we have the necessary columns
-        if actual_cat is None or pred_cat is None:
-            logger.warning(f"Row {idx} missing category columns, skipping")
+        failure_type = _classify_failure(row)
+        if failure_type is None:
+            logger.warning(f"Row {idx} missing category columns or is correct, skipping")
             continue
+        groups[failure_type].append(idx)
 
-        category_match = actual_cat == pred_cat
-        misconception_match = actual_misc == pred_misc
-
-        if not category_match and not misconception_match:
-            groups["both_wrong"].append(idx)
-        elif not category_match:
-            groups["wrong_category"].append(idx)
-        elif not misconception_match:
-            groups["wrong_misconception"].append(idx)
-
-    total_grouped = len(groups["wrong_category"]) + len(groups["wrong_misconception"]) + len(groups["both_wrong"])
+    total_grouped = sum(len(g) for g in groups.values())
 
     logger.info(
         f"Grouped {total_grouped} failures: "

@@ -245,7 +245,7 @@ if __name__ == "__main__":
     import sys
     from datetime import datetime
 
-    from kaggle_map.evolution import EvaluationResult, Generation, PromptCandidate, TEST_MAP_SCORE
+    from kaggle_map.evolution import TEST_MAP_SCORE, EvaluationResult, Generation, PromptCandidate
 
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")

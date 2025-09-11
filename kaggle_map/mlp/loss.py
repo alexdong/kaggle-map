@@ -18,7 +18,7 @@ class ListMLELoss(nn.Module):
         Returns:
             Scalar loss value
         """
-        batch_size, n_classes = scores.shape
+        _batch_size, n_classes = scores.shape
 
         labels_one_hot = torch.zeros_like(scores)
         labels_one_hot.scatter_(1, labels.unsqueeze(1), 1)
