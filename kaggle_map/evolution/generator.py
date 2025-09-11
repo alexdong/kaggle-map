@@ -28,7 +28,7 @@ class CandidateResponse(BaseModel):
 
         missing = required - found_vars
         assert not missing, f"Template missing required variables: {missing}. Found: {found_vars}"
-        
+
         return v
 
 
@@ -293,7 +293,7 @@ def generate_candidates(  # noqa: C901, PLR0912
 
             # Parse response into candidates
             candidates = parse_gpt5_response(response_text, context.next_generation_id)
-            
+
             assert candidates is not None, "parse_gpt5_response returned None"
 
             # Set parent IDs based on context
@@ -328,9 +328,9 @@ def generate_candidates(  # noqa: C901, PLR0912
 def show_json_schema() -> None:
     """Display the Pydantic JSON schema used for structured output."""
     logger.info("Generating Pydantic JSON schema for GPT-5")
-    
+
     schema = GPT5Response.model_json_schema()
-    
+
     assert schema, "Failed to generate JSON schema"
     assert "properties" in schema, "Schema missing properties"
 
@@ -339,7 +339,7 @@ def show_json_schema() -> None:
     print("=" * 80)
     print(json.dumps(schema, indent=2))
     print("=" * 80)
-    
+
     logger.debug(f"Schema has {len(schema.get('properties', {}))} properties")
 
 
@@ -348,7 +348,7 @@ def main() -> None:
     # Configure logging
     logger.remove()
     logger.add(sys.stderr, level="DEBUG", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
-    
+
     logger.info("Starting GPT-5 generator manual test")
 
     # Show the JSON schema
@@ -364,14 +364,14 @@ def main() -> None:
         competition_context="Math misconception classification for Kaggle MAP competition",
         next_generation_id=0,
     )
-    
+
     assert context, "Failed to create test context"
     logger.debug(f"Test context: {context}")
 
     # Generate candidates
     logger.info("Generating test candidates")
     candidates = generate_candidates(context, num_candidates=3)
-    
+
     assert candidates, "No candidates generated"
     logger.success(f"Generated {len(candidates)} test candidates")
 
@@ -384,7 +384,7 @@ def main() -> None:
         print(f"Hypothesis: {candidate.hypothesis}")
         print(f"Template preview: {candidate.prompt[:200]}...")
     print("=" * 80)
-    
+
     logger.success("Manual test completed successfully")
 
 

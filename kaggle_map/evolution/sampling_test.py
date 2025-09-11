@@ -135,7 +135,7 @@ def test_stratified_sample_handles_small_strata(sample_ratio: float) -> None:
     min_expected = 1
     max_expected = len(data)
     assert min_expected <= len(sampled) <= max_expected, f"Sample size {len(sampled)} should be between {min_expected} and {max_expected} for ratio {sample_ratio}"
-    
+
     # All sampled rows should be from original data
     for idx in sampled.index:
         assert idx in data.index, f"Sampled index {idx} should exist in original data"

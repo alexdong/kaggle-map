@@ -25,17 +25,17 @@ def check_convergence(
     assert scores is not None, "Cannot check convergence on None scores"
     assert threshold > 0, f"Threshold must be positive, got {threshold}"
     assert window > 0, f"Window must be positive, got {window}"
-    
+
     if len(scores) < window + 1:
         return False
 
     recent_scores = scores[-window - 1 :]
     max_improvement = max(recent_scores[1:]) - recent_scores[0]
-    
+
     converged = max_improvement < threshold
     if converged:
         logger.info(f"Convergence detected: improvement {max_improvement:.4f} < threshold {threshold:.4f}")
-    
+
     return converged
 
 
@@ -46,15 +46,15 @@ def select_top_performers(
     assert generation, "Cannot select from None generation"
     assert generation.candidates, f"Generation {generation.generation_id} has no candidates"
     assert 0.0 < top_percentage <= 1.0, f"Top percentage must be between 0 and 1, got {top_percentage}"
-    
+
     num_to_select = max(1, int(len(generation.candidates) * top_percentage))
     logger.info(f"Selecting top {num_to_select} out of {len(generation.candidates)} candidates ({top_percentage:.0%})")
 
     selected_ids = {evaluation.candidate_id for evaluation in generation.evaluations[:num_to_select]}
     selected = [c for c in generation.candidates if c.candidate_id in selected_ids]
-    
+
     assert len(selected) == num_to_select, f"Expected {num_to_select} selected candidates, got {len(selected)}"
-    
+
     return selected
 
 
@@ -73,11 +73,11 @@ def build_evolution_context(  # noqa: C901
     """
     assert all_generations is not None, "Cannot build context from None generations"
     assert top_k > 0, f"Top K must be positive, got {top_k}"
-    
+
     all_results = []
     for gen in all_generations:
         assert gen.evaluations, f"Generation {gen.generation_id} has no evaluations"
-        
+
         for evaluation in gen.evaluations:
             candidate = next((c for c in gen.candidates if c.candidate_id == evaluation.candidate_id), None)
             assert candidate, f"No candidate found for evaluation {evaluation.candidate_id} in generation {gen.generation_id}"
@@ -88,11 +88,11 @@ def build_evolution_context(  # noqa: C901
     top_candidates = [candidate for candidate, _ in all_results[:top_k]]
     best_score = all_results[0][1].map_score if all_results else 0.0
     best_id = all_results[0][0].candidate_id if all_results else "baseline"
-    
+
     logger.info(f"Current best performer: {best_id} with MAP@3={best_score:.4f}")
 
     failure_patterns = {}
-    
+
     for candidate, evaluation in all_results[:top_k]:
         if evaluation.failure_samples:
             failure_patterns[candidate.candidate_id] = evaluation.failure_samples
@@ -107,7 +107,7 @@ def build_evolution_context(  # noqa: C901
         logger.debug("Using default competition context (docs/competition.md not found)")
 
     next_gen_id = len(all_generations)
-    
+
     context = EvolutionContext(
         current_best_prompt=best_id,
         current_best_score=best_score,
@@ -116,10 +116,10 @@ def build_evolution_context(  # noqa: C901
         competition_context=competition_context,
         next_generation_id=next_gen_id,
     )
-    
+
     logger.success(f"Built evolution context for generation {next_gen_id}")
     logger.debug(f"  Context: {context}")
-    
+
     return context
 
 
@@ -133,7 +133,7 @@ def run_generation(context: EvolutionContext) -> Generation:
         Completed generation with evaluations
     """
     assert context, "Cannot run generation with None context"
-    
+
     gen_id = context.next_generation_id
     logger.info(f"\n{'='*60}")
     logger.info(f"Starting Generation {gen_id}")
@@ -145,7 +145,7 @@ def run_generation(context: EvolutionContext) -> Generation:
     # Generate candidates
     logger.info("Phase 1: Generating candidate prompts...")
     candidates = generate_candidates(context, num_candidates=7)
-    
+
     if not candidates:
         logger.error("❌ Failed to generate any candidates")
         return Generation(
@@ -154,7 +154,7 @@ def run_generation(context: EvolutionContext) -> Generation:
             evaluations=[],
             timestamp=datetime.now(),
         )
-    
+
     assert len(candidates) > 0, f"Generated {len(candidates)} candidates but expected > 0"
 
     logger.success(f"✅ Generated {len(candidates)} candidates")
@@ -164,7 +164,7 @@ def run_generation(context: EvolutionContext) -> Generation:
     # Evaluate candidates
     logger.info("Phase 2: Evaluating candidates...")
     evaluations = evaluate_all_candidates(candidates, sample_ratio=0.1)
-    
+
     assert evaluations, f"No evaluations returned for generation {gen_id}"
     assert len(evaluations) == len(candidates), f"Evaluation count mismatch: {len(evaluations)} evaluations for {len(candidates)} candidates"
 
@@ -175,26 +175,26 @@ def run_generation(context: EvolutionContext) -> Generation:
         evaluations=evaluations,
         timestamp=datetime.now(),
     )
-    
+
     assert generation, "Failed to create generation object"
 
     # Log results
     best_score = evaluations[0].map_score if evaluations else 0.0
     worst_score = evaluations[-1].map_score if evaluations else 0.0
     avg_score = sum(e.map_score for e in evaluations) / len(evaluations) if evaluations else 0.0
-    
+
     logger.success(f"\n🎯 Generation {gen_id} Complete!")
     logger.success(f"  Best:    {best_score:.4f} ({evaluations[0].candidate_id if evaluations else 'N/A'})")
     logger.success(f"  Worst:   {worst_score:.4f} ({evaluations[-1].candidate_id if evaluations else 'N/A'})")
     logger.success(f"  Average: {avg_score:.4f}")
     logger.success(f"  Spread:  {best_score - worst_score:.4f}")
-    
+
     # Log top performers
     logger.info(f"\nTop 3 performers in generation {gen_id}:")
     for i, evaluation in enumerate(evaluations[:3], 1):
         candidate = next((c for c in candidates if c.candidate_id == evaluation.candidate_id), None)
         assert candidate, f"No candidate found for evaluation {evaluation.candidate_id}"
-        
+
         logger.info(f"  {i}. {evaluation.candidate_id}: MAP@3 = {evaluation.map_score:.4f}")
         logger.debug(f"     Hypothesis: {candidate.hypothesis[:80]}{'...' if len(candidate.hypothesis) > 80 else ''}")
 
@@ -219,11 +219,11 @@ def evolve_prompts(  # noqa: C901
     assert max_generations > 0, f"Max generations must be positive, got {max_generations}"
     assert convergence_threshold > 0, f"Convergence threshold must be positive, got {convergence_threshold}"
     assert convergence_window > 0, f"Convergence window must be positive, got {convergence_window}"
-    
+
     logger.info(f"\n{'='*80}")
     logger.info("STARTING PROMPT EVOLUTION SYSTEM")
     logger.info(f"{'='*80}")
-    logger.info(f"Configuration:")
+    logger.info("Configuration:")
     logger.info(f"  Max generations: {max_generations}")
     logger.info(f"  Convergence threshold: {convergence_threshold:.1%} improvement")
     logger.info(f"  Convergence window: {convergence_window} generations")
@@ -238,7 +238,7 @@ def evolve_prompts(  # noqa: C901
     if not context_path.exists():
         logger.info("\n🚀 Bootstrapping evolution system...")
         logger.info("Analyzing error_prediction.csv for initial patterns")
-        
+
         error_summary = load_and_analyze_errors()
         assert error_summary, "Failed to analyze initial errors"
         logger.success("✅ Initial error analysis complete")
@@ -259,10 +259,10 @@ def evolve_prompts(  # noqa: C901
 
     # Main evolution loop
     logger.info(f"\n🎯 Starting evolution with up to {max_generations} generations\n")
-    
+
     for gen_num in range(max_generations):
         logger.info(f"\n[Generation {gen_num + 1}/{max_generations}]")
-        
+
         # Build context for this generation
         context = build_evolution_context(all_generations)
         assert context, f"Failed to build context for generation {gen_num}"
@@ -270,7 +270,7 @@ def evolve_prompts(  # noqa: C901
         # Run generation
         generation = run_generation(context)
         assert generation, f"Failed to run generation {gen_num}"
-        
+
         all_generations.append(generation)
         logger.debug(f"Added generation {gen_num} to history (total: {len(all_generations)})")
 
@@ -282,13 +282,13 @@ def evolve_prompts(  # noqa: C901
         if generation.evaluations:
             best_score = generation.evaluations[0].map_score
             best_scores.append(best_score)
-            
+
             # Track improvement
             improvement = best_score - (best_scores[-2] if len(best_scores) > 1 else 0.0)
             improvement_str = f" ({improvement:+.4f})" if len(best_scores) > 1 else ""
-            
+
             logger.info(f"🏆 Generation {gen_num} best score: {best_score:.4f}{improvement_str}")
-            
+
             if improvement > 0:
                 logger.success(f"📈 Improvement detected: +{improvement:.4f}")
             elif improvement < 0:
@@ -311,11 +311,11 @@ def evolve_prompts(  # noqa: C901
 
     # Find overall best
     logger.info(f"\n🔍 Finding best candidate across all {len(all_generations)} generations...")
-    
+
     best_candidate = None
     best_score = 0.0
     best_generation = -1
-    
+
     for gen_idx, gen in enumerate(all_generations):
         for evaluation in gen.evaluations:
             if evaluation.map_score > best_score:
@@ -326,7 +326,7 @@ def evolve_prompts(  # noqa: C901
                 assert best_candidate, f"No candidate found for best evaluation {evaluation.candidate_id}"
 
     if best_candidate:
-        logger.success(f"\n🎆 EVOLUTION COMPLETE!")
+        logger.success("\n🎆 EVOLUTION COMPLETE!")
         logger.success(f"  Best candidate: {best_candidate.candidate_id} (from generation {best_generation})")
         logger.success(f"  Best MAP@3 score: {best_score:.4f}")
         logger.success(f"  Hypothesis: {best_candidate.hypothesis[:100]}{'...' if len(best_candidate.hypothesis) > 100 else ''}")
@@ -343,7 +343,7 @@ def main() -> None:
     logger.remove()
     logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan> - <level>{message}</level>")
     logger.add("logs/evolution.log", level="DEBUG", rotation="10 MB", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{line} - {message}")
-    
+
     logger.info("Evolution system starting up...")
 
     # No need for additional header - evolve_prompts will log its own

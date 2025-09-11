@@ -181,7 +181,7 @@ def test_generation_id_type(generation_id: int) -> None:
 
 @pytest.mark.parametrize("candidate_id", [
     "gen_00_candidate_0",
-    "gen_03_candidate_2", 
+    "gen_03_candidate_2",
     "gen_99_baseline",
 ])
 def test_candidate_id_format(candidate_id: str) -> None:

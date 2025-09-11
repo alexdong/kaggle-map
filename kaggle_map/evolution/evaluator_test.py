@@ -124,10 +124,10 @@ def test_extract_failure_cases_diverse_sampling(diverse_failure_data: pd.DataFra
 def test_extract_failure_cases_max_failures_limit(mixed_failure_data: pd.DataFrame, max_failures: int) -> None:
     """Test that max_failures parameter limits returned results correctly."""
     failures = extract_failure_cases(mixed_failure_data, max_failures=max_failures)
-    
+
     # Should never exceed max_failures
     assert len(failures) <= max_failures, f"Should not exceed max_failures={max_failures}, got {len(failures)}"
-    
+
     # Should return all available failures if max_failures is larger
     total_failures_available = len(mixed_failure_data[mixed_failure_data["map_score"] < 1.0])
     expected_count = min(max_failures, total_failures_available)

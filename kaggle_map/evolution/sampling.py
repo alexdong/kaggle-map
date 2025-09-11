@@ -4,7 +4,7 @@ import pandas as pd
 from loguru import logger
 
 
-def stratified_sample(  # noqa: C901, PLR0912
+def stratified_sample(  # noqa: C901
     df: pd.DataFrame,
     sample_ratio: float = 0.1,
     stratify_cols: list[str] | None = None,
@@ -25,11 +25,11 @@ def stratified_sample(  # noqa: C901, PLR0912
 
     grouped = df.groupby(available_cols, group_keys=False)
     target_total = max(1, int(len(df) * sample_ratio))
-    
+
     sampled_dfs = []
     total_sampled = 0
 
-    for name, group in grouped:
+    for _name, group in grouped:
         stratum_size = len(group)
 
         target_samples = max(

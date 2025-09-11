@@ -95,7 +95,7 @@ def test_group_failures_by_type(failure_grouping_data: pd.DataFrame) -> None:
     # Row 0 should be in wrong_category or both_wrong
     row_0_groups = [group for group, indices in grouped.items() if 0 in indices]
     assert len(row_0_groups) > 0, "Row 0 (category mismatch) should be classified in at least one error group"
-    
+
     # Row 1 should be in wrong_category or both_wrong
     row_1_groups = [group for group, indices in grouped.items() if 1 in indices]
     assert len(row_1_groups) > 0, "Row 1 (category mismatch) should be classified in at least one error group"
@@ -104,9 +104,9 @@ def test_group_failures_by_type(failure_grouping_data: pd.DataFrame) -> None:
     assert 3 in grouped.get("wrong_misconception", []), "Row 3 should be classified as wrong misconception"
 
 
-@pytest.mark.parametrize("max_patterns,max_examples", [
+@pytest.mark.parametrize(("max_patterns", "max_examples"), [
     (1, 1),
-    (3, 2), 
+    (3, 2),
     (5, 3),
 ])
 def test_summarize_for_gpt5(gpt5_summary_data: pd.DataFrame, max_patterns: int, max_examples: int) -> None:
@@ -138,9 +138,9 @@ def test_summarize_for_gpt5_empty_data() -> None:
         "QuestionText": [],
         "StudentExplanation": [],
     })
-    
+
     summary = summarize_for_gpt5(empty_df, max_patterns=3, max_examples=2)
-    
+
     # Should handle empty data gracefully
     assert isinstance(summary, str), "Summary should be a string even for empty data"
     # Could be empty or contain a message about no patterns found
