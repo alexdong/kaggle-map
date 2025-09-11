@@ -8,6 +8,9 @@ from loguru import logger
 from kaggle_map.core.models import EvaluationRow, Prediction, QuestionId, TrainingRow
 from kaggle_map.dataloader.sampling import stratification_report as stratification_report
 from kaggle_map.dataloader.sampling import stratified_sample as stratified_sample
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 def load_training_data(csv_path: Path, question_id: QuestionId | None = None) -> list[TrainingRow]:

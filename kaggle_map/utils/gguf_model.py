@@ -9,6 +9,11 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
+from kaggle_map.utils.logger_config import configure_logger
+
+# Configure module-specific logging
+configure_logger(__name__)
+
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str

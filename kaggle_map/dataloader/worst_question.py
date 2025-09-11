@@ -5,6 +5,10 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
+
 # Display constants
 QUESTION_TEXT_DISPLAY_LENGTH = 80
 

@@ -13,6 +13,9 @@ from kaggle_map.evolution import (
     GenerationID,
     PromptCandidate,
 )
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 class Storage:
@@ -210,13 +213,11 @@ class Storage:
 
 if __name__ == "__main__":
     """Standalone validation of storage operations."""
-    import sys
     from datetime import datetime
 
     from kaggle_map.evolution import TEST_MAP_SCORE, EvaluationResult, Generation, PromptCandidate
 
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
+    # Logger is already configured by configure_logger(__name__)
 
     logger.info("=== Storage Module Validation ===")
     storage = Storage()

@@ -18,7 +18,11 @@ from kaggle_map.utils.gguf_model import (
     get_stop_tokens,
     load_llm_model,
 )
+from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
+
+# Configure module-specific logging
+configure_logger(__name__)
 
 
 def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
@@ -128,7 +132,7 @@ def display_evaluation_details(
 
         # Format MAP@3 score
         score_str = f"{result['score']:.2f}"
-        
+
         # Combine category and misconception
         category_misconception = f"{result['category']}:{result['misconception']}"
 
@@ -284,7 +288,6 @@ def evaluate_with_llm(
 
 if __name__ == "__main__":
     """Run evaluation with default settings."""
-    import sys
 
     import click
 
@@ -309,10 +312,6 @@ if __name__ == "__main__":
     )
     def main(sample_ratio: float, data_path: Path, template_path: Path) -> None:
         """Evaluate LLM predictions on validation data."""
-        # Configure logging
-        logger.remove()
-        logger.add(sys.stderr, level="INFO")
-
         # Run evaluation
         avg_map_score = evaluate_with_llm(
             template_path=template_path,

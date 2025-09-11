@@ -27,7 +27,10 @@ from kaggle_map.utils.gguf_model import (
     format_chat_prompt,
     load_llm_model,
 )
+from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
+
+configure_logger(__name__)
 
 
 def benchmark_single_model(

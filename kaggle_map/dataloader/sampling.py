@@ -3,6 +3,10 @@
 import pandas as pd
 from loguru import logger
 
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
+
 
 def stratified_sample(  # noqa: C901, PLR0913
     df: pd.DataFrame,

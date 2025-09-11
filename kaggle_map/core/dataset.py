@@ -18,6 +18,9 @@ from kaggle_map.core.models import (
     QuestionId,
     TrainingRow,
 )
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 def load_training_data(csv_path: Path) -> list[TrainingRow]:

@@ -7,6 +7,9 @@ from loguru import logger
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.models import Prediction, TrainingRow
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 # Type aliases for clarity
 type GenerationID = int

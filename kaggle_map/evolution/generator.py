@@ -2,7 +2,6 @@
 
 import json
 import re
-import sys
 import time
 
 from jinja2 import Template, TemplateSyntaxError
@@ -11,6 +10,9 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from kaggle_map.evolution import EvolutionContext, PromptCandidate
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 class CandidateResponse(BaseModel):
@@ -339,16 +341,8 @@ def show_json_schema() -> None:
 
 def main() -> None:
     """Manual test entry point."""
-    # Configure logging
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="DEBUG",
-        format=(
-            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
-        ),
-    )
+    # Reconfigure logger for manual testing with DEBUG console level
+    configure_logger(__name__, console_level="DEBUG", file_level="DEBUG")
 
     logger.info("Starting GPT-5 generator manual test")
 
