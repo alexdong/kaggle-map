@@ -116,3 +116,31 @@ def load_validation_data(
         logger.debug(f"Successfully loaded {len(result_pairs)} total validation rows")
 
     return result_pairs
+
+
+def load_rows_by_ids(data_path: Path, row_ids: list[int]) -> pd.DataFrame:
+    """Load specific rows from dataset by row_id values.
+
+    Args:
+        data_path: Path to the CSV file containing the data
+        row_ids: List of row_id values to load
+
+    Returns:
+        DataFrame containing only the requested rows
+    """
+    assert data_path.exists(), f"Data file not found at {data_path}"
+    assert row_ids, "Row IDs list cannot be empty"
+
+    logger.debug(f"Loading {len(row_ids)} specific rows from {data_path}")
+
+    # Load full dataset
+    df = pd.read_csv(data_path)
+
+    # Filter by row_id
+    filtered_df = df[df["row_id"].isin(row_ids)]
+
+    logger.debug(f"Found {len(filtered_df)} rows out of {len(row_ids)} requested")
+
+    assert not filtered_df.empty, f"No rows found for IDs: {row_ids}"
+
+    return filtered_df

@@ -1,5 +1,5 @@
 You are an expert math educator for understanding whether a student truly understands some basic math concepts.
-Your task is to return the three most likely <Labels> for the given student answer and explaination.
+Your task is to return the three most likely <Label> for the given student answer and explaination.
 
 Question: Sally has 2/3 of a cake; Robert eats 1/3 of that; which number sentence solves it?
 Correct Answer: (1/3) * (2/3)
@@ -7,7 +7,7 @@ MC_Answer: {{mc_answer}}
 StudentExplanation: {{student_explanation}}
 
 Please note that the student's answer is {% if mc_answer == "(1/3) * (2/3)" %}correct{% else %}incorrect{% endif %}.
-<Labels>
+<Label>
 {% if mc_answer == "(1/3) * (2/3)" %}
 - True_Correct:NA
 - True_Neither:NA
@@ -19,9 +19,9 @@ Please note that the student's answer is {% if mc_answer == "(1/3) * (2/3)" %}co
 - False_Misconception:Subtraction
 - False_Misconception:Division
 {% endif %}
-</Labels>
+</Label>
 
-Choose the `_Misconception:` <Labels> when you observe the student is trying to apply the incorrect operation due to a misunderstanding of the problem.
+Choose the `_Misconception:` <Label> when you observe the student is trying to apply the incorrect operation due to a misunderstanding of the problem.
 
 - Subtraction: the student uses subtraction reasoning
 - Division: the student uses division reasoning
@@ -29,10 +29,11 @@ Choose the `_Misconception:` <Labels> when you observe the student is trying to 
 
 IMPORTANT :
 
-- Return exactly three <Labels>, separated by single spaces. No extra text. No punctuation.
+- Return exactly three <Label>, separated by single spaces. No extra text. No punctuation.
+- Each <Label> can show up only once.
 - Put the most likely label first, then the second most likely, then the third most likely.
-- Each <Labels> can show up only once.
 - If the student's explanation is vague, not explain the math thinking, return {% if mc_answer == "(1/3) * (2/3)" %}True_Neither:NA{% else %}False_Neither:NA{% endif %} the first label.
 - if there is clear multiplication intent AND no explicit subtraction/division reasoning, return {% if mc_answer == "(1/3) * (2/3)" %}True_Correct:NA{% else %}False_Correct:NA{% endif %} the first label.
 
 YOUR OUTPUT (3 labels only)
+

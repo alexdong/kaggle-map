@@ -222,6 +222,21 @@ class TrainingRow(EvaluationRow):
         )
 
 
+class EvaluationResult(BaseModel):
+    """Result of evaluating a single row with LLM predictions."""
+
+    row_id: RowId
+    question_id: QuestionId
+    mc_answer: Answer
+    explanation: Explanation
+    ground_truth: Prediction
+    predictions: list[Prediction]
+    score: float
+
+    def __repr__(self) -> str:
+        return f"EvaluationResult(row_id={self.row_id}, score={self.score:.2f})"
+
+
 class SubmissionRow(NamedTuple):
     row_id: RowId
     predicted_categories: list[Prediction]  # Max 3, ordered by confidence

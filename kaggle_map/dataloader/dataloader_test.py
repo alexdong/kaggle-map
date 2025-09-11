@@ -2,8 +2,10 @@
 
 from pathlib import Path
 
+import pandas as pd
+
 from kaggle_map.core.models import Category
-from kaggle_map.dataloader import load_training_data, load_validation_data
+from kaggle_map.dataloader import load_rows_by_ids, load_training_data, load_validation_data
 
 
 def test_load_training_data_returns_correct_count():
@@ -131,3 +133,26 @@ def test_load_all_validation_data():
     assert hasattr(first_eval_row, "question_id"), "EvaluationRow should have question_id"
     assert isinstance(first_eval_row.question_id, int), "question_id should be int"
     assert isinstance(first_prediction.category, Category), "category should be Category enum"
+
+
+def test_load_rows_by_ids(tmp_path):
+    """Test loading specific rows by ID."""
+    # Create test CSV
+    test_data = pd.DataFrame([
+        {"row_id": 1, "QuestionId": 100, "QuestionText": "Q1", "MC_Answer": "A", "StudentExplanation": "Exp1", "Category": "True_Correct", "Misconception": "NA"},
+        {"row_id": 2, "QuestionId": 101, "QuestionText": "Q2", "MC_Answer": "B", "StudentExplanation": "Exp2", "Category": "True_Correct", "Misconception": "NA"},
+        {"row_id": 3, "QuestionId": 102, "QuestionText": "Q3", "MC_Answer": "C", "StudentExplanation": "Exp3", "Category": "True_Misconception", "Misconception": "Test"},
+        {"row_id": 4, "QuestionId": 103, "QuestionText": "Q4", "MC_Answer": "D", "StudentExplanation": "Exp4", "Category": "True_Neither", "Misconception": "NA"},
+    ])
+
+    test_file = tmp_path / "test_data.csv"
+    test_data.to_csv(test_file, index=False)
+
+    # Load specific rows
+    result = load_rows_by_ids(test_file, [1, 3])
+
+    assert len(result) == 2
+    assert result.iloc[0]["row_id"] == 1
+    assert result.iloc[1]["row_id"] == 3
+    assert result.iloc[0]["QuestionText"] == "Q1"
+    assert result.iloc[1]["QuestionText"] == "Q3"

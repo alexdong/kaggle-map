@@ -8,8 +8,9 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.core.models import EvaluationResult
 from kaggle_map.dataloader import load_validation_data, stratified_sample
+from kaggle_map.llm.utils import evaluate_dataframe
 from kaggle_map.utils.gguf_model import (
     GGUFModelLoadConfig,
     GGUFModelName,
@@ -19,78 +20,22 @@ from kaggle_map.utils.gguf_model import (
     load_llm_model,
 )
 from kaggle_map.utils.logger_config import configure_logger
-from kaggle_map.utils.metrics import calculate_map_at_3
 
 # Configure module-specific logging
 configure_logger(__name__)
 
 
-def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
-    template = Template(template_path.read_text())
-    return template.render(
-        question_text=eval_row.question_text,
-        mc_answer=eval_row.mc_answer,
-        student_explanation=eval_row.student_explanation,
-    )
 
 
-def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
-    """Parse LLM response to extract predictions.
-
-    The LLM returns three predictions on ONE line separated by spaces.
-    Format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
-    Example: "True_Correct:NA True_Neither:NA True_Misconception:Division"
-
-    Args:
-        response: Raw LLM response containing predictions
-
-    Returns:
-        List of up to 3 Prediction objects
-    """
-    predictions = []
-
-    # The response should be a single line with three space-separated predictions
-    response_clean = response.strip()
-
-    # Handle case where LLM might return multiple lines - take the first non-empty line
-    for line in response_clean.split("\n"):
-        if line.strip() and ":" in line:
-            response_clean = line.strip()
-            break
-
-    # Split by spaces to get individual predictions
-    prediction_parts = response_clean.split()
-
-    for part in prediction_parts:
-        if ":" not in part:
-            continue
-
-        try:
-            prediction = Prediction.from_string(part)
-            predictions.append(prediction)
-
-            max_predictions = 3
-            if len(predictions) >= max_predictions:
-                break
-        except Exception as e:
-            logger.debug(f"Failed to parse prediction '{part}': {e}")
-            continue
-
-    # Pad with default predictions if needed
-    max_predictions = 3
-    while len(predictions) < max_predictions:
-        predictions.append(Prediction(category=Category.TRUE_CORRECT, misconception="NA"))
-
-    return predictions[:max_predictions]
 
 
 def display_evaluation_details(
-    evaluation_results: list[dict],
+    evaluation_results: list[EvaluationResult],
 ) -> None:
     """Display detailed evaluation results for each row.
 
     Args:
-        evaluation_results: List of evaluation result dictionaries
+        evaluation_results: List of EvaluationResult objects
     """
     if not evaluation_results:
         return
@@ -121,25 +66,25 @@ def display_evaluation_details(
     # Add each row
     for result in evaluation_results:
         # Truncate explanation if needed
-        explanation = result["explanation"]
+        explanation = result.explanation
         if len(explanation) > max_explanation_length:
             explanation = explanation[: max_explanation_length - 3] + "..."
 
         # Format LLM predictions
-        llm_labels = " | ".join([str(pred) for pred in result["predictions"]])
+        llm_labels = " | ".join([str(pred) for pred in result.predictions])
         if len(llm_labels) > max_llm_labels_length:
             llm_labels = llm_labels[: max_llm_labels_length - 3] + "..."
 
         # Format MAP@3 score
-        score_str = f"{result['score']:.2f}"
+        score_str = f"{result.score:.2f}"
 
         # Combine category and misconception
-        category_misconception = f"{result['category']}:{result['misconception']}"
+        category_misconception = str(result.ground_truth)
 
         # Add row
         table.add_row(
-            str(result["row_id"]),
-            result["mc_answer"],
+            str(result.row_id),
+            result.mc_answer,
             explanation,
             category_misconception,
             llm_labels,
@@ -149,7 +94,7 @@ def display_evaluation_details(
     # Display the table
     console.print(table)
     console.print(f"\nTotal rows evaluated: {len(evaluation_results)}")
-    avg_score = sum(r["score"] for r in evaluation_results) / len(evaluation_results) if evaluation_results else 0
+    avg_score = sum(r.score for r in evaluation_results) / len(evaluation_results) if evaluation_results else 0
     console.print(f"Average MAP@3: {avg_score:.4f}\n")
 
 
@@ -205,78 +150,28 @@ def evaluate_with_llm(
     logger.info(f"GPU layers: {config.n_gpu_layers} (-1 means use all available)")
     llm = load_llm_model(config)
 
-    # Evaluate each sample
-    scores = []
+    # Prepare template
+    template = Template(template_path.read_text())
+
+    # Create wrapper for llm to handle format_chat_prompt
     stop_tokens = get_stop_tokens(model_name)
 
-    # Track all evaluation results for detailed output
-    evaluation_results = []
+    def llm_wrapper(prompt, **kwargs):
+        full_prompt = format_chat_prompt(model_name, prompt)
+        return llm(full_prompt, **kwargs)
 
-    for row_number, (_, row) in enumerate(sampled_df.iterrows()):
-        # Reconstruct evaluation row
-        eval_row = EvaluationRow(
-            row_id=int(row["row_id"]),
-            question_id=int(row["QuestionId"]),
-            question_text=str(row["QuestionText"]),
-            mc_answer=str(row["MC_Answer"]),
-            student_explanation=str(row["StudentExplanation"]),
-        )
-
-        # Reconstruct ground truth
-        ground_truth = Prediction(
-            category=row["Category"],
-            misconception=row["Misconception"] if pd.notna(row["Misconception"]) else "NA",
-        )
-
-        # Build prompt
-        user_prompt = build_prediction_prompt(eval_row, template_path)
-        logger.debug(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
-        full_prompt = format_chat_prompt(model_name, user_prompt)
-
-        # Generate predictions
-        response = llm(
-            full_prompt,
-            max_tokens=256,
-            temperature=0.1,
-            top_p=0.95,
-            stop=stop_tokens,
-            echo=False,
-        )
-
-        response_text = response["choices"][0]["text"]  # type: ignore[index]
-
-        # Parse predictions
-        predictions = parse_predictions(response_text)
-        logger.debug(f"Predictions for row {eval_row.row_id}: {predictions}")
-
-        # Calculate MAP@3
-        score = calculate_map_at_3(ground_truth, predictions)
-        scores.append(score)
-
-        # Store detailed result for every row
-        evaluation_results.append(
-            {
-                "row_id": eval_row.row_id,
-                "mc_answer": eval_row.mc_answer,
-                "explanation": eval_row.student_explanation,
-                "category": ground_truth.category.value,
-                "misconception": ground_truth.misconception,
-                "predictions": predictions,
-                "score": score,
-            }
-        )
-
-        if (row_number + 1) % 10 == 0:
-            current_avg = sum(scores) / len(scores)
-            logger.info(f"Progress: {row_number + 1}/{len(sampled_df)} | Current MAP@3: {current_avg:.4f}")
-
-    # Calculate average score
-    avg_score = sum(scores) / len(scores) if scores else 0.0
+    # Evaluate using the new utility function
+    evaluation_results, avg_score = evaluate_dataframe(
+        sampled_df,
+        template,
+        llm_wrapper,
+        stop_tokens=stop_tokens
+    )
 
     logger.success(f"\n{'=' * 50}")
     logger.success("Evaluation Complete")
     logger.success(f"{'=' * 50}")
-    logger.success(f"Samples evaluated: {len(scores)}")
+    logger.success(f"Samples evaluated: {len(evaluation_results)}")
     logger.success(f"Average MAP@3: {avg_score:.4f}")
     logger.success(f"{'=' * 50}")
 
