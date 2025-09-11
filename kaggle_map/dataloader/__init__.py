@@ -1,26 +1,40 @@
 """Data loading functions for training and error prediction datasets."""
 
 from pathlib import Path
+from typing import Optional, Tuple
 
 import pandas as pd
 from loguru import logger
 
-from kaggle_map.core.models import QuestionId, TrainingRow
+from kaggle_map.core.models import EvaluationRow, Prediction, QuestionId, TrainingRow
 
 
-def load_training(question_id: QuestionId) -> list[TrainingRow]:
-    train_csv_path = Path("datasets/train.csv")
+def load_training_data(csv_path: Path, question_id: Optional[QuestionId] = None) -> list[TrainingRow]:
+    """Load training rows from a CSV file, optionally filtered by question ID.
+    
+    Args:
+        csv_path: Path to the CSV file containing training data
+        question_id: Optional question ID to filter by. If None, loads all data.
+        
+    Returns:
+        List of TrainingRow objects
+    """
+    assert csv_path.exists(), f"Training data not found at {csv_path}"
 
-    assert train_csv_path.exists(), f"Training data not found at {train_csv_path}"
+    if question_id is not None:
+        logger.debug(f"Loading training data for question {question_id} from {csv_path}")
+    else:
+        logger.debug(f"Loading all training data from {csv_path}")
 
-    logger.debug(f"Loading training data for question {question_id} from {train_csv_path}")
+    df = pd.read_csv(csv_path)
 
-    df = pd.read_csv(train_csv_path)
-
-    # Filter for the specific question
-    question_df = df[df["QuestionId"] == question_id]
-
-    logger.debug(f"Found {len(question_df)} rows for question {question_id}")
+    # Filter for the specific question if provided
+    if question_id is not None:
+        question_df = df[df["QuestionId"] == question_id]
+        logger.debug(f"Found {len(question_df)} rows for question {question_id}")
+    else:
+        question_df = df
+        logger.debug(f"Found {len(question_df)} total rows")
 
     # Convert each row to TrainingRow
     training_rows = []
@@ -28,45 +42,68 @@ def load_training(question_id: QuestionId) -> list[TrainingRow]:
         training_row = TrainingRow.from_dataframe_row(row)
         training_rows.append(training_row)
 
-    logger.debug(f"Successfully loaded {len(training_rows)} training rows for question {question_id}")
+    if question_id is not None:
+        logger.debug(f"Successfully loaded {len(training_rows)} training rows for question {question_id}")
+    else:
+        logger.debug(f"Successfully loaded {len(training_rows)} total training rows")
 
     return training_rows
 
 
-def load_error(question_id: QuestionId) -> list[TrainingRow]:
-    error_csv_path = Path("datasets/error_prediction.csv")
+def load_validation_data(csv_path: Path, question_id: Optional[QuestionId] = None) -> list[tuple[EvaluationRow, Prediction]]:
+    """Load validation data rows from a CSV file, optionally filtered by question ID.
+    
+    Args:
+        csv_path: Path to the CSV file containing validation/error prediction data
+        question_id: Optional question ID to filter by. If None, loads all data.
+        
+    Returns:
+        List of tuples containing (EvaluationRow, Prediction) pairs
+    """
+    assert csv_path.exists(), f"Validation data not found at {csv_path}"
 
-    assert error_csv_path.exists(), f"Error prediction data not found at {error_csv_path}"
+    if question_id is not None:
+        logger.debug(f"Loading validation data for question {question_id} from {csv_path}")
+    else:
+        logger.debug(f"Loading all validation data from {csv_path}")
 
-    logger.debug(f"Loading error prediction data for question {question_id} from {error_csv_path}")
+    df = pd.read_csv(csv_path)
 
-    df = pd.read_csv(error_csv_path)
+    # Filter for the specific question if provided
+    if question_id is not None:
+        question_df = df[df["QuestionId"] == question_id]
+        logger.debug(f"Found {len(question_df)} rows for question {question_id}")
+    else:
+        question_df = df
+        logger.debug(f"Found {len(question_df)} total rows")
 
-    # Filter for the specific question
-    question_df = df[df["QuestionId"] == question_id]
-
-    logger.debug(f"Found {len(question_df)} rows for question {question_id}")
-
-    # The error_prediction.csv has different columns, need to map them
-    # Map Category column (uppercase) to the format expected by TrainingRow
-    training_rows = []
+    # Convert each row to EvaluationRow and Prediction tuple
+    result_pairs = []
     for _, row in question_df.iterrows():
-        # Create a new row with the expected column names
+        # Create EvaluationRow
+        eval_row = EvaluationRow(
+            row_id=int(row["row_id"]),
+            question_id=int(row["QuestionId"]),
+            question_text=str(row["QuestionText"]),
+            mc_answer=str(row["MC_Answer"]),
+            student_explanation=str(row["StudentExplanation"]),
+        )
+        
+        # Create Prediction from the actual ground truth
+        # Map Category column (uppercase) to the format expected by Prediction
         mapped_row = pd.Series(
             {
-                "row_id": row["row_id"],
-                "QuestionId": row["QuestionId"],
-                "QuestionText": row["QuestionText"],
-                "MC_Answer": row["MC_Answer"],
-                "StudentExplanation": row["StudentExplanation"],
                 "Category": row["Category"],  # This is already in uppercase format
                 "Misconception": row.get("actual_misconception", "NA"),
             }
         )
+        prediction = Prediction.from_ground_truth_row(mapped_row)
+        
+        result_pairs.append((eval_row, prediction))
 
-        training_row = TrainingRow.from_dataframe_row(mapped_row)
-        training_rows.append(training_row)
+    if question_id is not None:
+        logger.debug(f"Successfully loaded {len(result_pairs)} validation rows for question {question_id}")
+    else:
+        logger.debug(f"Successfully loaded {len(result_pairs)} total validation rows")
 
-    logger.debug(f"Successfully loaded {len(training_rows)} error prediction rows for question {question_id}")
-
-    return training_rows
+    return result_pairs
