@@ -128,7 +128,6 @@ class Storage:
         return generation
 
     def save_context(self, context: EvolutionContext) -> None:
-
         path = self.get_context_path()
 
         if not path.parent.exists():

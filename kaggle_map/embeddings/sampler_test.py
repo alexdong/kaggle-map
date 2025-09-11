@@ -8,6 +8,28 @@ import torch
 from kaggle_map.embeddings.sampler import calculate_diversity, select_diverse_samples
 
 
+def _get_base_embedding(text: str, h: int) -> list[float]:
+    """Get base embedding vector based on text content."""
+    if not text or not text.strip():
+        return [0.1, 0.1, 0.1]
+
+    text_lower = text.lower()
+
+    # Define embedding patterns for different topics
+    topic_embeddings = {
+        ("math", "addition"): [0.8, 0.2, 0.1],
+        ("history", "rome"): [0.1, 0.9, 0.2],
+        ("geography", "mountain"): [0.2, 0.1, 0.9],
+    }
+
+    for keywords, embedding in topic_embeddings.items():
+        if any(keyword in text_lower for keyword in keywords):
+            return embedding
+
+    # Default: use hash to generate varied embeddings
+    return [0.5 + (h % 10) / 20, 0.5 + ((h >> 4) % 10) / 20, 0.5 + ((h >> 8) % 10) / 20]
+
+
 @pytest.fixture
 def mock_embedder():
     """Create a fast mock embedder for testing."""
@@ -15,23 +37,8 @@ def mock_embedder():
 
     def fast_encode(text: str) -> torch.Tensor:
         """Generate deterministic embeddings based on text content."""
-        # Use hash for deterministic but varied embeddings
         h = hash(text) if text else 0
-
-        # Create 3D embedding based on text characteristics
-        if not text or not text.strip():
-            base = [0.1, 0.1, 0.1]
-        elif "math" in text.lower() or "addition" in text.lower():
-            base = [0.8, 0.2, 0.1]
-        elif "history" in text.lower() or "rome" in text.lower():
-            base = [0.1, 0.9, 0.2]
-        elif "geography" in text.lower() or "mountain" in text.lower():
-            base = [0.2, 0.1, 0.9]
-        else:
-            # Use hash to generate varied embeddings for other texts
-            base = [0.5 + (h % 10) / 20, 0.5 + ((h >> 4) % 10) / 20, 0.5 + ((h >> 8) % 10) / 20]
-
-        # Add small deterministic variation
+        base = _get_base_embedding(text, h)
         variation = (h % 100) / 1000.0
         return torch.tensor([b + variation for b in base], dtype=torch.float32)
 
@@ -81,8 +88,7 @@ def test_calculate_diversity_multiple_embeddings():
 
 def test_select_diverse_samples_basic(mock_embedder):
     """Test basic diverse sample selection."""
-    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance",
-               return_value=mock_embedder):
+    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         texts = [
             "Mathematics problem about addition",
             "Math addition question",  # Similar to first
@@ -103,8 +109,7 @@ def test_select_diverse_samples_basic(mock_embedder):
 
 def test_select_diverse_samples_edge_cases(mock_embedder):
     """Test edge cases in diverse sampling."""
-    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance",
-               return_value=mock_embedder):
+    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         texts = ["text1", "text2"]
 
         # More samples than texts
@@ -124,8 +129,7 @@ def test_select_diverse_samples_edge_cases(mock_embedder):
 
 def test_select_diverse_samples_with_empty_texts(mock_embedder):
     """Test handling of empty and whitespace texts."""
-    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance",
-               return_value=mock_embedder):
+    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         texts = ["valid text", "", "  ", "another valid", None]
 
         # Filter out None values for testing
@@ -139,8 +143,7 @@ def test_select_diverse_samples_with_empty_texts(mock_embedder):
 
 def test_reproducibility(mock_embedder):
     """Test that selection is deterministic."""
-    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance",
-               return_value=mock_embedder):
+    with patch("kaggle_map.embeddings.sampler.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         texts = ["text a", "text b", "text c", "text d", "text e"]
 
         # Run multiple times
@@ -170,21 +173,14 @@ if __name__ == "__main__":
     # Create mock embedder for tests that need it
     mock_emb = mock_embedder()
 
-    test_functions = [
-        (test_calculate_diversity_two_embeddings, False),
-        (test_calculate_diversity_multiple_embeddings, False),
-        (test_select_diverse_samples_basic, True),
-        (test_select_diverse_samples_edge_cases, True),
-        (test_select_diverse_samples_with_empty_texts, True),
-        (test_reproducibility, True),
-    ]
+    # Tests that don't need mock embedder
+    test_calculate_diversity_two_embeddings()
+    test_calculate_diversity_multiple_embeddings()
 
-    for test_func, needs_mock in test_functions:
-        logger.info(f"  Running {test_func.__name__}...")
-        if needs_mock:
-            test_func(mock_emb)
-        else:
-            test_func()
-        logger.success(f"    ✓ {test_func.__name__} passed")
+    # Tests that need mock embedder
+    test_select_diverse_samples_basic(mock_emb)
+    test_select_diverse_samples_edge_cases(mock_emb)
+    test_select_diverse_samples_with_empty_texts(mock_emb)
+    test_reproducibility(mock_emb)
 
     logger.success("All tests passed!")

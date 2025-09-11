@@ -18,20 +18,21 @@ from rich.table import Table
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
 from kaggle_map.evolution.sampling import stratified_sample
-from kaggle_map.reranker.models import (
-    RerankerLLMLoadConfig,
-    RerankerModelName,
-    RerankerModelQuantizationLevel,
-)
 from kaggle_map.reranker.rerank import RerankingRequest, build_reranking_prompt
-from kaggle_map.reranker.utils import format_chat_prompt, load_llm_model
 from kaggle_map.utils.cli import EnumChoice
+from kaggle_map.utils.gguf_model import (
+    GGUFModelLoadConfig,
+    GGUFModelName,
+    GGUFModelQuantizationLevel,
+    format_chat_prompt,
+    load_llm_model,
+)
 from kaggle_map.utils.metrics import calculate_map_at_3
 
 
 def benchmark_single_model(
-    model_name: RerankerModelName,
-    quantization: RerankerModelQuantizationLevel,
+    model_name: GGUFModelName,
+    quantization: GGUFModelQuantizationLevel,
     eval_df: pd.DataFrame,
     correct_answers: dict,
     prompt_template_path: Path | None = None,
@@ -51,7 +52,7 @@ def benchmark_single_model(
     console = Console()
     console.print(f"\nBenchmarking {model_name} with {quantization} quantization...", style="yellow")
 
-    load_config = RerankerLLMLoadConfig(
+    load_config = GGUFModelLoadConfig(
         model_name=model_name,
         quantization=quantization,
     )
@@ -142,14 +143,14 @@ def benchmark_single_model(
 @click.command()
 @click.option(
     "--model",
-    type=EnumChoice(RerankerModelName),
-    default=RerankerModelName.GEMMA_3_12B_IT.value,
+    type=EnumChoice(GGUFModelName),
+    default=GGUFModelName.GEMMA_3_12B_IT.value,
     help="Model to benchmark",
 )
 @click.option(
     "--quantization",
-    type=EnumChoice(RerankerModelQuantizationLevel),
-    default=RerankerModelQuantizationLevel.Q4_K_XL.value,
+    type=EnumChoice(GGUFModelQuantizationLevel),
+    default=GGUFModelQuantizationLevel.Q4_K_XL.value,
     help="Quantization level to use",
 )
 @click.option(
@@ -171,8 +172,8 @@ def benchmark_single_model(
     help="Use stratified sampling to preserve distribution",
 )
 def main(
-    model: RerankerModelName,
-    quantization: RerankerModelQuantizationLevel,
+    model: GGUFModelName,
+    quantization: GGUFModelQuantizationLevel,
     sample_ratio: float,
     prompt_template: Path,
     use_stratified: bool,  # noqa: FBT001

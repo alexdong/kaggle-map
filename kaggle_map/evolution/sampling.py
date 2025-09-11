@@ -7,14 +7,16 @@ from kaggle_map.embeddings.sampler import select_diverse_samples
 
 # Constants for display
 MAX_DISPLAY_GROUPS = 10
+MAX_QUESTION_TEXT_LENGTH = 100
 
 
-def stratified_sample(  # noqa: C901
+def stratified_sample(  # noqa: C901, PLR0913
     df: pd.DataFrame,
     sample_ratio: float = 0.1,
     stratify_cols: list[str] | None = None,
     min_samples_per_stratum: int = 3,
     random_seed: int = 42,
+    *,
     adaptive_min_samples: bool = True,
 ) -> pd.DataFrame:
     assert 0.0 < sample_ratio <= 1.0, f"sample_ratio must be between 0 and 1, got {sample_ratio}"
@@ -171,7 +173,8 @@ if __name__ == "__main__":
         sample_ratio=0.1,
         stratify_cols=["QuestionId", "MC_Answer", "actual_misconception"],
         min_samples_per_stratum=3,
-        random_seed=42
+        random_seed=42,
+        adaptive_min_samples=True,
     )
     logger.info(f"  10% requested → {len(sampled)} samples ({len(sampled) / len(error_data) * 100:.1f}% actual)")
 
@@ -212,13 +215,15 @@ if __name__ == "__main__":
     groups_processed = 0
     groups_with_diversity = 0
 
-    for (qid, mc_answer, misconception), group_df in sampled.groupby(["QuestionId", "MC_Answer", "actual_misconception"]):  # type: ignore[attr-defined]
+    groupby_cols = ["QuestionId", "MC_Answer", "actual_misconception"]
+    for (qid, mc_answer, misconception), group_df in sampled.groupby(groupby_cols):  # type: ignore[attr-defined]
         groups_processed += 1
         explanations = group_df["StudentExplanation"].tolist()
 
         # Get question text and correct answer from first row of group
-        question_text = str(group_df.iloc[0]["QuestionText"])[:100]  # Truncate long questions
-        if len(str(group_df.iloc[0]["QuestionText"])) > 100:
+        full_question = str(group_df.iloc[0]["QuestionText"])
+        question_text = full_question[:MAX_QUESTION_TEXT_LENGTH]
+        if len(full_question) > MAX_QUESTION_TEXT_LENGTH:
             question_text += "..."
 
         # Get correct answer if available

@@ -12,7 +12,7 @@ from jinja2 import Template
 from llama_cpp import Llama
 
 from kaggle_map.core.models import EvaluationRow, Prediction
-from kaggle_map.reranker.models import LLMResponse, PromptTemplate
+from kaggle_map.utils.gguf_model import LLMResponse, PromptTemplate
 
 
 @dataclass(frozen=True)
@@ -126,15 +126,19 @@ if __name__ == "__main__":
 
     from kaggle_map.core.dataset import extract_correct_answers
     from kaggle_map.core.models import Category, EvaluationRow, Prediction
-    from kaggle_map.reranker.models import RerankerLLMLoadConfig, RerankerModelName, RerankerModelQuantizationLevel
-    from kaggle_map.reranker.utils import load_llm_model
+    from kaggle_map.utils.gguf_model import (
+        GGUFModelLoadConfig,
+        GGUFModelName,
+        GGUFModelQuantizationLevel,
+        load_llm_model,
+    )
 
     logger.info("Testing rerank_predictions function")
 
     # Use default model configuration from benchmark.py
-    load_config = RerankerLLMLoadConfig(
-        model_name=RerankerModelName.GEMMA_3_12B_IT,
-        quantization=RerankerModelQuantizationLevel.Q4_K_XL,
+    load_config = GGUFModelLoadConfig(
+        model_name=GGUFModelName.GEMMA_3_12B_IT,
+        quantization=GGUFModelQuantizationLevel.Q4_K_XL,
     )
 
     logger.info(f"Loading model: {load_config.model_name} with {load_config.quantization} quantization")
@@ -200,7 +204,7 @@ if __name__ == "__main__":
 
     # Perform reranking
     logger.info("\nPerforming reranking...")
-    from kaggle_map.reranker.utils import format_chat_prompt
+    from kaggle_map.utils.gguf_model import format_chat_prompt
 
     # Build prompt and wrap with chat format (like in benchmark.py)
     base_prompt = build_reranking_prompt(request)

@@ -1,20 +1,106 @@
 """Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
 
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
+import pydash
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
-from kaggle_map.reranker.models import (
-    GGUF_MODELS,
-    RerankerLLMLoadConfig,
-    RerankerModelName,
-    RerankerModelQuantizationLevel,
-)
+# LLM operation type aliases
+PromptTemplate = str
+LLMResponse = str
 
 
-def format_chat_prompt(model_name: RerankerModelName, user_content: str) -> str:
+class GGUFModelName(str, Enum):
+    """Available GGUF model options."""
+
+    QWEN3_14B = "Qwen3-14B"
+    GEMMA_3_12B_IT = "gemma-3-12b-it"
+    GPT_OSS_20B = "gpt-oss-20b"
+
+
+class GGUFModelQuantizationLevel(str, Enum):
+    """Available quantization levels for GGUF models.
+
+    NOTE: Q4_K_XL and Q5_K_XL have sequential loading conflicts in llama-cpp-python
+    Use only one quantization per benchmark session to avoid GPU context corruption
+    """
+
+    Q2_K_XL = "Q2_K_XL"
+    Q3_K_XL = "Q3_K_XL"
+    Q4_K_XL = "Q4_K_XL"
+    Q5_K_XL = "Q5_K_XL"
+    Q6_K_XL = "Q6_K_XL"
+
+
+# Available options derived from enum members
+MODEL_OPTIONS: list[GGUFModelName] = list(GGUFModelName.__members__.values())
+QUANTIZATION_OPTIONS: list[GGUFModelQuantizationLevel] = list(GGUFModelQuantizationLevel.__members__.values())
+
+
+@dataclass(frozen=True)
+class GGUFRepoSpec:
+    """Specification for a GGUF model repository and filename pattern."""
+
+    repo: str  # HuggingFace repository ID
+    filename_pattern: str  # Pattern with {quant} placeholder for quantization level
+    available_quantizations: list[GGUFModelQuantizationLevel] = field(
+        default_factory=lambda: list(GGUFModelQuantizationLevel.__members__.values())
+    )
+
+
+# Model configurations with their HuggingFace patterns
+GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
+    GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
+        repo="unsloth/gpt-oss-20b-GGUF",
+        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
+        available_quantizations=pydash.without(
+            list(GGUFModelQuantizationLevel.__members__.values()), GGUFModelQuantizationLevel.Q5_K_XL
+        ),
+    ),
+    GGUFModelName.QWEN3_14B: GGUFRepoSpec(
+        repo="unsloth/Qwen3-14B-GGUF",
+        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
+        # Temporarily test only Q5_K_XL due to sequential loading conflicts
+    ),
+    GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
+        repo="unsloth/gemma-3-12b-it-GGUF",
+        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
+    ),
+}
+
+
+@dataclass
+class GGUFModelLoadConfig:
+    """Configuration for loading GGUF models into memory.
+
+    gpt-oss-20b: doesn't follow instruction tuning well.
+    Qwen3-14B: Q4: 0.6005; Q6: 0.6021
+    gemma-3-12b-it: Q4: 0.6185; Q6: 0.6193
+
+    The Q4 is slightly worse but much much faster, so it's a good trade-off.
+    Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
+    """
+
+    model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT
+    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL
+    n_ctx: int = 4096  # Context window size
+    n_batch: int = 512  # Batch size for prompt processing
+    n_gpu_layers: int = -1  # Use all available GPU layers
+    n_threads: int = 8  # CPU threads for inference
+    random_seed: int = 42
+    verbose: bool = False  # Verbose llama.cpp output
+
+    @property
+    def model_filename(self) -> str:
+        """Get the GGUF filename for this configuration."""
+        return f"{self.model_name.value}-{self.quantization.value}.gguf"
+
+
+def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
     """Format chat prompt according to the model's expected template.
 
     Different models use different chat template formats:
@@ -43,7 +129,7 @@ def format_chat_prompt(model_name: RerankerModelName, user_content: str) -> str:
     return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
 
 
-def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
+def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
     """Get the appropriate stop tokens for a model.
 
     Different models use different stop tokens:
@@ -80,7 +166,7 @@ def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
     raise AssertionError(msg)
 
 
-def get_model_path(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
+def get_model_path(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:
     """Get the local path for a GGUF model file.
 
     All XL quantizations from Unsloth use "UD-" prefix in their filenames.
@@ -92,7 +178,7 @@ def get_model_path(model_name: RerankerModelName, quantization: RerankerModelQua
     return Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
 
 
-def download_model(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
+def download_model(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:
     """Download GGUF model from Hugging Face Hub if it doesn't exist."""
     model_path = get_model_path(model_name, quantization)
 
@@ -142,7 +228,7 @@ def download_model(model_name: RerankerModelName, quantization: RerankerModelQua
     return model_path
 
 
-def load_llm_model(config: RerankerLLMLoadConfig) -> Llama:
+def load_llm_model(config: GGUFModelLoadConfig) -> Llama:
     """Load a GGUF model with automatic cleanup via context manager."""
     model_path = download_model(config.model_name, config.quantization)
     logger.info(f"Loading GGUF model from {model_path}")

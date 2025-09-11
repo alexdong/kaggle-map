@@ -38,7 +38,6 @@ def evaluate_candidate(
     storage.save_prompt_template(candidate)
     template_path = storage.get_prompt_template_path(candidate.candidate_id)
 
-
     cmd = [
         "uv",
         "run",
