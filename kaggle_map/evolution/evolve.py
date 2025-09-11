@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from kaggle_map.evolution import (
+    HYPOTHESIS_DEBUG_LENGTH,
     HYPOTHESIS_DISPLAY_LENGTH,
     EvolutionContext,
     Generation,
@@ -201,12 +202,15 @@ def run_generation(context: EvolutionContext) -> Generation:
         assert candidate, f"No candidate found for evaluation {evaluation.candidate_id}"
 
         logger.info(f"  {i}. {evaluation.candidate_id}: MAP@3 = {evaluation.map_score:.4f}")
-        logger.debug(f"     Hypothesis: {candidate.hypothesis[:80]}{'...' if len(candidate.hypothesis) > 80 else ''}")
+        hypothesis_preview = candidate.hypothesis[:HYPOTHESIS_DEBUG_LENGTH]
+        if len(candidate.hypothesis) > HYPOTHESIS_DEBUG_LENGTH:
+            hypothesis_preview += "..."
+        logger.debug(f"     Hypothesis: {hypothesis_preview}")
 
     return generation
 
 
-def evolve_prompts(  # noqa: C901
+def evolve_prompts(  # noqa: C901, PLR0912, PLR0915
     max_generations: int = 10,
     convergence_threshold: float = 0.01,
     convergence_window: int = 3,
@@ -334,9 +338,10 @@ def evolve_prompts(  # noqa: C901
         logger.success("\n🎆 EVOLUTION COMPLETE!")
         logger.success(f"  Best candidate: {best_candidate.candidate_id} (from generation {best_generation})")
         logger.success(f"  Best MAP@3 score: {best_score:.4f}")
-        logger.success(
-            f"  Hypothesis: {best_candidate.hypothesis[:HYPOTHESIS_DISPLAY_LENGTH]}{'...' if len(best_candidate.hypothesis) > HYPOTHESIS_DISPLAY_LENGTH else ''}"
-        )
+        hypothesis_text = best_candidate.hypothesis[:HYPOTHESIS_DISPLAY_LENGTH]
+        if len(best_candidate.hypothesis) > HYPOTHESIS_DISPLAY_LENGTH:
+            hypothesis_text += "..."
+        logger.success(f"  Hypothesis: {hypothesis_text}")
         logger.success(f"  Template saved: reranker/prompts/{best_candidate.candidate_id}.j2")
     else:
         logger.error("❌ No successful candidates generated across all generations")

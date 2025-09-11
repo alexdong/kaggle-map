@@ -319,8 +319,8 @@ uv run python -m kaggle_map.evolution.evolve \
 Run all modules with __main__ entry points:
 ```bash
 # Foundation
-- [ ] uv run python kaggle_map/evolution/storage.py
-- [ ] uv run python kaggle_map/evolution/sampling.py
+- [x] uv run python kaggle_map/evolution/storage.py
+- [x] uv run python kaggle_map/evolution/sampling.py
 
 # Core components  
 - [ ] uv run python kaggle_map/evolution/analysis.py

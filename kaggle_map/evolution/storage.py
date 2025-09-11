@@ -20,18 +20,13 @@ class Storage:
 
     def __init__(self, base_dir: Path | None = None) -> None:
         self.base_dir = base_dir or Path.cwd()
-        assert self.base_dir.exists(), f"Base directory does not exist: {self.base_dir}"
-        assert self.base_dir.is_dir(), f"Base path is not a directory: {self.base_dir}"
 
     def get_prompt_template_path(self, candidate_id: str) -> Path:
-        assert candidate_id, f"Candidate ID cannot be empty: '{candidate_id}'"
-        assert candidate_id.strip(), f"Candidate ID cannot be whitespace: '{candidate_id}'"
         assert "gen_" in candidate_id, f"Invalid candidate ID format (missing 'gen_'): {candidate_id}"
 
         return self.base_dir / "reranker" / "prompts" / f"{candidate_id}.j2"
 
     def get_generation_dir(self, generation_id: GenerationID) -> Path:
-        assert isinstance(generation_id, int), f"Generation ID must be int, got {type(generation_id).__name__}"
         assert generation_id >= 0, f"Generation ID must be non-negative, got {generation_id}"
 
         return self.base_dir / "reranker" / "prompts" / "generations" / f"gen_{generation_id:02d}"
@@ -40,7 +35,6 @@ class Storage:
         return self.base_dir / "reranker" / "prompts" / "generations" / "context.json"
 
     def save_prompt_template(self, candidate: PromptCandidate) -> None:
-        assert candidate, "Cannot save None candidate"
         assert candidate.prompt, f"Cannot save empty prompt for {candidate.candidate_id}"
 
         path = self.get_prompt_template_path(candidate.candidate_id)
@@ -54,26 +48,13 @@ class Storage:
         logger.info(f"Saving prompt template: {candidate.candidate_id} ({len(candidate.prompt)} chars)")
 
         path.write_text(candidate.prompt)
-        assert path.exists(), f"Failed to create file: {path}"
-        assert path.stat().st_size > 0, f"File is empty after write: {path}"
 
     def load_prompt_template(self, candidate_id: str) -> str:
-        assert candidate_id, f"Cannot load template with empty ID: '{candidate_id}'"
-
         path = self.get_prompt_template_path(candidate_id)
         assert path.exists(), f"Template file not found at {path} for candidate {candidate_id}"
-        assert path.is_file(), f"Path exists but is not a file: {path}"
-
-        file_size = path.stat().st_size
-        assert file_size > 0, f"Template file is empty: {path} (0 bytes)"
-
-        content = path.read_text()
-        assert content, f"Loaded empty content from {path}"
-        assert content.strip(), f"Loaded whitespace-only content from {path}"
-        return content
+        return path.read_text()
 
     def save_generation(self, generation: Generation) -> None:
-        assert generation, "Cannot save None generation"
         assert generation.candidates, f"Cannot save generation {generation.generation_id} with no candidates"
 
         gen_dir = self.get_generation_dir(generation.generation_id)
@@ -85,15 +66,14 @@ class Storage:
 
         gen_path = gen_dir / "generation.json"
         logger.info(
-            f"Saving generation {generation.generation_id}: {len(generation.candidates)} candidates, {len(generation.evaluations)} evaluations"
+            f"Saving generation {generation.generation_id}: "
+            f"{len(generation.candidates)} candidates, "
+            f"{len(generation.evaluations)} evaluations"
         )
 
         gen_data = generation.model_dump(mode="json")
         json_content = json.dumps(gen_data, indent=2)
         gen_path.write_text(json_content)
-
-        assert gen_path.exists(), f"Generation file not created: {gen_path}"
-        assert gen_path.stat().st_size > 0, f"Generation file is empty: {gen_path}"
 
         saved_count = 0
         for candidate in generation.candidates:
@@ -114,16 +94,12 @@ class Storage:
 
             json_content = json.dumps(candidate_data, indent=2)
             candidate_path.write_text(json_content)
-            assert candidate_path.exists(), f"Candidate file not created: {candidate_path}"
 
             saved_count += 1
 
         logger.info(f"Saved {saved_count}/{len(generation.candidates)} candidate files")
 
     def load_generation(self, generation_id: GenerationID) -> Generation:
-        assert isinstance(generation_id, int), (
-            f"Generation ID must be an integer, got {type(generation_id).__name__}: {generation_id}"
-        )
         assert generation_id >= 0, f"Generation ID must be non-negative, got: {generation_id}"
 
         gen_dir = self.get_generation_dir(generation_id)
@@ -131,7 +107,6 @@ class Storage:
 
         assert gen_dir.exists(), f"Generation directory not found: {gen_dir}"
         assert gen_path.exists(), f"Generation file not found: {gen_path}"
-        assert gen_path.stat().st_size > 0, f"Generation file is empty: {gen_path}"
 
         json_content = gen_path.read_text()
         gen_data = json.loads(json_content)
@@ -153,7 +128,6 @@ class Storage:
         return generation
 
     def save_context(self, context: EvolutionContext) -> None:
-        assert context, "Cannot save None context"
 
         path = self.get_context_path()
 
@@ -166,14 +140,9 @@ class Storage:
         json_content = json.dumps(context_data, indent=2)
         path.write_text(json_content)
 
-        assert path.exists(), f"Context file not created: {path}"
-        assert path.stat().st_size > 0, f"Context file is empty: {path}"
-
     def load_context(self) -> EvolutionContext:
         path = self.get_context_path()
         assert path.exists(), f"Context file not found at {path} - may need to bootstrap"
-        assert path.is_file(), f"Context path exists but is not a file: {path}"
-        assert path.stat().st_size > 0, f"Context file is empty: {path}"
 
         json_content = path.read_text()
         context_data = json.loads(json_content)
@@ -278,10 +247,13 @@ if __name__ == "__main__":
     logger.info("  ✓ Template round-trip successful")
 
     logger.info("\n3. Testing generation storage:")
+    test_evaluation = EvaluationResult(
+        candidate_id=test_candidate.candidate_id, map_score=TEST_MAP_SCORE, failure_samples=[]
+    )
     test_generation = Generation(
         generation_id=999,  # Use high number to avoid conflicts
         candidates=[test_candidate],
-        evaluations=[EvaluationResult(candidate_id=test_candidate.candidate_id, map_score=TEST_MAP_SCORE, failure_samples=[])],
+        evaluations=[test_evaluation],
         timestamp=datetime.now(),
     )
 

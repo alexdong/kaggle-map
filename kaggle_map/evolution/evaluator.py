@@ -8,7 +8,12 @@ from loguru import logger
 
 from kaggle_map.core.models import Category, Prediction
 from kaggle_map.evolution import (
+    EXCELLENT_MAP_THRESHOLD,
+    GOOD_MAP_THRESHOLD,
+    MODERATE_RESULT_THRESHOLD,
     PARTIAL_HIT_THRESHOLD,
+    POOR_MAP_THRESHOLD,
+    STRONG_RESULT_THRESHOLD,
     EvaluationResult,
     FailureCase,
     PromptCandidate,
@@ -24,8 +29,6 @@ def evaluate_candidate(
     model_name: str = "gemma-3-12b-it",
     quantization: str = "Q4_K_XL",
 ) -> EvaluationResult:
-    assert candidate, "Cannot evaluate None candidate"
-    assert candidate.prompt, f"Cannot evaluate candidate {candidate.candidate_id} with empty prompt"
     assert 0.0 < sample_ratio <= 1.0, f"Sample ratio must be between 0 and 1, got {sample_ratio}"
     assert eval_data_path.exists(), f"Evaluation data not found at {eval_data_path}"
 
@@ -35,7 +38,6 @@ def evaluate_candidate(
     storage.save_prompt_template(candidate)
     template_path = storage.get_prompt_template_path(candidate.candidate_id)
 
-    assert template_path.exists(), f"Template file not created at {template_path}"
 
     cmd = [
         "uv",
@@ -72,19 +74,19 @@ def evaluate_candidate(
         map_score = parse_map_score(result.stdout)
         logger.success(f"Candidate {candidate.candidate_id} achieved MAP@3: {map_score:.4f}")
 
-        if map_score > 0.7:
-            logger.info("  Excellent performance (MAP@3 > 0.7)")
-        elif map_score > 0.5:
-            logger.info("  Good performance (MAP@3 > 0.5)")
-        elif map_score < 0.3:
-            logger.warning("  Poor performance (MAP@3 < 0.3)")
+        if map_score > EXCELLENT_MAP_THRESHOLD:
+            logger.info(f"  Excellent performance (MAP@3 > {EXCELLENT_MAP_THRESHOLD})")
+        elif map_score > GOOD_MAP_THRESHOLD:
+            logger.info(f"  Good performance (MAP@3 > {GOOD_MAP_THRESHOLD})")
+        elif map_score < POOR_MAP_THRESHOLD:
+            logger.warning(f"  Poor performance (MAP@3 < {POOR_MAP_THRESHOLD})")
 
     eval_df = pd.read_csv(eval_data_path)
 
     eval_df = stratified_sample(
         eval_df,
         sample_ratio=sample_ratio,
-        stratify_cols=["QuestionId", "Category", "MC_Answer"],
+        stratify_cols=["QuestionId", "MC_Answer", "actual_misconception"],
         min_samples_per_stratum=3,
         random_seed=42,
     )
@@ -99,7 +101,8 @@ def evaluate_candidate(
 
 
 def parse_map_score(output: str) -> float:  # noqa: C901
-    assert output, "Cannot parse MAP@3 score from empty output"
+    if not output:
+        return 0.0
 
     found_scores = []
     for line in output.split("\n"):
@@ -135,7 +138,6 @@ def extract_failure_cases(  # noqa: C901
     3. Wrong misconception predictions
     4. Diverse sampling across (QuestionId, Category, MC_Answer)
     """
-    assert eval_df is not None, "Cannot extract failures from None DataFrame"
     assert max_failures > 0, f"Max failures must be positive, got {max_failures}"
 
     has_map_score = "map_score" in eval_df.columns
@@ -232,8 +234,6 @@ def evaluate_all_candidates(
     eval_data_path: Path = Path("datasets/error_prediction.csv"),
     sample_ratio: float = 0.1,
 ) -> list[EvaluationResult]:
-    assert candidates, "Cannot evaluate empty candidate list"
-    assert all(c.prompt for c in candidates), "All candidates must have prompts"
     assert eval_data_path.exists(), f"Evaluation data not found at {eval_data_path}"
 
     logger.info(f"Starting evaluation of {len(candidates)} candidates")
@@ -252,9 +252,9 @@ def evaluate_all_candidates(
         results.append(result)
         scores.append(result.map_score)
 
-        if result.map_score > 0.6:
+        if result.map_score > STRONG_RESULT_THRESHOLD:
             logger.success(f"  ✓ Strong result: MAP@3 = {result.map_score:.4f}")
-        elif result.map_score > 0.4:
+        elif result.map_score > MODERATE_RESULT_THRESHOLD:
             logger.info(f"  → Moderate result: MAP@3 = {result.map_score:.4f}")
         else:
             logger.warning(f"  ✗ Weak result: MAP@3 = {result.map_score:.4f}")
@@ -320,7 +320,7 @@ Be concise and specific."""
         candidate_id="gen_00_candidate_eval_test",
         prompt=baseline_path.read_text(),
         hypothesis="Testing evaluator functionality",
-        parent_ids=[]
+        parent_ids=[],
     )
 
     logger.info("\n1. Testing single candidate evaluation:")
@@ -382,7 +382,7 @@ Be concise and specific."""
             candidate_id=f"gen_00_candidate_{i}",
             prompt=test_candidate.prompt,  # Reuse same prompt for testing
             hypothesis=f"Test hypothesis {i}",
-            parent_ids=[]
+            parent_ids=[],
         )
         for i in range(2)
     ]

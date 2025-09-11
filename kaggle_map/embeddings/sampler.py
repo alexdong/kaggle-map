@@ -6,6 +6,11 @@ from torch.nn.functional import cosine_similarity
 
 from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
 
+# Constants
+MIN_EMBEDDINGS_FOR_DIVERSITY = 2
+MAX_DIVERSITY_RANGE = 2
+MAX_SHORT_TEXT_LENGTH = 200
+
 
 def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
     """Calculate average pairwise cosine distance as diversity score.
@@ -16,24 +21,25 @@ def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
     Returns:
         Average pairwise distance (0-2 range, higher = more diverse)
     """
-    assert len(embeddings) >= 2, f"Need at least 2 embeddings, got {len(embeddings)}"
-    assert all(isinstance(e, torch.Tensor) for e in embeddings), "All embeddings must be torch tensors"
+    assert len(embeddings) >= MIN_EMBEDDINGS_FOR_DIVERSITY, (
+        f"Need at least {MIN_EMBEDDINGS_FOR_DIVERSITY} embeddings, got {len(embeddings)}"
+    )
 
     n = len(embeddings)
     logger.debug(f"Calculating diversity for {n} embeddings")
 
-    if n == 2:
+    if n == MIN_EMBEDDINGS_FOR_DIVERSITY:
         # Simple case: just two embeddings
         distance = 1 - cosine_similarity(embeddings[0], embeddings[1], dim=0).item()
         logger.debug(f"  Distance between 2 embeddings: {distance:.3f}")
         return distance
 
     # Calculate all pairwise distances
-    distances = []
+    distances: list[float] = []
     for i in range(n):
         for j in range(i + 1, n):
             sim = cosine_similarity(embeddings[i], embeddings[j], dim=0).item()
-            dist = 1 - sim
+            dist: float = 1 - sim
             distances.append(dist)
             logger.debug(f"  Distance [{i},{j}]: {dist:.3f}")
 
@@ -43,7 +49,7 @@ def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
     return avg_distance
 
 
-def select_diverse_samples(
+def select_diverse_samples(  # noqa: C901
     texts: list[str],
     n_samples: int = 3,
 ) -> tuple[list[int], float]:
@@ -62,7 +68,6 @@ def select_diverse_samples(
         - diversity_score: Average pairwise distance (0-2)
     """
     assert texts, "Cannot select from empty text list"
-    assert all(isinstance(t, str) for t in texts), "All texts must be strings"
     assert n_samples > 0, f"n_samples must be positive, got {n_samples}"
 
     logger.info(f"Selecting {n_samples} diverse samples from {len(texts)} texts")
@@ -86,15 +91,9 @@ def select_diverse_samples(
     logger.debug(f"Encoding {len(texts)} texts")
     embeddings = []
     for i, text in enumerate(texts):
-        if not text or not text.strip():
-            logger.warning(f"  Text {i} is empty, using zero embedding")
-            # Create zero embedding with same dimension as model
-            dummy_embedding = model.encode("dummy")
-            embeddings.append(torch.zeros_like(dummy_embedding))
-        else:
-            truncated = text[:200] if len(text) > 200 else text
-            logger.debug(f"  Encoding text {i}: '{truncated}...'")
-            embeddings.append(model.encode(text))
+        truncated = text[:MAX_SHORT_TEXT_LENGTH] if len(text) > MAX_SHORT_TEXT_LENGTH else text
+        logger.debug(f"  Encoding text {i}: '{truncated}...'")
+        embeddings.append(model.encode(text))
 
     logger.debug(f"  Embedding dimensions: {embeddings[0].shape}")
 
@@ -120,11 +119,7 @@ def select_diverse_samples(
             # Find minimum distance to already selected embeddings
             min_dist_to_selected = float("inf")
             for selected_idx in selected:
-                sim = cosine_similarity(
-                    embeddings[candidate_idx],
-                    embeddings[selected_idx],
-                    dim=0
-                ).item()
+                sim = cosine_similarity(embeddings[candidate_idx], embeddings[selected_idx], dim=0).item()
                 dist = 1 - sim
                 min_dist_to_selected = min(min_dist_to_selected, dist)
 
@@ -133,7 +128,6 @@ def select_diverse_samples(
                 max_min_dist = min_dist_to_selected
                 best_idx = candidate_idx
 
-        assert best_idx != -1, f"Failed to find next diverse sample in round {round_num + 2}"
         selected.append(best_idx)
         logger.debug(f"    Selected index {best_idx} with min distance {max_min_dist:.3f}")
 
@@ -141,9 +135,7 @@ def select_diverse_samples(
     selected_embeddings = [embeddings[i] for i in selected]
     diversity_score = calculate_diversity(selected_embeddings)
 
-    logger.success(
-        f"Selected {len(selected)} diverse samples with diversity score {diversity_score:.3f}"
-    )
+    logger.success(f"Selected {len(selected)} diverse samples with diversity score {diversity_score:.3f}")
 
     return selected, diversity_score
 
