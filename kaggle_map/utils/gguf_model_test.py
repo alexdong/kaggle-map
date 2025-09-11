@@ -58,8 +58,11 @@ def test_special_characters_in_content() -> None:
     assert '"quotes"' in result
 
 
-def test_all_xl_quantizations_have_ud_prefix() -> None:
-    """Test that ALL XL quantizations use UD- prefix in filenames.
+def test_all_xl_quantizations_have_correct_local_path() -> None:
+    """Test that XL quantizations have correct local paths.
+
+    XL quantizations from Unsloth have "UD-" prefix in download URLs,
+    but local files should NOT have the "UD-" prefix after download.
 
     Note: Not all models have all XL quantizations available:
     - Gemma and Qwen have Q2, Q3, Q4, Q5, Q6, Q8 XL versions
@@ -91,8 +94,9 @@ def test_all_xl_quantizations_have_ud_prefix() -> None:
     for model, quantizations in model_quantizations.items():
         for quant in quantizations:
             path = get_model_path(model, quant)
-            assert "UD-" in str(path), f"Missing UD- prefix for {model} {quant}: {path}"
-            expected = f"models/gguf/{model.value}-UD-{quant.value}.gguf"
+            # Local files should NOT have UD- prefix
+            assert "UD-" not in str(path), f"Unexpected UD- prefix in local path for {model} {quant}: {path}"
+            expected = f"models/gguf/{model.value}-{quant.value}.gguf"
             assert str(path) == expected, f"Expected {expected}, got {path}"
 
 

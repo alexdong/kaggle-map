@@ -169,18 +169,12 @@ def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
 def get_model_path(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:
     """Get the local path for a GGUF model file.
 
-    All XL quantizations from Unsloth use "UD-" prefix in their filenames.
+    All XL quantizations from Unsloth use "UD-" prefix in their download URLs,
+    but we store them locally WITHOUT the "UD-" prefix for consistency.
     This stands for "Unsloth Dynamic" (Unsloth's Dynamic 2.0 quantization).
     """
-    # Try without UD- prefix first (for existing local files)
-    path_without_ud = Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
-    if path_without_ud.exists():
-        return path_without_ud
-
-    # XL quantizations need UD- prefix for downloads
-    if "_XL" in quantization.value:
-        return Path(f"models/gguf/{model_name.value}-UD-{quantization.value}.gguf")
-    return path_without_ud
+    # Always use the same local path format (without UD- prefix)
+    return Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
 
 
 def download_model(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:

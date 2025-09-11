@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pandas as pd
 from jinja2 import Template
 from loguru import logger
 from rich.console import Console
@@ -20,22 +21,8 @@ from kaggle_map.utils.gguf_model import (
 from kaggle_map.utils.metrics import calculate_map_at_3
 
 
-def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path | None = None) -> str:
-    """Build a prompt for predicting student misconceptions.
-
-    Args:
-        eval_row: Evaluation row with question and student response
-        template_path: Optional path to custom Jinja2 template
-
-    Returns:
-        Rendered prompt string
-    """
-    if template_path is None:
-        template_path = Path(__file__).parent / "prompts" / "predict.j2"
-
-    assert template_path.exists(), f"Template not found: {template_path}"
+def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
     template = Template(template_path.read_text())
-
     return template.render(
         question_text=eval_row.question_text,
         mc_answer=eval_row.mc_answer,
@@ -162,31 +149,15 @@ def display_evaluation_details(
 
 
 def evaluate_with_llm(
-    validation_path: Path = Path("datasets/33474_train.csv"),
+    template_path: Path,
+    data_path: Path,
     sample_ratio: float = 0.2,
     model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT,
     quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL,
-    template_path: Path | None = None,
 ) -> float:
-    """Evaluate LLM predictions on validation data.
-
-    Args:
-        validation_path: Path to validation CSV file
-        sample_ratio: Ratio of data to sample for evaluation
-        model_name: GGUF model to use
-        quantization: Quantization level for the model
-        template_path: Optional custom prompt template
-
-    Returns:
-        Average MAP@3 score across all samples
-    """
-    # Load validation data
-    logger.info(f"Loading validation data from {validation_path}")
-    validation_pairs = load_validation_data(validation_path)
+    logger.info(f"Loading validation data from {data_path}")
+    validation_pairs = load_validation_data(data_path)
     logger.info(f"Loaded {len(validation_pairs)} validation samples")
-
-    # Convert to DataFrame for stratified sampling
-    import pandas as pd  # noqa: PLC0415
 
     data_rows = []
     for eval_row, ground_truth in validation_pairs:
@@ -254,6 +225,7 @@ def evaluate_with_llm(
 
         # Build prompt
         user_prompt = build_prediction_prompt(eval_row, template_path)
+        logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
         full_prompt = format_chat_prompt(model_name, user_prompt)
 
         # Generate predictions
@@ -322,22 +294,18 @@ if __name__ == "__main__":
         help="Ratio of validation data to sample (0.0-1.0)",
     )
     @click.option(
-        "--validation-path",
+        "--data-path",
         type=click.Path(exists=True, path_type=Path),
         default=Path("datasets/33474_train.csv"),
-        help="Path to validation CSV file",
+        help="Path to CSV file",
     )
     @click.option(
         "--template-path",
         type=click.Path(exists=True, path_type=Path),
-        default=None,
+        default=Path("kaggle_map/llm/prompts/predict.j2"),
         help="Custom prompt template path",
     )
-    def main(
-        sample_ratio: float,
-        validation_path: Path,
-        template_path: Path | None,
-    ) -> None:
+    def main(sample_ratio: float, data_path: Path, template_path: Path) -> None:
         """Evaluate LLM predictions on validation data."""
         # Configure logging
         logger.remove()
@@ -345,11 +313,11 @@ if __name__ == "__main__":
 
         # Run evaluation
         avg_map_score = evaluate_with_llm(
-            validation_path=validation_path,
+            template_path=template_path,
+            data_path=data_path,
             sample_ratio=sample_ratio,
             model_name=GGUFModelName.GEMMA_3_12B_IT,
             quantization=GGUFModelQuantizationLevel.Q4_K_XL,
-            template_path=template_path,
         )
 
         print(f"\nFinal MAP@3 Score: {avg_map_score:.4f}")

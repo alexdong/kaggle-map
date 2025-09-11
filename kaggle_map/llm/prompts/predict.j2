@@ -4,7 +4,7 @@ You are an expert rater for Eedi diagnostic item 33474. Your task is to rank the
 Stem gist: Sally has \( \frac{2}{3} \) of a cake; Robert eats \( \frac{1}{3} \) of that; which number sentence solves it?
 The mathematically correct operation is multiplication of fractions: \( \frac{1}{3} \times \frac{2}{3} \).
 
-Allowed Category values (exactly these spellings):
+Allowed Category values (exactly these spellings). 
 - True_Correct
 - True_Neither
 - True_Misconception
@@ -81,8 +81,14 @@ Return EXACTLY three labels separated by single spaces on one line.
 Each label must be {{Category}}:{{Misconception}} with NA when no misconception applies.  
 No extra text. No punctuation.
 
+IMPORTANT:
+If the MC_Answer is the same as the "Correct Answer" below, 
+all 3 labels MUST start with True_*; 
+Otherwise, it must start with False_*.
+
 ## INPUT
+Correct Answer: (1/3) * (2/3)
 MC_Answer: {{mc_answer}}
 StudentExplanation: {{student_explanation}}
 
-YOUR OUTPUT (3 tokens only)
+YOUR OUTPUT (3 labels only)
