@@ -7,7 +7,16 @@ import pandas as pd
 from loguru import logger
 
 from kaggle_map.core.models import Category, Prediction
-from kaggle_map.evolution import EvaluationResult, FailureCase, PromptCandidate
+from kaggle_map.evolution import (
+    EXCELLENT_MAP_THRESHOLD,
+    GOOD_MAP_THRESHOLD,
+    PARTIAL_HIT_THRESHOLD,
+    POOR_MAP_THRESHOLD,
+    STRONG_RESULT_THRESHOLD,
+    EvaluationResult,
+    FailureCase,
+    PromptCandidate,
+)
 from kaggle_map.evolution.sampling import stratified_sample
 from kaggle_map.evolution.storage import Storage
 
@@ -157,7 +166,7 @@ def extract_failure_cases(  # noqa: C901
         return []
 
     if "map_score" in failures_df.columns:
-        partial_threshold = 0.5
+        partial_threshold = PARTIAL_HIT_THRESHOLD
 
         priority_values = []
         complete_misses = 0
@@ -275,19 +284,20 @@ if __name__ == "__main__":
     """Standalone validation of evaluator operations."""
     import sys
     from pathlib import Path
+
     from kaggle_map.evolution import PromptCandidate
-    
+
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
-    
+
     logger.info("=== Evaluator Module Validation ===")
-    
+
     # Check for baseline prompt
     baseline_path = Path("reranker/prompts/baseline.j2")
     if not baseline_path.exists():
         logger.error(f"Baseline prompt not found at {baseline_path}")
         logger.info("Creating test prompt template...")
-        
+
         test_prompt = """You are a teacher analyzing student responses to math problems.
 
 Given:
@@ -303,11 +313,11 @@ Category: [True/False]_[Type]
 Misconception: [Number or 'NA']
 
 Be concise and specific."""
-        
+
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_path.write_text(test_prompt)
         logger.info(f"Created test prompt at {baseline_path}")
-    
+
     # Create test candidate
     test_candidate = PromptCandidate(
         generation=0,
@@ -316,11 +326,11 @@ Be concise and specific."""
         hypothesis="Testing evaluator functionality",
         parent_ids=[]
     )
-    
-    logger.info(f"\n1. Testing single candidate evaluation:")
+
+    logger.info("\n1. Testing single candidate evaluation:")
     logger.info(f"  Candidate: {test_candidate.candidate_id}")
     logger.info(f"  Hypothesis: {test_candidate.hypothesis}")
-    
+
     # Check if evaluation data exists
     eval_data_path = Path("datasets/error_prediction.csv")
     if not eval_data_path.exists():
@@ -328,7 +338,7 @@ Be concise and specific."""
         logger.info("Please ensure error_prediction.csv exists before running full evaluation")
         logger.info("\n❌ Evaluator validation incomplete - missing data file")
         sys.exit(1)
-    
+
     # Test with very small sample for quick validation
     logger.info("\n2. Running micro evaluation (0.1% sample):")
     try:
@@ -337,16 +347,16 @@ Be concise and specific."""
             eval_data_path=eval_data_path,
             sample_ratio=0.001,  # Very small sample for testing
         )
-        
-        logger.info(f"\n3. Evaluation results:")
+
+        logger.info("\n3. Evaluation results:")
         logger.info(f"  MAP@3 Score: {result.map_score:.4f}")
         logger.info(f"  Failure samples: {len(result.failure_samples)}")
-        
+
         if result.failure_samples:
             logger.info("\n4. Sample failures:")
             for i, failure in enumerate(result.failure_samples[:3], 1):
                 logger.info(f"  Failure {i}: {failure}")
-        
+
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         logger.info("\nTroubleshooting:")
@@ -354,7 +364,7 @@ Be concise and specific."""
         logger.info("  2. Ensure model is available (gemma-3-12b-it)")
         logger.info("  3. Verify error_prediction.csv has correct columns")
         sys.exit(1)
-    
+
     # Test MAP score parsing
     logger.info("\n5. Testing MAP score parser:")
     test_outputs = [
@@ -363,11 +373,11 @@ Be concise and specific."""
         "Some text\nMAP@3 score is 0.3456\nMore text",
         "No score here",
     ]
-    
+
     for output in test_outputs:
         score = parse_map_score(output)
         logger.info(f"  Input: '{output[:30]}...' → Score: {score:.4f}")
-    
+
     # Test batch evaluation
     logger.info("\n6. Testing batch evaluation:")
     test_candidates = [
@@ -380,23 +390,23 @@ Be concise and specific."""
         )
         for i in range(2)
     ]
-    
+
     logger.info(f"  Evaluating {len(test_candidates)} candidates...")
     results = evaluate_all_candidates(
         test_candidates,
         eval_data_path=eval_data_path,
         sample_ratio=0.001,  # Very small for testing
     )
-    
+
     logger.info("\n7. Batch results summary:")
     for result in results:
         logger.info(f"  {result.candidate_id}: MAP@3={result.map_score:.4f}")
-    
+
     # Cleanup test files
     logger.info("\n8. Cleanup:")
     test_template_path = Path(f"reranker/prompts/{test_candidate.candidate_id}.j2")
     if test_template_path.exists():
         test_template_path.unlink()
         logger.info(f"  Removed test template: {test_template_path}")
-    
+
     logger.info("\n✅ Evaluator validation complete!")

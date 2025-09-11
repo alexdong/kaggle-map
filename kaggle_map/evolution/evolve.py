@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from kaggle_map.evolution import (
+    HYPOTHESIS_DISPLAY_LENGTH,
     EvolutionContext,
     Generation,
     PromptCandidate,
@@ -334,7 +335,7 @@ def evolve_prompts(  # noqa: C901
         logger.success(f"  Best candidate: {best_candidate.candidate_id} (from generation {best_generation})")
         logger.success(f"  Best MAP@3 score: {best_score:.4f}")
         logger.success(
-            f"  Hypothesis: {best_candidate.hypothesis[:100]}{'...' if len(best_candidate.hypothesis) > 100 else ''}"
+            f"  Hypothesis: {best_candidate.hypothesis[:HYPOTHESIS_DISPLAY_LENGTH]}{'...' if len(best_candidate.hypothesis) > HYPOTHESIS_DISPLAY_LENGTH else ''}"
         )
         logger.success(f"  Template saved: reranker/prompts/{best_candidate.candidate_id}.j2")
     else:
@@ -350,7 +351,10 @@ def main() -> None:
     logger.add(
         sys.stderr,
         level="INFO",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan> - <level>{message}</level>",
+        format=(
+            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "<cyan>{name}</cyan> - <level>{message}</level>"
+        ),
     )
     logger.add(
         "logs/evolution.log",

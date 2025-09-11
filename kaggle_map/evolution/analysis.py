@@ -53,7 +53,8 @@ def analyze_error_patterns(  # noqa: C901
 
     available_cols = [col for col in pattern_cols if col in error_df.columns]
     assert available_cols, (
-        f"No pattern columns found in dataframe. Expected some of: {pattern_cols}, got columns: {list(error_df.columns)}"
+        f"No pattern columns found in dataframe. "
+        f"Expected some of: {pattern_cols}, got columns: {list(error_df.columns)}"
     )
 
     grouped = error_df.groupby(available_cols).size()
@@ -227,7 +228,8 @@ def summarize_for_gpt5(  # noqa: C901
                 top_confusion = most_confused.idxmax()
                 confusion_count = most_confused.max()
                 summary_parts.append(
-                    f"- Most common category confusion: {top_confusion[0]} → {top_confusion[1]} ({confusion_count} times)"
+                    f"- Most common category confusion: {top_confusion[0]} → {top_confusion[1]} "
+                    f"({confusion_count} times)"
                 )
                 logger.debug(f"  Top confusion: {top_confusion[0]} -> {top_confusion[1]}")
 
@@ -240,7 +242,7 @@ def summarize_for_gpt5(  # noqa: C901
             if not common_missed.empty:
                 missed_list = [
                     f"{misc} ({count})"
-                    for misc, count in zip(common_missed.index[:3], common_missed.values[:3], strict=False)
+                    for misc, count in zip(common_missed.index[:3], common_missed.to_numpy()[:3], strict=False)
                 ]
                 summary_parts.append(f"- Most commonly missed misconceptions: {', '.join(missed_list)}")
                 logger.debug(f"  Top missed: {list(common_missed.index[:3])}")
@@ -314,7 +316,10 @@ if __name__ == "__main__":
     logger.add(
         sys.stderr,
         level="DEBUG",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        format=(
+            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+        ),
     )
 
     logger.info("Starting standalone error analysis")

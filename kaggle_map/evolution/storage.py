@@ -245,7 +245,7 @@ if __name__ == "__main__":
     import sys
     from datetime import datetime
 
-    from kaggle_map.evolution import EvaluationResult, Generation, PromptCandidate
+    from kaggle_map.evolution import EvaluationResult, Generation, PromptCandidate, TEST_MAP_SCORE
 
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     test_generation = Generation(
         generation_id=999,  # Use high number to avoid conflicts
         candidates=[test_candidate],
-        evaluations=[EvaluationResult(candidate_id=test_candidate.candidate_id, map_score=0.42, failure_samples=[])],
+        evaluations=[EvaluationResult(candidate_id=test_candidate.candidate_id, map_score=TEST_MAP_SCORE, failure_samples=[])],
         timestamp=datetime.now(),
     )
 
@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
     test_context = EvolutionContext(
         current_best_prompt="gen_00_candidate_test",
-        current_best_score=0.42,
+        current_best_score=TEST_MAP_SCORE,
         parent_prompts=[test_candidate],
         failure_patterns={},
         competition_context="Test competition context for validation",
@@ -312,7 +312,7 @@ if __name__ == "__main__":
 
     loaded_context = storage.load_context()
     logger.info(f"  Loaded context: {loaded_context}")
-    assert loaded_context.current_best_score == 0.42, "Context round-trip failed"
+    assert loaded_context.current_best_score == TEST_MAP_SCORE, "Context round-trip failed"
     logger.info("  ✓ Context round-trip successful")
 
     logger.info("\n5. Listing generations:")

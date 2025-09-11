@@ -24,6 +24,23 @@ MAX_GENERATION_WARNING = 100
 MIN_GENERATION_DIR_PARTS = 2
 MAX_DISPLAY_GENERATIONS = 5
 
+# Evaluation thresholds
+EXCELLENT_MAP_THRESHOLD = 0.7
+GOOD_MAP_THRESHOLD = 0.5
+POOR_MAP_THRESHOLD = 0.3
+STRONG_RESULT_THRESHOLD = 0.6
+PARTIAL_HIT_THRESHOLD = 0.5
+
+# Context validation
+MIN_CONTEXT_LENGTH = 50
+MAX_CONTEXT_LENGTH = 10000
+
+# Test constants
+TEST_MAP_SCORE = 0.42
+
+# Display constants
+HYPOTHESIS_DISPLAY_LENGTH = 100
+
 
 class PromptCandidate(BaseModel):
     """A single prompt variation with its metadata."""
@@ -239,11 +256,12 @@ class EvolutionContext(BaseModel):
     @field_validator("competition_context")
     @classmethod
     def validate_competition_context(cls, v: str) -> str:
-        assert v and v.strip(), f"Competition context cannot be empty, got {len(v)} chars"
+        assert v, f"Competition context cannot be empty, got {len(v)} chars"
+        assert v.strip(), f"Competition context cannot be only whitespace, got {len(v)} chars"
 
-        if len(v) < 50:
+        if len(v) < MIN_CONTEXT_LENGTH:
             logger.warning(f"Competition context seems short ({len(v)} chars) - may lack detail")
-        elif len(v) > 10000:
+        elif len(v) > MAX_CONTEXT_LENGTH:
             logger.warning(f"Competition context is very long ({len(v)} chars) - consider summarizing")
 
         return v

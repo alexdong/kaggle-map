@@ -62,81 +62,100 @@ if __name__ == "__main__":
     """Standalone validation of sampling operations."""
     import sys
     from pathlib import Path
+    
+    from rich.console import Console
+    from rich.table import Table
+    
+    from kaggle_map.embeddings.sampler import select_diverse_samples
 
     logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
+    logger.add(sys.stderr, level="INFO")
 
     logger.info("=== Sampling Module Validation ===")
 
     # Load sample data
     error_prediction_path = Path("datasets/error_prediction.csv")
-    df = pd.read_csv(error_prediction_path)
-    logger.info(f"Loaded error prediction data: {len(df)} rows")
+    error_data = pd.read_csv(error_prediction_path)
+    logger.info(f"Loaded {len(error_data)} rows from {error_prediction_path}")
+    
+    # Sample 10% of data
+    logger.info("\n1. Testing 10% stratified sampling:")
+    sampled = stratified_sample(error_data, sample_ratio=0.1, random_seed=42)
+    logger.info(f"  10% requested → {len(sampled)} samples ({len(sampled)/len(error_data)*100:.1f}% actual)")
 
-    logger.info(f"\nDataset columns: {list(df.columns)}")
-    logger.info(f"Dataset shape: {df.shape}")
+    # Analyze distribution
+    logger.info("\n2. Analyzing sample distribution:")
+    grouped = sampled.groupby(["QuestionId", "Category", "MC_Answer"]).size()
+    logger.info(f"  Unique (Question, Category, Answer) groups: {len(grouped)}")
+    logger.info(f"  Samples per group: min={grouped.min()}, max={grouped.max()}, mean={grouped.mean():.1f}")
 
-    # Test different sampling ratios
-    logger.info("\n1. Testing different sampling ratios:")
-    for ratio in [0.01, 0.05, 0.1, 0.2]:
-        sampled = stratified_sample(df, sample_ratio=ratio, random_seed=42)
-        logger.info(f"  Ratio {ratio:.0%}: {len(sampled)} samples ({len(sampled)/len(df)*100:.1f}% actual)")
-
-    # Test stratification preservation
-    logger.info("\n2. Testing stratification preservation (10% sample):")
-    sampled = stratified_sample(df, sample_ratio=0.1, random_seed=42)
-
-    if "QuestionId" in df.columns:
-        orig_dist = df["QuestionId"].value_counts(normalize=True).head(5)
-        sample_dist = sampled["QuestionId"].value_counts(normalize=True).head(5)
-
-        logger.info("  Original distribution (top 5 questions):")
-        for qid, pct in orig_dist.items():
-            logger.info(f"    Q{qid}: {pct:.1%}")
-
-        logger.info("  Sample distribution (top 5 questions):")
-        for qid, pct in sample_dist.items():
-            logger.info(f"    Q{qid}: {pct:.1%}")
-
-    # Test minimum samples per stratum
-    logger.info("\n3. Testing minimum samples per stratum:")
-    for min_samples in [1, 3, 5]:
-        sampled = stratified_sample(
-            df,
-            sample_ratio=0.01,
-            min_samples_per_stratum=min_samples,
-            random_seed=42
+    # Show diverse explanations per group
+    logger.info("\n3. Selecting diverse explanations per group:")
+    
+    # Configuration
+    N_DIVERSE_SAMPLES = 3
+    MIN_GROUP_SIZE = 3  # Only show groups with enough samples to choose from
+    
+    # Create rich table
+    console = Console()
+    table = Table(title=f"Top {N_DIVERSE_SAMPLES} Diverse Student Explanations per Question/Answer Group")
+    
+    # Add columns
+    table.add_column("Question", style="cyan", no_wrap=True)
+    table.add_column("Category", style="magenta")
+    table.add_column("MC Answer", style="yellow")
+    table.add_column("Count", style="white")
+    
+    for i in range(1, N_DIVERSE_SAMPLES + 1):
+        table.add_column(f"Explanation {i}", overflow="fold", min_width=20)
+    
+    table.add_column("Div Score", style="green")
+    
+    # Process each group
+    groups_processed = 0
+    for (qid, category, mc_answer), group_df in sampled.groupby(["QuestionId", "Category", "MC_Answer"]):
+        if len(group_df) < MIN_GROUP_SIZE:
+            continue
+            
+        # Get all explanations for this group
+        explanations = group_df["StudentExplanation"].tolist()
+        
+        # Select diverse samples
+        logger.debug(f"Processing Q{qid}, {category}, {mc_answer}: {len(explanations)} explanations")
+        selected_indices, diversity_score = select_diverse_samples(
+            explanations, 
+            n_samples=N_DIVERSE_SAMPLES
         )
-        logger.info(f"  Min {min_samples} samples: {len(sampled)} total samples")
-
-    # Test reproducibility
-    logger.info("\n4. Testing reproducibility (same seed):")
-    sample1 = stratified_sample(df, sample_ratio=0.1, random_seed=42)
-    sample2 = stratified_sample(df, sample_ratio=0.1, random_seed=42)
-    logger.info(f"  Sample 1: {len(sample1)} rows")
-    logger.info(f"  Sample 2: {len(sample2)} rows")
-    logger.info(f"  ✓ Identical: {sample1.equals(sample2)}")
-
-    # Test different seeds
-    logger.info("\n5. Testing different seeds:")
-    sample3 = stratified_sample(df, sample_ratio=0.1, random_seed=123)
-    logger.info(f"  Seed 42: {len(sample1)} rows")
-    logger.info(f"  Seed 123: {len(sample3)} rows")
-    logger.info(f"  ✓ Different: {not sample1.equals(sample3)}")
-
-    # Test edge cases
-    logger.info("\n6. Testing edge cases:")
-
-    # Very small sample
-    tiny_sample = stratified_sample(df, sample_ratio=0.001, random_seed=42)
-    logger.info(f"  0.1% sample: {len(tiny_sample)} rows")
-
-    # Large sample
-    large_sample = stratified_sample(df, sample_ratio=0.5, random_seed=42)
-    logger.info(f"  50% sample: {len(large_sample)} rows")
-
-    # Full sample
-    full_sample = stratified_sample(df, sample_ratio=1.0, random_seed=42)
-    logger.info(f"  100% sample: {len(full_sample)} rows (should equal {len(df)})")
-
-    logger.info("\n✅ Sampling validation complete!")
+        
+        # Build row for table
+        row = [
+            f"Q{qid}",
+            str(category),
+            str(mc_answer),
+            str(len(group_df)),
+        ]
+        
+        # Add selected explanations
+        for idx in selected_indices:
+            row.append(explanations[idx])
+        
+        # Fill in if we got fewer than requested
+        while len(row) < 4 + N_DIVERSE_SAMPLES:
+            row.append("-")
+        
+        # Add diversity score
+        row.append(f"{diversity_score:.2f}")
+        
+        table.add_row(*row)
+        groups_processed += 1
+        
+        # Limit output for readability
+        if groups_processed >= 10:
+            logger.info(f"  (Showing first 10 groups with {MIN_GROUP_SIZE}+ samples)")
+            break
+    
+    # Display table
+    console.print("\n")
+    console.print(table)
+    
+    logger.info(f"\n✅ Processed {groups_processed} groups with {MIN_GROUP_SIZE}+ samples")

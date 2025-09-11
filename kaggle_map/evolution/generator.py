@@ -344,7 +344,10 @@ def main() -> None:
     logger.add(
         sys.stderr,
         level="DEBUG",
-        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        format=(
+            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+        ),
     )
 
     logger.info("Starting GPT-5 generator manual test")
