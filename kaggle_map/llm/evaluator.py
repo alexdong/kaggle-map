@@ -7,6 +7,7 @@ from loguru import logger
 
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
 from kaggle_map.dataloader import load_validation_data, stratified_sample
+from kaggle_map.embeddings.sampler import select_diverse_samples
 from kaggle_map.utils.gguf_model import (
     GGUFModelLoadConfig,
     GGUFModelName,
@@ -76,7 +77,48 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     return predictions[:max_predictions]
 
 
-def evaluate_with_llm(
+def analyze_errors(error_cases: dict) -> None:
+    """Analyze and log error patterns with diverse examples.
+
+    Args:
+        error_cases: Dictionary mapping (category, misconception) to list of errors
+    """
+    if not error_cases:
+        return
+
+    logger.info(f"\n{'=' * 50}")
+    logger.info("Error Analysis Summary")
+    logger.info(f"{'=' * 50}")
+
+    # Sort by frequency
+    sorted_errors = sorted(error_cases.items(), key=lambda x: len(x[1]), reverse=True)
+
+    for (category, misconception), errors in sorted_errors[:10]:  # Top 10 error types
+        logger.info(f"\n[{category}] {misconception}")
+        logger.info(f"  Errors: {len(errors)}")
+
+        # Select diverse examples
+        if len(errors) > 1:
+            explanations = [e["explanation"] for e in errors]
+            n_examples = min(3, len(errors))
+            diverse_indices, diversity_score = select_diverse_samples(explanations, n_samples=n_examples)
+
+            logger.info(f"  Example explanations (diversity: {diversity_score:.2f}):")
+            for idx in diverse_indices:
+                error = errors[idx]
+                logger.info(f"    • {error['explanation'][:100]}...")
+                logger.info(f"      (Q: {error['question'][:50]}...)")
+                logger.info(f"      Predicted: [{error['predicted'].category}] {error['predicted'].misconception}")
+        else:
+            error = errors[0]
+            logger.info(f"  Example: {error['explanation'][:100]}...")
+            logger.info(f"    (Q: {error['question'][:50]}...)")
+            logger.info(f"    Predicted: [{error['predicted'].category}] {error['predicted'].misconception}")
+
+    logger.info(f"\n{'=' * 50}")
+
+
+def evaluate_with_llm(  # noqa: C901
     validation_path: Path = Path("datasets/33474_validation.csv"),
     sample_ratio: float = 0.2,
     model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT,
@@ -148,6 +190,11 @@ def evaluate_with_llm(
     scores = []
     stop_tokens = get_stop_tokens(model_name)
 
+    # Track errors for analysis
+    from collections import defaultdict  # noqa: PLC0415
+
+    error_cases = defaultdict(list)  # (category, misconception) -> list of error details
+
     for row_number, (_, row) in enumerate(sampled_df.iterrows()):
         # Reconstruct evaluation row
         eval_row = EvaluationRow(
@@ -187,6 +234,26 @@ def evaluate_with_llm(
         score = calculate_map_at_3(ground_truth, predictions)
         scores.append(score)
 
+        # Track errors if prediction was wrong
+        if score < 1.0:
+            # Check if ground truth was in top 3 predictions
+            predicted_correctly = any(
+                pred.category == ground_truth.category and pred.misconception == ground_truth.misconception
+                for pred in predictions
+            )
+
+            if not predicted_correctly:
+                key = (ground_truth.category, ground_truth.misconception)
+                error_cases[key].append(
+                    {
+                        "question": eval_row.question_text,
+                        "mc_answer": eval_row.mc_answer,
+                        "explanation": eval_row.student_explanation,
+                        "predicted": predictions[0],  # Top prediction
+                        "row_id": eval_row.row_id,
+                    }
+                )
+
         if (row_number + 1) % 10 == 0:
             current_avg = sum(scores) / len(scores)
             logger.info(f"Progress: {row_number + 1}/{len(sampled_df)} | Current MAP@3: {current_avg:.4f}")
@@ -200,6 +267,9 @@ def evaluate_with_llm(
     logger.success(f"Samples evaluated: {len(scores)}")
     logger.success(f"Average MAP@3: {avg_score:.4f}")
     logger.success(f"{'=' * 50}")
+
+    # Generate error analysis summary
+    analyze_errors(error_cases)
 
     return avg_score
 
