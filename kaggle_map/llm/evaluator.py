@@ -75,7 +75,7 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     # Pad with default predictions if needed
     max_predictions = 3
     while len(predictions) < max_predictions:
-        predictions.append(Prediction(category=Category.FALSE_NEITHER, misconception="NA"))
+        predictions.append(Prediction(category=Category.TRUE_CORRECT, misconception="NA"))
 
     return predictions[:max_predictions]
 
@@ -110,8 +110,7 @@ def display_evaluation_details(
     table.add_column("Row ID", style="cyan", no_wrap=True)
     table.add_column("MC Answer", style="yellow", overflow="fold")
     table.add_column("Explanation", style="white", overflow="fold", max_width=max_explanation_length)
-    table.add_column("Category", style="green")
-    table.add_column("Misconception", style="blue", overflow="fold")
+    table.add_column("Category:Misconception", style="green", overflow="fold")
     table.add_column("LLM Labels", style="dim", overflow="fold", max_width=max_llm_labels_length)
     table.add_column("MAP@3", style="red bold", justify="center")
 
@@ -129,14 +128,16 @@ def display_evaluation_details(
 
         # Format MAP@3 score
         score_str = f"{result['score']:.2f}"
+        
+        # Combine category and misconception
+        category_misconception = f"{result['category']}:{result['misconception']}"
 
         # Add row
         table.add_row(
             str(result["row_id"]),
             result["mc_answer"],
             explanation,
-            result["category"],
-            result["misconception"],
+            category_misconception,
             llm_labels,
             score_str,
         )
@@ -242,6 +243,7 @@ def evaluate_with_llm(
 
         # Parse predictions
         predictions = parse_predictions(response_text)
+        logger.info(f"Predictions for row {eval_row.row_id}: {predictions}")
 
         # Calculate MAP@3
         score = calculate_map_at_3(ground_truth, predictions)

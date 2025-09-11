@@ -4,7 +4,7 @@ You are an expert rater for Eedi diagnostic item 33474. Your task is to rank the
 Stem gist: Sally has \( \frac{2}{3} \) of a cake; Robert eats \( \frac{1}{3} \) of that; which number sentence solves it?
 The mathematically correct operation is multiplication of fractions: \( \frac{1}{3} \times \frac{2}{3} \).
 
-Allowed Category values (exactly these spellings). 
+Allowed Category values (exactly these spellings):
 - True_Correct
 - True_Neither
 - True_Misconception
@@ -12,79 +12,59 @@ Allowed Category values (exactly these spellings).
 - False_Neither
 - False_Correct
 
-The only misconception tags you may use are: Subtraction, Division, NA (if no misconception is detected).
+Use only these misconception tags: Subtraction, Division, NA.
 
-## How to interpret inputs
-### MC_Answer operator (check the LaTeX)
-- contains \times ⇒ multiplication (correct)
-- contains +      ⇒ addition (incorrect)
-- contains -      ⇒ subtraction (incorrect)
-- contains \div   ⇒ division (incorrect)
+## Interpretation guide
 
-### StudentExplanation cue taxonomy (case-insensitive)
-Define cues carefully to avoid false positives:
+### Explanation cues (case-insensitive; normalize spacing/punctuation; accept misspellings, e.g., "timsing/timesing")
+**Multiplication cues (strong):** “of means multiply/times”, “multiply numerators/denominators”, “top by top, bottom by bottom”, explicit 1/3×2/3, explicit **2/9** (“two ninths”, “2 over 9”).
+**Multiplication cues (weak):** “… of …” between the two fractions; “times/x/×” clearly attached to 1/3 and 2/3.
+**Division-equivalence (treat as multiplication intent, not a misconception):** “multiply by 1/3 = divide by 3”, “dividing by 3 is same as × 1/3”.
+**Subtraction cues:** “take away”, “minus”, “subtract”, “left/remaining/left over”, “difference”.
+**Division cues:** “divide/divided”, “goes into”, “how many … in …”, “groups of”, “split into”.
+**Addition cues (note: not a misconception tag here):** “add/plus/together/sum”.
 
-**Strong multiplication cues (any is sufficient):**
-- Phrases: "of means multiply" / "of means times" / "multiply the fractions"
-- Procedure: "multiply numerators and denominators", "top by top, bottom by bottom"
-- Symbolic: shows 1/3 × 2/3 or 2/3 × 1/3 explicitly; or states the product 2/9
-- Uses “times/multiply/x/×” **in direct connection** with the two fractions (not just as a stray word)
+**Contradictions (demote correctness):** Concludes a product inconsistent with multiplication (e.g., “= 1/3”, “= 2/6”, “= 1/9”) without self-correction.
 
-**Weak multiplication cues (intent present but light):**
-- Says "1/3 of 2/3", "times" or "x" without the full procedure, or restates the stem with “of” while implying multiplication.
+## Decision rules (rank to maximize MAP@3)
+1) **Anchor True vs False** from MC_Answer. If MC is \times ⇒ True_* else False_*.
+2) **Choose tag from the EXPLANATION only**:
+   - If explicit subtraction cues ⇒ tag = Subtraction.
+   - Else if explicit division cues (not the “divide by 3 = ×1/3” equivalence) ⇒ tag = Division.
+   - Else ⇒ tag = NA.
+3) **Pick _Correct vs _Neither vs _Misconception**:
+   - If (Multiplication cues strong/weak OR Division-equivalence) **and** no explicit subtraction/division reasoning ⇒ *_Correct:NA.
+   - If explicit subtraction/division reasoning ⇒ *_Misconception:<that tag>.
+   - If vague/off-topic/justifies by “addition only” or guesses, or gives incompatible numeric result ⇒ *_Neither:NA.
 
-**Wrong-operator cues:**
-- Subtraction cues: "take away", "minus", "subtract", "left/remaining/left over", "difference"
-- Division cues: "divide", "divided", "goes into", "groups of", "how many ... in ...", "split into"
+## Ranking templates
+**A. MC = * **  
+- If explicit subtraction/division reasoning ⇒ `True_Misconception:<tag>` `True_Correct:NA` `True_Neither:NA`  
+- Else if any multiplication intent (strong/weak or division-equivalence) ⇒ `True_Correct:NA` `True_Neither:NA` `True_Misconception:Division`  
+- Else (vague/contradiction/addition-only) ⇒ `True_Neither:NA` `True_Correct:NA` `True_Misconception:Division`
 
-**Contradiction cues (demote correctness):**
-- Claims or concludes an incompatible result with multiplication (e.g., “1/3 of 2/3 = 1/3”, “= 2/6”, “= 2/3”, “= 1/9”) **without** later correcting it.
+**B. MC = - **  
+- If subtraction cues ⇒ `False_Misconception:Subtraction` `False_Neither:NA` `False_Correct:NA`  
+- Else if any multiplication intent (strong/weak or division-equivalence) ⇒ `False_Correct:NA` `False_Neither:NA` `False_Misconception:Division`  
+- Else (addition-only/neutral) ⇒ `False_Neither:NA` `False_Misconception:Subtraction` `False_Misconception:Division`
 
-## Decision rules (score then rank to maximize MAP@3)
+**C. MC = / **  
+- If subtraction cues (explanation!) ⇒ `False_Misconception:Subtraction` `False_Neither:NA` `False_Correct:NA`  
+- Else if division cues ⇒ `False_Misconception:Division` `False_Neither:NA` `False_Correct:NA`  
+- Else if any multiplication intent (strong/weak or division-equivalence) ⇒ `False_Correct:NA` `False_Neither:NA` `False_Misconception:Subtraction`  
+- Else ⇒ `False_Neither:NA` `False_Misconception:Division` `False_Misconception:Subtraction`
 
-1) **Set True vs False from MC_Answer**  
-   If MC contains \times ⇒ start with True_*; otherwise start with False_*.
-
-2) **Choose Misconception vs NA from the explanation**
-   - If the explanation **argues a wrong operator**, choose …_Misconception with that tag (Subtraction or Division).
-   - If it **supports multiplication** (strong or weak) and does not argue subtraction/division, choose …_Correct:NA.
-   - If it’s **vague, narrative, off-topic, or numerically contradictory**, choose …_Neither:NA.
-
-3) **Ranking templates (pick the first matching row).**
-
-**A. MC = \times (multiplication)**  
-- Explanation has **explicit subtraction or division** reasoning →  
-  `True_Misconception:<Subtraction|Division>` • `True_Correct:NA` • `True_Neither:NA`
-
-- Explanation shows **any multiplication intent** (strong **or** weak), and **no explicit competing operator** →  
-  `True_Correct:NA` • `True_Neither:NA` • `True_Misconception:Division`
-
-- Explanation is **vague or contradictory** (no multiplication intent OR asserts an incompatible numeric result like “= 1/3”, “= 2/6”, etc.) →  
-  `True_Neither:NA` • `True_Correct:NA` • `True_Misconception:Division`
-
-**B. MC = - (subtraction)**  
-- Subtraction cues → `False_Misconception:Subtraction` • `False_Neither:NA` • (if multiplication cues then `False_Correct:NA` else `False_Misconception:Division`)  
-- Neutral → `False_Misconception:Subtraction` • `False_Neither:NA` • `False_Misconception:Division`
-
-**C. MC = \div (division)**  
-- Division cues → `False_Misconception:Division` • `False_Neither:NA` • (if multiplication cues then `False_Correct:NA` else `False_Misconception:Subtraction`)  
-- Neutral → `False_Neither:NA` • `False_Misconception:Division` • (if multiplication cues then `False_Correct:NA` else `False_Misconception:Subtraction`)
-
-**D. MC = + (addition)**  
-- Multiplication cues → `False_Correct:NA` • `False_Neither:NA` • `False_Misconception:Subtraction`  
-- Subtraction cues → `False_Misconception:Subtraction` • `False_Neither:NA` • `False_Misconception:Division`  
-- Division cues → `False_Misconception:Division` • `False_Neither:NA` • `False_Misconception:Subtraction`  
-- Neutral → `False_Neither:NA` • `False_Misconception:Subtraction` • `False_Misconception:Division`
+**D. MC = + **  
+- If any multiplication intent ⇒ `False_Correct:NA` `False_Neither:NA` `False_Misconception:Subtraction`  
+- If subtraction cues ⇒ `False_Misconception:Subtraction` `False_Neither:NA` `False_Misconception:Division`  
+- If division cues ⇒ `False_Misconception:Division` `False_Neither:NA` `False_Misconception:Subtraction`  
+- Else (addition-only/neutral) ⇒ `False_Neither:NA` `False_Correct:NA` `False_Misconception:Subtraction`
 
 ## Output format (STRICT)
-Return EXACTLY three labels separated by single spaces on one line.  
-Each label must be {{Category}}:{{Misconception}} with NA when no misconception applies.  
-No extra text. No punctuation.
+Return exactly three labels, separated by single spaces, on one line. Each is {{Category}}:{{Misconception}} with NA when no misconception applies. No extra text. No punctuation.
 
 IMPORTANT:
-If the MC_Answer is the same as the "Correct Answer" below, 
-all 3 labels MUST start with True_*; 
-Otherwise, it must start with False_*.
+If the MC_Answer is the same as the Correct Answer below, all 3 labels MUST start with True_*; otherwise, all 3 MUST start with False_*.
 
 ## INPUT
 Correct Answer: (1/3) * (2/3)
