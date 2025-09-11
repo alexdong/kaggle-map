@@ -22,15 +22,13 @@ class CandidateResponse(BaseModel):
     @field_validator("template")
     @classmethod
     def validate_template(cls, v: str) -> str:
-        """Ensure template has required variables."""
         required = {"question_text", "category", "mc_answer", "student_explanation"}
         var_pattern = r"{{\s*(\w+)\s*}}"
         found_vars = set(re.findall(var_pattern, v))
 
         missing = required - found_vars
-        if missing:
-            msg = f"Template missing required variables: {missing}"
-            raise ValueError(msg)
+        assert not missing, f"Template missing required variables: {missing}. Found: {found_vars}"
+        
         return v
 
 
@@ -45,14 +43,6 @@ class GPT5Response(BaseModel):
 
 
 def validate_template_variables(template: str) -> bool:
-    """Validate that template contains all required variables.
-
-    Args:
-        template: Jinja2 template string
-
-    Returns:
-        True if all required variables are present
-    """
     required_vars = {
         "question_text",
         "category",
@@ -60,11 +50,9 @@ def validate_template_variables(template: str) -> bool:
         "student_explanation",
     }
 
-    # Extract all variables from template
     try:
         t = Template(template)
         set(t.module.__dict__.get("_body", []))
-        # Parse template to find variable references
         var_pattern = r"{{\s*(\w+)\s*}}"
         found_vars = set(re.findall(var_pattern, template))
 
@@ -73,7 +61,6 @@ def validate_template_variables(template: str) -> bool:
             logger.warning(f"Template missing required variables: {missing}")
             return False
 
-        logger.debug(f"Template has all required variables: {found_vars}")
         return True
 
     except TemplateSyntaxError as e:
@@ -82,21 +69,10 @@ def validate_template_variables(template: str) -> bool:
 
 
 def parse_structured_response(response_text: str, generation_id: int) -> list[PromptCandidate] | None:
-    """Try to parse response as structured JSON using Pydantic.
-
-    Args:
-        response_text: Response from GPT-5
-        generation_id: Current generation ID
-
-    Returns:
-        List of candidates if parsing succeeds, None otherwise
-    """
     try:
-        # Try to parse as JSON
         data = json.loads(response_text)
         gpt5_response = GPT5Response(**data)
 
-        # Convert to PromptCandidate objects
         candidates = []
         for i, cand_resp in enumerate(gpt5_response.candidates):
             candidate = PromptCandidate(
@@ -117,29 +93,16 @@ def parse_structured_response(response_text: str, generation_id: int) -> list[Pr
 
 
 def parse_gpt5_response(response_text: str, generation_id: int) -> list[PromptCandidate]:
-    """Parse GPT-5 response into prompt candidates.
-
-    Args:
-        response_text: Raw response from GPT-5
-        generation_id: Current generation ID
-
-    Returns:
-        List of parsed prompt candidates
-    """
-    # First try structured parsing with Pydantic
     candidates = parse_structured_response(response_text, generation_id)
     if candidates:
         return candidates
 
-    # Fallback to regex parsing
     logger.debug("Falling back to regex parsing")
     candidates = []
 
-    # Split by CANDIDATE markers
-    candidate_blocks = re.split(r"CANDIDATE\s+\d+", response_text)[1:]  # Skip text before first CANDIDATE
+    candidate_blocks = re.split(r"CANDIDATE\s+\d+", response_text)[1:]
 
     for i, block in enumerate(candidate_blocks):
-        # Extract hypothesis and template
         hypothesis_match = re.search(r"HYPOTHESIS:\s*(.+?)(?=TEMPLATE:|$)", block, re.DOTALL)
         template_match = re.search(r"TEMPLATE:\s*(.+?)(?=CANDIDATE|$)", block, re.DOTALL)
 
@@ -147,17 +110,15 @@ def parse_gpt5_response(response_text: str, generation_id: int) -> list[PromptCa
             hypothesis = hypothesis_match.group(1).strip()
             template = template_match.group(1).strip()
 
-            # Validate template has required variables
             if validate_template_variables(template):
                 candidate = PromptCandidate(
                     generation=generation_id,
                     candidate_id=f"gen_{generation_id:02d}_candidate_{i}",
                     prompt=template,
                     hypothesis=hypothesis,
-                    parent_ids=[],  # Will be set based on context
+                    parent_ids=[],
                 )
                 candidates.append(candidate)
-                logger.debug(f"Parsed candidate {i}: {hypothesis[:50]}...")
             else:
                 logger.warning(f"Candidate {i} has invalid template, skipping")
 
@@ -328,58 +289,73 @@ def generate_candidates(  # noqa: C901, PLR0912
 
             # Ensure response_text is always a string
             response_text: str = str(response_text_raw) if response_text_raw is not None else ""
-            logger.debug(f"Received response of length {len(response_text)}")
+            logger.info(f"Received GPT-5 response: {len(response_text)} characters")
 
             # Parse response into candidates
             candidates = parse_gpt5_response(response_text, context.next_generation_id)
+            
+            assert candidates is not None, "parse_gpt5_response returned None"
 
             # Set parent IDs based on context
             if context.parent_prompts:
                 parent_ids = [p.candidate_id for p in context.parent_prompts[:3]]
+                logger.debug(f"Setting parent IDs: {parent_ids}")
                 for candidate in candidates:
                     candidate.parent_ids = parent_ids
 
             if len(candidates) >= num_candidates // 2:  # At least half the requested number
-                logger.success(f"Generated {len(candidates)} valid candidates")
+                logger.success(f"Successfully generated {len(candidates)} valid candidates")
+                if len(candidates) > num_candidates:
+                    logger.debug(f"Trimming to requested {num_candidates} candidates")
                 return candidates[:num_candidates]  # Return up to requested number
 
-            logger.warning(f"Only got {len(candidates)} valid candidates, retrying...")
+            logger.warning(f"Only got {len(candidates)} valid candidates (need at least {num_candidates // 2}), retrying...")
 
         except Exception as e:
-            logger.error(f"Error on attempt {attempt + 1}: {e}")
+            logger.error(f"Error on attempt {attempt + 1}: {type(e).__name__}: {e}")
             if attempt < max_retries - 1:
                 wait_time = 2**attempt  # Exponential backoff
                 logger.info(f"Waiting {wait_time} seconds before retry...")
                 time.sleep(wait_time)
             else:
-                logger.error("Max retries reached, returning empty list")
+                logger.error(f"Max retries ({max_retries}) reached - unable to generate candidates")
                 return []
 
+    logger.error("Should not reach here - all attempts exhausted")
     return []
 
 
 def show_json_schema() -> None:
     """Display the Pydantic JSON schema used for structured output."""
+    logger.info("Generating Pydantic JSON schema for GPT-5")
+    
     schema = GPT5Response.model_json_schema()
+    
+    assert schema, "Failed to generate JSON schema"
+    assert "properties" in schema, "Schema missing properties"
 
     print("=" * 80)
     print("PYDANTIC JSON SCHEMA FOR GPT-5 STRUCTURED OUTPUT")
     print("=" * 80)
     print(json.dumps(schema, indent=2))
     print("=" * 80)
+    
+    logger.debug(f"Schema has {len(schema.get('properties', {}))} properties")
 
 
 def main() -> None:
     """Manual test entry point."""
-
     # Configure logging
     logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    logger.add(sys.stderr, level="DEBUG", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+    
+    logger.info("Starting GPT-5 generator manual test")
 
     # Show the JSON schema
     show_json_schema()
 
     # Create a test context
+    logger.info("Creating test evolution context")
     context = EvolutionContext(
         current_best_prompt="baseline",
         current_best_score=0.55,
@@ -388,17 +364,28 @@ def main() -> None:
         competition_context="Math misconception classification for Kaggle MAP competition",
         next_generation_id=0,
     )
+    
+    assert context, "Failed to create test context"
+    logger.debug(f"Test context: {context}")
 
     # Generate candidates
+    logger.info("Generating test candidates")
     candidates = generate_candidates(context, num_candidates=3)
+    
+    assert candidates, "No candidates generated"
+    logger.success(f"Generated {len(candidates)} test candidates")
 
     # Display results
     print("\n" + "=" * 80)
+    print("GENERATED CANDIDATES")
+    print("=" * 80)
     for i, candidate in enumerate(candidates, 1):
         print(f"\nCandidate {i}: {candidate.candidate_id}")
         print(f"Hypothesis: {candidate.hypothesis}")
         print(f"Template preview: {candidate.prompt[:200]}...")
     print("=" * 80)
+    
+    logger.success("Manual test completed successfully")
 
 
 if __name__ == "__main__":

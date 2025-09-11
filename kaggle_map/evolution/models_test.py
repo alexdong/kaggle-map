@@ -1,5 +1,6 @@
 """Minimal tests for evolution data models using real data from error_prediction.csv."""
 
+import logging
 from datetime import datetime
 
 import pytest
@@ -16,10 +17,14 @@ from kaggle_map.evolution import (
     PromptCandidate,
 )
 
+# Set debug logging for tests
+logging.basicConfig(level=logging.DEBUG)
 
-def test_prompt_candidate_creation() -> None:
-    """Test creating a prompt candidate with all required fields."""
-    candidate = PromptCandidate(
+
+@pytest.fixture
+def sample_prompt_candidate() -> PromptCandidate:
+    """Create a sample prompt candidate for testing."""
+    return PromptCandidate(
         generation=0,
         candidate_id="gen_00_candidate_0",
         prompt=(
@@ -36,43 +41,11 @@ def test_prompt_candidate_creation() -> None:
         parent_ids=[],
     )
 
-    assert candidate.generation == 0
-    assert candidate.candidate_id == "gen_00_candidate_0"
-    assert "mc_answer" in candidate.prompt
-    assert candidate.hypothesis == "Baseline prompt for reranking predictions"
-    assert candidate.parent_ids == []
 
-
-def test_evaluation_result_map_score_validation() -> None:
-    """Test MAP score must be between 0 and 1."""
-    # Valid score
-    result = EvaluationResult(
-        candidate_id="gen_00_candidate_0",
-        map_score=0.75,
-        failure_samples=[],
-    )
-    assert result.map_score == 0.75
-
-    # Invalid scores should raise validation error
-    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1, got 1.5"):
-        EvaluationResult(
-            candidate_id="gen_00_candidate_0",
-            map_score=1.5,  # Too high
-            failure_samples=[],
-        )
-
-    with pytest.raises(ValidationError, match="MAP score must be between 0 and 1, got -0.1"):
-        EvaluationResult(
-            candidate_id="gen_00_candidate_0",
-            map_score=-0.1,  # Negative
-            failure_samples=[],
-        )
-
-
-def test_failure_case_with_real_data() -> None:
-    """Test FailureCase with real data from error_prediction.csv."""
-    # Real data from row_id=107 in error_prediction.csv
-    failure = FailureCase(
+@pytest.fixture
+def sample_failure_case() -> FailureCase:
+    """Create a sample failure case with real data from error_prediction.csv."""
+    return FailureCase(
         row_id=107,
         question_id=31772,
         question_text=(
@@ -89,15 +62,52 @@ def test_failure_case_with_real_data() -> None:
         ],
     )
 
+
+def test_prompt_candidate_creation(sample_prompt_candidate: PromptCandidate) -> None:
+    """Test creating a prompt candidate with all required fields."""
+    candidate = sample_prompt_candidate
+
+    assert candidate.generation == 0, "Generation should be set correctly"
+    assert candidate.candidate_id == "gen_00_candidate_0", "Candidate ID should match expected format"
+    assert "mc_answer" in candidate.prompt, "Prompt should contain mc_answer template variable"
+    assert candidate.hypothesis == "Baseline prompt for reranking predictions", "Hypothesis should be preserved"
+    assert candidate.parent_ids == [], "New baseline candidate should have no parent IDs"
+
+
+def test_evaluation_result_valid_map_score() -> None:
+    """Test MAP score within valid range is accepted."""
+    result = EvaluationResult(
+        candidate_id="gen_00_candidate_0",
+        map_score=0.75,
+        failure_samples=[],
+    )
+    assert result.map_score == pytest.approx(0.75), "Valid MAP score should be preserved exactly"
+
+
+@pytest.mark.parametrize("invalid_score", [1.5, -0.1, 2.0])
+def test_evaluation_result_invalid_map_scores(invalid_score: float) -> None:
+    """Test MAP scores outside valid range raise ValidationError."""
+    with pytest.raises(ValidationError, match=r"MAP score must be between 0\.0 and 1\.0"):
+        EvaluationResult(
+            candidate_id="gen_00_candidate_0",
+            map_score=invalid_score,
+            failure_samples=[],
+        )
+
+
+def test_failure_case_with_real_data(sample_failure_case: FailureCase) -> None:
+    """Test FailureCase with real data from error_prediction.csv."""
+    failure = sample_failure_case
+
     # Should have all TrainingRow fields
-    assert failure.row_id == 107
-    assert failure.question_id == 31772
-    assert failure.category == Category.TRUE_MISCONCEPTION
+    assert failure.row_id == 107, "Row ID should match source data"
+    assert failure.question_id == 31772, "Question ID should match source data"
+    assert failure.category == Category.TRUE_MISCONCEPTION, "Category should be preserved from source"
 
     # Plus the predicted field
-    assert len(failure.predicted) == 3
-    assert failure.predicted[0].category == Category.TRUE_CORRECT
-    assert failure.predicted[2].misconception == "Incomplete"
+    assert len(failure.predicted) == 3, "Should have exactly 3 predictions"
+    assert failure.predicted[0].category == Category.TRUE_CORRECT, "First prediction should be TRUE_CORRECT"
+    assert failure.predicted[2].misconception == "Incomplete", "Third prediction misconception should match"
 
 
 def test_failure_case_wnb_misconception() -> None:
@@ -120,23 +130,15 @@ def test_failure_case_wnb_misconception() -> None:
         ],
     )
 
-    assert failure.misconception == "WNB"
-    assert failure.predicted[2].misconception == "Incomplete"  # Model predicted wrong misconception
+    assert failure.misconception == "WNB", "Actual misconception should be WNB"
+    assert failure.predicted[2].misconception == "Incomplete", "Model incorrectly predicted Incomplete instead of WNB"
 
 
-def test_generation_ordering() -> None:
+def test_generation_ordering(sample_prompt_candidate: PromptCandidate) -> None:
     """Test Generation properly orders evaluations by MAP score."""
     gen = Generation(
         generation_id=0,
-        candidates=[
-            PromptCandidate(
-                generation=0,
-                candidate_id="gen_00_candidate_0",
-                prompt="Test {{ variable }} prompt",
-                hypothesis="Test hypothesis",
-                parent_ids=[],
-            ),
-        ],
+        candidates=[sample_prompt_candidate],
         evaluations=[
             EvaluationResult(candidate_id="c1", map_score=0.5, failure_samples=[]),
             EvaluationResult(candidate_id="c2", map_score=0.8, failure_samples=[]),
@@ -146,78 +148,48 @@ def test_generation_ordering() -> None:
     )
 
     # Should be ordered by map_score descending
-    assert gen.evaluations[0].map_score == 0.8
-    assert gen.evaluations[1].map_score == 0.5
-    assert gen.evaluations[2].map_score == 0.3
+    assert gen.evaluations[0].map_score == pytest.approx(0.8), "Highest score should be first"
+    assert gen.evaluations[1].map_score == pytest.approx(0.5), "Middle score should be second"
+    assert gen.evaluations[2].map_score == pytest.approx(0.3), "Lowest score should be last"
 
 
-def test_evolution_context_with_real_prompt() -> None:
+def test_evolution_context_with_real_prompt(sample_prompt_candidate: PromptCandidate, sample_failure_case: FailureCase) -> None:
     """Test EvolutionContext with realistic prompt template."""
-    # Use real baseline prompt structure
-    baseline_prompt = """Student answered: {{ mc_answer }}
-Student explained: {{ student_explanation }}
-
-Predictions:
-{% for pred in predictions %}
-{{ loop.index }}. {{ pred.category }}:{{ pred.misconception }}
-{% endfor %}
-
-Task: Rank these predictions from most to least likely.
-Output format: numbers only, comma-separated
-Your output:"""
-
-    candidate = PromptCandidate(
-        generation=0,
-        candidate_id="gen_00_candidate_0",
-        prompt=baseline_prompt,
-        hypothesis="Baseline prompt with clear task description",
-        parent_ids=[],
-    )
-
-    # Create failure case with real data
-    failure_case = FailureCase(
-        row_id=107,
-        question_id=31772,
-        question_text="What fraction of the shape is not shaded?",
-        mc_answer=r"\( \frac{1}{3} \)",
-        student_explanation="3 out of 9 parts aren't shaded.",
-        prediction=Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Incomplete"),
-        predicted=[
-            Prediction(category=Category.TRUE_CORRECT, misconception="NA"),
-            Prediction(category=Category.TRUE_NEITHER, misconception="NA"),
-            Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Incomplete"),
-        ],
-    )
-
     context = EvolutionContext(
         current_best_prompt="gen_00_candidate_0",
         current_best_score=0.72,  # Realistic MAP@3 score
-        parent_prompts=[candidate],
-        failure_patterns={"gen_00_candidate_0": [failure_case]},
+        parent_prompts=[sample_prompt_candidate],
+        failure_patterns={"gen_00_candidate_0": [sample_failure_case]},
         competition_context="MAP - Charting Student Math Misunderstandings competition context",
         next_generation_id=1,
     )
 
-    assert context.current_best_prompt == "gen_00_candidate_0"
-    assert context.current_best_score == 0.72
-    assert len(context.parent_prompts) == 1
-    assert len(context.failure_patterns["gen_00_candidate_0"]) == 1
-    assert context.next_generation_id == 1
+    assert context.current_best_prompt == "gen_00_candidate_0", "Best prompt ID should be preserved"
+    assert context.current_best_score == pytest.approx(0.72), "Best score should be preserved with float precision"
+    assert len(context.parent_prompts) == 1, "Should have exactly one parent prompt"
+    assert len(context.failure_patterns["gen_00_candidate_0"]) == 1, "Should have exactly one failure case for best prompt"
+    assert context.next_generation_id == 1, "Next generation ID should be incremented"
 
 
-def test_generation_id_type() -> None:
+@pytest.mark.parametrize("generation_id", [0, 1, 5, 99])
+def test_generation_id_type(generation_id: int) -> None:
     """Test GenerationID is an integer."""
-    gen_id: GenerationID = 5
-    assert isinstance(gen_id, int)
-    assert gen_id == 5
+    gen_id: GenerationID = generation_id
+    assert isinstance(gen_id, int), "GenerationID should be an integer type"
+    assert gen_id == generation_id, "GenerationID value should be preserved"
 
 
-def test_candidate_id_format() -> None:
+@pytest.mark.parametrize("candidate_id", [
+    "gen_00_candidate_0",
+    "gen_03_candidate_2", 
+    "gen_99_baseline",
+])
+def test_candidate_id_format(candidate_id: str) -> None:
     """Test CandidateID follows expected string format."""
-    cand_id: CandidateID = "gen_03_candidate_2"
-    assert isinstance(cand_id, str)
-    assert "gen_" in cand_id
-    assert "candidate_" in cand_id
+    cand_id: CandidateID = candidate_id
+    assert isinstance(cand_id, str), "CandidateID should be a string type"
+    assert "gen_" in cand_id, "CandidateID should contain 'gen_' prefix"
+    assert candidate_id == cand_id, "CandidateID value should be preserved"
 
 
 def test_prompt_candidate_str_method() -> None:
@@ -231,6 +203,6 @@ def test_prompt_candidate_str_method() -> None:
     )
 
     str_repr = str(candidate)
-    assert "gen_00_candidate_0" in str_repr
-    assert "Baseline prompt for testing misconception detecti" in str_repr  # First 50 chars
-    assert "gen_00_candidate_1" in str_repr  # Parent IDs included
+    assert "gen_00_candidate_0" in str_repr, "String representation should include candidate ID"
+    assert "Baseline prompt for testing misconception detecti" in str_repr, "Should include truncated hypothesis"
+    assert "gen_00_candidate_1" in str_repr, "Should include parent IDs in representation"
