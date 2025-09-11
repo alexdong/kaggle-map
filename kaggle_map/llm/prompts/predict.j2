@@ -1,0 +1,77 @@
+You are an expert rater for Eedi diagnostic item 33474. Your task is to rank the three most likely labels for a single student response. 
+
+## Context about this problem
+
+Stem gist: Sally has 2/3 of a cake; Robert eats 1/3 of that; which number sentence solves it?
+
+The mathematically correct operation is multiplication of fractions: \( \frac{1}{3} \times \frac{2}{3} \).
+
+Allowed Category values (exactly these spellings):
+
+True_Correct
+True_Neither
+True_Misconception
+False_Misconception
+False_Neither
+False_Correct.
+
+The only misconception tags you may use are: 
+
+Subtraction
+Division
+NA (if no misconception is detected)
+
+
+## How to interpret inputs
+
+### MC_Answer operator (check the LaTeX)
+
+- contains \times ⇒ multiplication (correct);
+- contains + ⇒ addition (incorrect);
+- contains - ⇒ subtraction (incorrect);
+- contains \div ⇒ division (incorrect).
+
+### StudentExplanation cues (case‑insensitive):
+
+- Multiplication cues → “of means (times)”, “times”, “x”, “multiply/multiplied”, “numerator”, “denominator”, “top by top”, “bottom by bottom”.
+- Subtraction cues → “take away”, “minus”, “subtract”, “left/remaining/left over”, “difference”.
+- Division cues → “divide/divided”, “goes into”, “groups of”, “how many 1/3 in 2/3”, “split into”.
+
+### Decision rules (score then rank to maximize MAP@3)
+
+1. Set True vs False from MC_Answer
+  \times ⇒ start with True_; otherwise start with False_.
+2. Decide Misconception vs NA from the explanation
+  * If the explanation argues a wrong operator, set …_Misconception: to that operator’s tag (Subtraction or Division).
+  * If it clearly argues multiplication (e.g., “of means multiply”, multiply numerators/denominators), set …_Correct:NA (or False_Correct:NA if MC_Answer is not \times).
+  * If it’s vague, narrative, or lacks operator cues, set …_Neither:NA.
+  * If both wrong‑operator cues appear, prefer the one matching the chosen MC operator; if none matches, prefer Subtraction over Division.
+3.  Ranking templates (pick the first row whose conditions match; leftmost is rank‑1)
+  A. MC = \times (multiplication)
+    Explanation has subtraction/division cues → True_Misconception:<that tag> • True_Correct:NA • True_Neither:NA
+    Explanation has strong multiplication cues → True_Correct:NA • True_Neither:NA • True_Misconception:Division
+    Explanation neutral/unclear → True_Neither:NA • True_Correct:NA • True_Misconception:Division
+  B. MC = - (subtraction)
+    Subtraction cues → False_Misconception:Subtraction • False_Neither:NA • (if multiplication cues then False_Correct:NA else False_Misconception:Division)
+    Neutral → False_Misconception:Subtraction • False_Neither:NA • False_Misconception:Division
+  C. MC = \div (division)
+    Division cues → False_Misconception:Division • False_Neither:NA • (if multiplication cues then False_Correct:NA else False_Misconception:Subtraction)
+    Neutral → False_Neither:NA • False_Misconception:Division • (if multiplication cues then False_Correct:NA else False_Misconception:Subtraction)
+  D. MC = + (addition)
+    Multiplication cues → False_Correct:NA • False_Neither:NA • False_Misconception:Subtraction
+    Subtraction cues → False_Misconception:Subtraction • False_Neither:NA • False_Misconception:Division
+    Division cues → False_Misconception:Division • False_Neither:NA • False_Misconception:Subtraction
+    Neutral → False_Neither:NA • False_Misconception:Subtraction • False_Misconception:Division
+
+## Output format (STRICT)
+
+Return EXACTLY three labels, one per line, in order of likelihood.
+Each label must be {{Category}}:{{Misconception}}
+No extra text. No punctuation.
+
+## INPUT
+
+MC_Answer: {{mc_answer}}
+StudentExplanation: {{student_explanation}}
+
+YOUR OUTPUT (3 tokens only)

@@ -32,7 +32,7 @@ def test_load_validation_data_returns_correct_count():
     assert len(error_pairs) == 341, f"Expected 341 rows but got {len(error_pairs)}"
 
     # Verify all rows have the correct question_id
-    for eval_row, prediction in error_pairs:
+    for eval_row, _prediction in error_pairs:
         assert eval_row.question_id == question_id, f"Row has wrong question_id: {eval_row.question_id}"
 
 
@@ -97,16 +97,16 @@ def test_validation_data_structure():
 def test_load_all_training_data():
     """Test that load_training_data can load all data when question_id is None."""
     csv_path = Path("datasets/train.csv")
-    
+
     all_training_rows = load_training_data(csv_path)
-    
+
     # Should load all rows from the training set
     assert len(all_training_rows) > 0, "Should load at least some training rows"
-    
+
     # Verify we get more rows than for a single question
     single_question_rows = load_training_data(csv_path, 33474)
     assert len(all_training_rows) > len(single_question_rows), "Should load more rows when not filtering"
-    
+
     # Check structure of first row
     first_row = all_training_rows[0]
     assert hasattr(first_row, "question_id"), "TrainingRow should have question_id"
@@ -116,16 +116,16 @@ def test_load_all_training_data():
 def test_load_all_validation_data():
     """Test that load_validation_data can load all data when question_id is None."""
     csv_path = Path("datasets/error_prediction.csv")
-    
+
     all_validation_pairs = load_validation_data(csv_path)
-    
+
     # Should load all rows from the validation set
     assert len(all_validation_pairs) > 0, "Should load at least some validation rows"
-    
+
     # Verify we get more rows than for a single question
     single_question_pairs = load_validation_data(csv_path, 33474)
     assert len(all_validation_pairs) > len(single_question_pairs), "Should load more rows when not filtering"
-    
+
     # Check structure of first pair
     first_eval_row, first_prediction = all_validation_pairs[0]
     assert hasattr(first_eval_row, "question_id"), "EvaluationRow should have question_id"

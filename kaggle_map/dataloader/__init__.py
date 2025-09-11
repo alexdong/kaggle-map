@@ -1,21 +1,22 @@
 """Data loading functions for training and error prediction datasets."""
 
 from pathlib import Path
-from typing import Optional, Tuple
 
 import pandas as pd
 from loguru import logger
 
 from kaggle_map.core.models import EvaluationRow, Prediction, QuestionId, TrainingRow
+from kaggle_map.dataloader.sampling import stratification_report as stratification_report
+from kaggle_map.dataloader.sampling import stratified_sample as stratified_sample
 
 
-def load_training_data(csv_path: Path, question_id: Optional[QuestionId] = None) -> list[TrainingRow]:
+def load_training_data(csv_path: Path, question_id: QuestionId | None = None) -> list[TrainingRow]:
     """Load training rows from a CSV file, optionally filtered by question ID.
-    
+
     Args:
         csv_path: Path to the CSV file containing training data
         question_id: Optional question ID to filter by. If None, loads all data.
-        
+
     Returns:
         List of TrainingRow objects
     """
@@ -50,13 +51,15 @@ def load_training_data(csv_path: Path, question_id: Optional[QuestionId] = None)
     return training_rows
 
 
-def load_validation_data(csv_path: Path, question_id: Optional[QuestionId] = None) -> list[tuple[EvaluationRow, Prediction]]:
+def load_validation_data(
+    csv_path: Path, question_id: QuestionId | None = None
+) -> list[tuple[EvaluationRow, Prediction]]:
     """Load validation data rows from a CSV file, optionally filtered by question ID.
-    
+
     Args:
         csv_path: Path to the CSV file containing validation/error prediction data
         question_id: Optional question ID to filter by. If None, loads all data.
-        
+
     Returns:
         List of tuples containing (EvaluationRow, Prediction) pairs
     """
@@ -88,7 +91,7 @@ def load_validation_data(csv_path: Path, question_id: Optional[QuestionId] = Non
             mc_answer=str(row["MC_Answer"]),
             student_explanation=str(row["StudentExplanation"]),
         )
-        
+
         # Create Prediction from the actual ground truth
         # Map Category column (uppercase) to the format expected by Prediction
         mapped_row = pd.Series(
@@ -98,7 +101,7 @@ def load_validation_data(csv_path: Path, question_id: Optional[QuestionId] = Non
             }
         )
         prediction = Prediction.from_ground_truth_row(mapped_row)
-        
+
         result_pairs.append((eval_row, prediction))
 
     if question_id is not None:
