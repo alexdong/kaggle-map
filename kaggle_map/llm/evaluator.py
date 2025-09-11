@@ -208,19 +208,39 @@ if __name__ == "__main__":
     """Run evaluation with default settings."""
     import sys
 
-    # Configure logging
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    import click
 
-    # Check for test mode
-    test_mode = "--test" in sys.argv
-
-    # Run evaluation
-    avg_map_score = evaluate_with_llm(
-        validation_path=Path("datasets/33474_validation.csv"),
-        sample_ratio=0.01 if test_mode else 0.2,  # Use 1% for test mode
-        model_name=GGUFModelName.GEMMA_3_12B_IT,
-        quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+    @click.command()
+    @click.option(
+        "--sample-ratio",
+        type=click.FloatRange(0.0, 1.0),
+        default=0.2,
+        help="Ratio of validation data to sample (0.0-1.0)",
     )
+    @click.option(
+        "--template-path",
+        type=click.Path(exists=True, path_type=Path),
+        default=None,
+        help="Custom prompt template path",
+    )
+    def main(
+        sample_ratio: float,
+        template_path: Path | None,
+    ) -> None:
+        """Evaluate LLM predictions on validation data."""
+        # Configure logging
+        logger.remove()
+        logger.add(sys.stderr, level="INFO")
 
-    print(f"\nFinal MAP@3 Score: {avg_map_score:.4f}")
+        # Run evaluation
+        avg_map_score = evaluate_with_llm(
+            validation_path=Path("datasets/33474_validation.csv"),
+            sample_ratio=sample_ratio,
+            model_name=GGUFModelName.GEMMA_3_12B_IT,
+            quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+            template_path=template_path,
+        )
+
+        print(f"\nFinal MAP@3 Score: {avg_map_score:.4f}")
+
+    main()

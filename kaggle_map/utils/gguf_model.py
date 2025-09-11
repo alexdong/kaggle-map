@@ -176,7 +176,7 @@ def get_model_path(model_name: GGUFModelName, quantization: GGUFModelQuantizatio
     path_without_ud = Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
     if path_without_ud.exists():
         return path_without_ud
-    
+
     # XL quantizations need UD- prefix for downloads
     if "_XL" in quantization.value:
         return Path(f"models/gguf/{model_name.value}-UD-{quantization.value}.gguf")
