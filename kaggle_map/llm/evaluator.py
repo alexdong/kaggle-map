@@ -218,6 +218,12 @@ if __name__ == "__main__":
         help="Ratio of validation data to sample (0.0-1.0)",
     )
     @click.option(
+        "--validation-path",
+        type=click.Path(exists=True, path_type=Path),
+        default=Path("datasets/33474_validation.csv"),
+        help="Path to validation CSV file",
+    )
+    @click.option(
         "--template-path",
         type=click.Path(exists=True, path_type=Path),
         default=None,
@@ -225,6 +231,7 @@ if __name__ == "__main__":
     )
     def main(
         sample_ratio: float,
+        validation_path: Path,
         template_path: Path | None,
     ) -> None:
         """Evaluate LLM predictions on validation data."""
@@ -234,7 +241,7 @@ if __name__ == "__main__":
 
         # Run evaluation
         avg_map_score = evaluate_with_llm(
-            validation_path=Path("datasets/33474_validation.csv"),
+            validation_path=validation_path,
             sample_ratio=sample_ratio,
             model_name=GGUFModelName.GEMMA_3_12B_IT,
             quantization=GGUFModelQuantizationLevel.Q4_K_XL,
