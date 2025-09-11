@@ -23,7 +23,6 @@ from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
 
-# Global LLM instance (singleton)
 LLM_INSTANCE = None
 LLM_STOP_TOKENS = None
 DEFAULT_DATA_PATH = Path("datasets/train.csv")
@@ -76,7 +75,6 @@ def update_evaluation_results(
     score: float
 ) -> None:
     """Update a prompt record with evaluation results."""
-    # Convert results to CSV format
     csv_buffer = io.StringIO()
     writer = csv.writer(csv_buffer)
     writer.writerow(["row_id", "question_id", "score", "predictions"])
@@ -213,7 +211,6 @@ def create_results_table(results: list[EvaluationResult]) -> str:
     )
 
 
-# FastHTML app setup
 app, rt = fast_app(
     live=True,
     hdrs=(
@@ -232,22 +229,30 @@ app, rt = fast_app(
     )
 )
 
-# Initialize database and LLM on startup
-conn = init_database()
-llm, stop_tokens = init_llm()
+# Initialize lazily to avoid issues when running as module
+conn = None
+llm = None
+stop_tokens = None
+
+def ensure_initialized():
+    """Ensure database and LLM are initialized."""
+    global conn, llm, stop_tokens
+    if conn is None:
+        conn = init_database()
+    if llm is None:
+        llm, stop_tokens = init_llm()
+    return conn, llm, stop_tokens
 
 
 @rt("/")
 def get():
     """Main page with prompt editor."""
-    # Load default template
+    conn, _, _ = ensure_initialized()
     template_content = DEFAULT_TEMPLATE_PATH.read_text() if DEFAULT_TEMPLATE_PATH.exists() else ""
 
-    # Get the most recent prompt to restore row_ids
     latest_prompt = get_latest_prompt(conn)
     default_row_ids = ""
     if latest_prompt and latest_prompt.get("row_ids"):
-        # Convert comma-separated string back to newline-separated format
         row_ids_list = latest_prompt["row_ids"].split(",")
         default_row_ids = "\n".join(row_ids_list)
         logger.debug(f"Restored {len(row_ids_list)} row IDs from last session")
@@ -294,6 +299,7 @@ def get():
 @rt("/evaluate")
 async def post(request):
     """Evaluate the prompt with selected rows."""
+    conn, llm, stop_tokens = ensure_initialized()
     form = await request.form()
     row_ids_text = form.get("row-ids", "").strip()
     prompt_template = form.get("prompt-template", "").strip()
@@ -301,7 +307,6 @@ async def post(request):
     if not row_ids_text or not prompt_template:
         return Div(P("Please provide both row IDs and prompt template", style="color: red;"))
 
-    # Parse row IDs
     try:
         row_ids = [int(line.strip()) for line in row_ids_text.split("\n") if line.strip()]
     except ValueError:
@@ -310,26 +315,15 @@ async def post(request):
     if not row_ids:
         return Div(P("No valid row IDs provided", style="color: red;"))
 
-    # Save prompt to database
     prompt_id = save_prompt(conn, prompt_template, row_ids)
 
     try:
-        # Load data for specified rows
         df = load_rows_by_ids(DEFAULT_DATA_PATH, row_ids)
-
-        # Create template
         template = Template(prompt_template)
-
-        # Evaluate
         results, avg_score = evaluate_dataframe(df, template, llm, stop_tokens)
-
-        # Update database with results
         update_evaluation_results(conn, prompt_id, results, avg_score)
-
-        # Generate results display
         table_html = create_results_table(results)
-
-        # Navigation controls
+        
         nav_html = Div(
             Button("<", hx_get=f"/navigate?id={prompt_id}&dir=prev", hx_target="#results"),
             Span(f"Prompt #{prompt_id}"),
@@ -352,6 +346,7 @@ async def post(request):
 @rt("/save-template")
 async def post(request):
     """Save the current prompt template to file."""
+    conn, _, _ = ensure_initialized()
     form = await request.form()
     prompt_template = form.get("prompt-template", "").strip()
 
@@ -368,21 +363,18 @@ async def post(request):
 @rt("/navigate")
 def get(request):
     """Navigate to adjacent prompts."""
+    conn, _, _ = ensure_initialized()
     prompt_id = int(request.query_params.get("id", 0))
     direction = request.query_params.get("dir", "next")
 
-    # Get adjacent prompt
     prompt_data = get_adjacent_prompt(conn, prompt_id, direction)
 
     if not prompt_data:
         return Div(P("No more prompts in this direction", style="color: orange;"))
 
-    # Parse row IDs
     [int(x) for x in prompt_data["row_ids"].split(",")]
 
-    # Load and evaluate if results exist
     if prompt_data["score"] is not None:
-        # Navigation controls
         nav_html = Div(
             Button("<", hx_get=f"/navigate?id={prompt_data['id']}&dir=prev", hx_target="#results"),
             Span(f"Prompt #{prompt_data['id']}"),
@@ -402,4 +394,6 @@ def get(request):
 
 
 if __name__ == "__main__":
-    serve(port=5001)
+    import uvicorn
+    # Use uvicorn directly to avoid reloader issues
+    uvicorn.run(app, host="0.0.0.0", port=5001, reload=False)
