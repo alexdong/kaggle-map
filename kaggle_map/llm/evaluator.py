@@ -226,7 +226,7 @@ def evaluate_with_llm(
 
         # Build prompt
         user_prompt = build_prediction_prompt(eval_row, template_path)
-        logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
+        logger.debug(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
         full_prompt = format_chat_prompt(model_name, user_prompt)
 
         # Generate predictions
@@ -243,7 +243,7 @@ def evaluate_with_llm(
 
         # Parse predictions
         predictions = parse_predictions(response_text)
-        logger.info(f"Predictions for row {eval_row.row_id}: {predictions}")
+        logger.debug(f"Predictions for row {eval_row.row_id}: {predictions}")
 
         # Calculate MAP@3
         score = calculate_map_at_3(ground_truth, predictions)
