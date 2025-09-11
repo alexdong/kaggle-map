@@ -52,7 +52,9 @@ def analyze_error_patterns(  # noqa: C901
     ]
 
     available_cols = [col for col in pattern_cols if col in error_df.columns]
-    assert available_cols, f"No pattern columns found in dataframe. Expected some of: {pattern_cols}, got columns: {list(error_df.columns)}"
+    assert available_cols, (
+        f"No pattern columns found in dataframe. Expected some of: {pattern_cols}, got columns: {list(error_df.columns)}"
+    )
 
     grouped = error_df.groupby(available_cols).size()
     pattern_counts = grouped.reset_index()
@@ -224,7 +226,9 @@ def summarize_for_gpt5(  # noqa: C901
             if not most_confused.empty:
                 top_confusion = most_confused.idxmax()
                 confusion_count = most_confused.max()
-                summary_parts.append(f"- Most common category confusion: {top_confusion[0]} → {top_confusion[1]} ({confusion_count} times)")
+                summary_parts.append(
+                    f"- Most common category confusion: {top_confusion[0]} → {top_confusion[1]} ({confusion_count} times)"
+                )
                 logger.debug(f"  Top confusion: {top_confusion[0]} -> {top_confusion[1]}")
 
     # Analyze misconception errors
@@ -234,7 +238,10 @@ def summarize_for_gpt5(  # noqa: C901
         if "actual_misconception" in wrong_misc_df.columns:
             common_missed = wrong_misc_df["actual_misconception"].value_counts().head(3)
             if not common_missed.empty:
-                missed_list = [f"{misc} ({count})" for misc, count in zip(common_missed.index[:3], common_missed.values[:3], strict=False)]
+                missed_list = [
+                    f"{misc} ({count})"
+                    for misc, count in zip(common_missed.index[:3], common_missed.values[:3], strict=False)
+                ]
                 summary_parts.append(f"- Most commonly missed misconceptions: {', '.join(missed_list)}")
                 logger.debug(f"  Top missed: {list(common_missed.index[:3])}")
 
@@ -304,7 +311,11 @@ if __name__ == "__main__":
 
     # Configure logging for standalone run
     logger.remove()
-    logger.add(sys.stderr, level="DEBUG", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+    logger.add(
+        sys.stderr,
+        level="DEBUG",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
 
     logger.info("Starting standalone error analysis")
 

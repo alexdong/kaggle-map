@@ -56,3 +56,87 @@ def stratified_sample(  # noqa: C901
     logger.info(f"Sampled {len(result)} rows from {len(df)} ({len(result) / len(df) * 100:.1f}%)")
 
     return result
+
+
+if __name__ == "__main__":
+    """Standalone validation of sampling operations."""
+    import sys
+    from pathlib import Path
+
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+
+    logger.info("=== Sampling Module Validation ===")
+
+    # Load sample data
+    error_prediction_path = Path("datasets/error_prediction.csv")
+    df = pd.read_csv(error_prediction_path)
+    logger.info(f"Loaded error prediction data: {len(df)} rows")
+
+    logger.info(f"\nDataset columns: {list(df.columns)}")
+    logger.info(f"Dataset shape: {df.shape}")
+
+    # Test different sampling ratios
+    logger.info("\n1. Testing different sampling ratios:")
+    for ratio in [0.01, 0.05, 0.1, 0.2]:
+        sampled = stratified_sample(df, sample_ratio=ratio, random_seed=42)
+        logger.info(f"  Ratio {ratio:.0%}: {len(sampled)} samples ({len(sampled)/len(df)*100:.1f}% actual)")
+
+    # Test stratification preservation
+    logger.info("\n2. Testing stratification preservation (10% sample):")
+    sampled = stratified_sample(df, sample_ratio=0.1, random_seed=42)
+
+    if "QuestionId" in df.columns:
+        orig_dist = df["QuestionId"].value_counts(normalize=True).head(5)
+        sample_dist = sampled["QuestionId"].value_counts(normalize=True).head(5)
+
+        logger.info("  Original distribution (top 5 questions):")
+        for qid, pct in orig_dist.items():
+            logger.info(f"    Q{qid}: {pct:.1%}")
+
+        logger.info("  Sample distribution (top 5 questions):")
+        for qid, pct in sample_dist.items():
+            logger.info(f"    Q{qid}: {pct:.1%}")
+
+    # Test minimum samples per stratum
+    logger.info("\n3. Testing minimum samples per stratum:")
+    for min_samples in [1, 3, 5]:
+        sampled = stratified_sample(
+            df,
+            sample_ratio=0.01,
+            min_samples_per_stratum=min_samples,
+            random_seed=42
+        )
+        logger.info(f"  Min {min_samples} samples: {len(sampled)} total samples")
+
+    # Test reproducibility
+    logger.info("\n4. Testing reproducibility (same seed):")
+    sample1 = stratified_sample(df, sample_ratio=0.1, random_seed=42)
+    sample2 = stratified_sample(df, sample_ratio=0.1, random_seed=42)
+    logger.info(f"  Sample 1: {len(sample1)} rows")
+    logger.info(f"  Sample 2: {len(sample2)} rows")
+    logger.info(f"  ✓ Identical: {sample1.equals(sample2)}")
+
+    # Test different seeds
+    logger.info("\n5. Testing different seeds:")
+    sample3 = stratified_sample(df, sample_ratio=0.1, random_seed=123)
+    logger.info(f"  Seed 42: {len(sample1)} rows")
+    logger.info(f"  Seed 123: {len(sample3)} rows")
+    logger.info(f"  ✓ Different: {not sample1.equals(sample3)}")
+
+    # Test edge cases
+    logger.info("\n6. Testing edge cases:")
+
+    # Very small sample
+    tiny_sample = stratified_sample(df, sample_ratio=0.001, random_seed=42)
+    logger.info(f"  0.1% sample: {len(tiny_sample)} rows")
+
+    # Large sample
+    large_sample = stratified_sample(df, sample_ratio=0.5, random_seed=42)
+    logger.info(f"  50% sample: {len(large_sample)} rows")
+
+    # Full sample
+    full_sample = stratified_sample(df, sample_ratio=1.0, random_seed=42)
+    logger.info(f"  100% sample: {len(full_sample)} rows (should equal {len(df)})")
+
+    logger.info("\n✅ Sampling validation complete!")

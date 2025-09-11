@@ -81,7 +81,14 @@ def get_stop_tokens(model_name: RerankerModelName) -> list[str]:
 
 
 def get_model_path(model_name: RerankerModelName, quantization: RerankerModelQuantizationLevel) -> Path:
-    """Get the local path for a GGUF model file."""
+    """Get the local path for a GGUF model file.
+
+    All XL quantizations from Unsloth use "UD-" prefix in their filenames.
+    This stands for "Unsloth Dynamic" (Unsloth's Dynamic 2.0 quantization).
+    """
+    # XL quantizations need UD- prefix
+    if "_XL" in quantization.value:
+        return Path(f"models/gguf/{model_name.value}-UD-{quantization.value}.gguf")
     return Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
 
 

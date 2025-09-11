@@ -256,14 +256,6 @@ def generate_candidates(  # noqa: C901, PLR0912
                 input=meta_prompt,
                 temperature=0.8,  # Some creativity but not too wild
                 max_output_tokens=4000,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "prompt_candidates",
-                        "description": "List of prompt candidates with hypotheses",
-                        "schema": GPT5Response.model_json_schema(),
-                    },
-                },
             )
 
             # Get the response text from the Responses API
@@ -309,7 +301,9 @@ def generate_candidates(  # noqa: C901, PLR0912
                     logger.debug(f"Trimming to requested {num_candidates} candidates")
                 return candidates[:num_candidates]  # Return up to requested number
 
-            logger.warning(f"Only got {len(candidates)} valid candidates (need at least {num_candidates // 2}), retrying...")
+            logger.warning(
+                f"Only got {len(candidates)} valid candidates (need at least {num_candidates // 2}), retrying..."
+            )
 
         except Exception as e:
             logger.error(f"Error on attempt {attempt + 1}: {type(e).__name__}: {e}")
@@ -347,7 +341,11 @@ def main() -> None:
     """Manual test entry point."""
     # Configure logging
     logger.remove()
-    logger.add(sys.stderr, level="DEBUG", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+    logger.add(
+        sys.stderr,
+        level="DEBUG",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
 
     logger.info("Starting GPT-5 generator manual test")
 

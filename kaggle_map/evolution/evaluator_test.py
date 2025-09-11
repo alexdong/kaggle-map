@@ -93,7 +93,9 @@ def test_extract_failure_cases_basic(mixed_failure_data: pd.DataFrame) -> None:
     # Check that failures are actual failures (rows 1, 4, 5 have map_score < 1.0)
     expected_failure_ids = {1, 4, 5}
     actual_failure_ids = {failure.row_id for failure in failures}
-    assert actual_failure_ids == expected_failure_ids, f"Failure row IDs should be {expected_failure_ids}, got {actual_failure_ids}"
+    assert actual_failure_ids == expected_failure_ids, (
+        f"Failure row IDs should be {expected_failure_ids}, got {actual_failure_ids}"
+    )
 
 
 def test_extract_failure_cases_prioritizes_complete_misses(priority_failure_data: pd.DataFrame) -> None:
@@ -103,7 +105,9 @@ def test_extract_failure_cases_prioritizes_complete_misses(priority_failure_data
     # Should get all 5 complete misses first (row_ids 0-4 have map_score=0.0)
     complete_miss_ids = {f.row_id for f in failures if f.row_id < 5}
     expected_complete_misses = 5
-    assert len(complete_miss_ids) == expected_complete_misses, f"Should prioritize all {expected_complete_misses} complete misses"
+    assert len(complete_miss_ids) == expected_complete_misses, (
+        f"Should prioritize all {expected_complete_misses} complete misses"
+    )
 
     # Total should be exactly max_failures
     expected_total_failures = 10
@@ -117,7 +121,9 @@ def test_extract_failure_cases_diverse_sampling(diverse_failure_data: pd.DataFra
     # Should sample diverse MC_Answers
     mc_answers = {f.mc_answer for f in failures}
     min_expected_answers = 2
-    assert len(mc_answers) >= min_expected_answers, f"Should sample at least {min_expected_answers} different MC answers, got {len(mc_answers)}: {mc_answers}"
+    assert len(mc_answers) >= min_expected_answers, (
+        f"Should sample at least {min_expected_answers} different MC answers, got {len(mc_answers)}: {mc_answers}"
+    )
 
 
 @pytest.mark.parametrize("max_failures", [1, 5, 10, 15])

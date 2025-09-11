@@ -1,5 +1,6 @@
 """Evolution system data models and types."""
 
+import re
 from datetime import datetime
 
 from loguru import logger
@@ -16,6 +17,12 @@ type MAPScore = float
 MAX_PREDICTIONS = 3
 MAX_FAILURE_SAMPLES = 10
 MAX_PARENT_PROMPTS = 3
+HYPOTHESIS_PREVIEW_LENGTH = 50
+LOW_MAP_THRESHOLD = 0.3
+HIGH_MAP_THRESHOLD = 0.7
+MAX_GENERATION_WARNING = 100
+MIN_GENERATION_DIR_PARTS = 2
+MAX_DISPLAY_GENERATIONS = 5
 
 
 class PromptCandidate(BaseModel):
@@ -37,7 +44,8 @@ class PromptCandidate(BaseModel):
     @field_validator("candidate_id")
     @classmethod
     def validate_candidate_id(cls, v: str) -> str:
-        assert v and v.strip(), f"Candidate ID cannot be empty or whitespace, got: '{v}'"
+        assert v, f"Candidate ID cannot be empty, got: '{v}'"
+        assert v.strip(), f"Candidate ID cannot be whitespace, got: '{v}'"
         assert "gen_" in v, f"Candidate ID must contain 'gen_' prefix for generation tracking, got: '{v}'"
         assert "candidate_" in v, f"Candidate ID must contain 'candidate_' for identification, got: '{v}'"
 
@@ -47,20 +55,20 @@ class PromptCandidate(BaseModel):
         except (IndexError, ValueError) as e:
             logger.error(f"Invalid candidate ID format: {v} - {e}")
             msg = f"Candidate ID has invalid generation number format: '{v}'"
-            raise AssertionError(msg)
+            raise AssertionError(msg) from e
 
         return v
 
     @field_validator("prompt")
     @classmethod
     def validate_prompt(cls, v: str) -> str:
-        assert v and v.strip(), f"Prompt cannot be empty or whitespace, got {len(v)} chars"
+        assert v, f"Prompt cannot be empty, got {len(v)} chars"
+        assert v.strip(), f"Prompt cannot be only whitespace, got {len(v)} chars"
         assert "{{" in v, f"Prompt must contain Jinja2 opening brackets '{{{{', template starts with: '{v[:50]}...'"
         assert "}}" in v, f"Prompt must contain Jinja2 closing brackets '}}}}', template ends with: '...{v[-50:]}'"
 
         required_vars = {"question_text", "category", "mc_answer", "student_explanation"}
         found_vars = set()
-        import re
         for match in re.finditer(r"{{\s*(\w+)\s*}}", v):
             found_vars.add(match.group(1))
 
@@ -72,7 +80,10 @@ class PromptCandidate(BaseModel):
 
     def __str__(self) -> str:
         parents = f" (parents: {', '.join(self.parent_ids)})" if self.parent_ids else " (no parents)"
-        hypothesis_preview = self.hypothesis[:50] + "..." if len(self.hypothesis) > 50 else self.hypothesis
+        if len(self.hypothesis) > HYPOTHESIS_PREVIEW_LENGTH:
+            hypothesis_preview = self.hypothesis[:HYPOTHESIS_PREVIEW_LENGTH] + "..."
+        else:
+            hypothesis_preview = self.hypothesis
         return f"[{self.candidate_id}] {hypothesis_preview}{parents}"
 
 
@@ -113,9 +124,9 @@ class EvaluationResult(BaseModel):
         assert isinstance(v, int | float), f"MAP score must be numeric, got {type(v).__name__}: {v}"
         assert 0.0 <= v <= 1.0, f"MAP score must be between 0.0 and 1.0, got {v:.4f} which is out of range"
 
-        if v < 0.3:
+        if v < LOW_MAP_THRESHOLD:
             logger.warning(f"Low MAP@3 score: {v:.4f} - candidate may need improvement")
-        elif v > 0.7:
+        elif v > HIGH_MAP_THRESHOLD:
             logger.info(f"High MAP@3 score: {v:.4f} - strong candidate")
 
         return v
@@ -123,7 +134,9 @@ class EvaluationResult(BaseModel):
     @field_validator("failure_samples")
     @classmethod
     def validate_failure_samples(cls, v: list[FailureCase]) -> list[FailureCase]:
-        assert len(v) <= MAX_FAILURE_SAMPLES, f"Maximum {MAX_FAILURE_SAMPLES} failure samples allowed, got {len(v)} samples"
+        assert len(v) <= MAX_FAILURE_SAMPLES, (
+            f"Maximum {MAX_FAILURE_SAMPLES} failure samples allowed, got {len(v)} samples"
+        )
 
         if not v:
             logger.warning("No failure samples provided - may indicate perfect performance or evaluation issue")
@@ -148,7 +161,7 @@ class Generation(BaseModel):
         assert isinstance(v, int), f"Generation ID must be an integer, got {type(v).__name__}: {v}"
         assert v >= 0, f"Generation ID must be non-negative (starts at 0), got {v}"
 
-        if v > 100:
+        if v > MAX_GENERATION_WARNING:
             logger.warning(f"High generation ID ({v}) - consider checking convergence criteria")
 
         return v
@@ -167,7 +180,7 @@ class Generation(BaseModel):
         worst = scores[-1] if scores else 0.0
         avg = sum(scores) / len(scores) if scores else 0.0
 
-        logger.info(f"Evaluation stats: best={best:.4f}, worst={worst:.4f}, avg={avg:.4f}, spread={best-worst:.4f}")
+        logger.info(f"Evaluation stats: best={best:.4f}, worst={worst:.4f}, avg={avg:.4f}, spread={best - worst:.4f}")
 
         for i, eval_result in enumerate(sorted_evals[:3]):
             logger.info(f"  Top {i + 1}: {eval_result}")
@@ -177,7 +190,10 @@ class Generation(BaseModel):
     def __str__(self) -> str:
         best_score = self.evaluations[0].map_score if self.evaluations else 0.0
         num_evaluated = len(self.evaluations)
-        return f"Generation {self.generation_id}: {len(self.candidates)} candidates, {num_evaluated} evaluated, best MAP@3: {best_score:.3f}"
+        return (
+            f"Generation {self.generation_id}: {len(self.candidates)} candidates, "
+            f"{num_evaluated} evaluated, best MAP@3: {best_score:.3f}"
+        )
 
 
 class EvolutionContext(BaseModel):
@@ -202,7 +218,9 @@ class EvolutionContext(BaseModel):
     @field_validator("parent_prompts")
     @classmethod
     def validate_parent_prompts(cls, v: list[PromptCandidate]) -> list[PromptCandidate]:
-        assert len(v) <= MAX_PARENT_PROMPTS, f"Maximum {MAX_PARENT_PROMPTS} parent prompts allowed, got {len(v)} prompts"
+        assert len(v) <= MAX_PARENT_PROMPTS, (
+            f"Maximum {MAX_PARENT_PROMPTS} parent prompts allowed, got {len(v)} prompts"
+        )
 
         if not v:
             logger.info("No parent prompts - this may be the initial generation")

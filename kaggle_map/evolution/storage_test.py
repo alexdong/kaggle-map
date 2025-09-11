@@ -76,11 +76,14 @@ def sample_context() -> EvolutionContext:
     )
 
 
-@pytest.mark.parametrize(("candidate_id", "expected_filename"), [
-    ("gen_00_candidate_0", "gen_00_candidate_0.j2"),
-    ("gen_01_candidate_5", "gen_01_candidate_5.j2"),
-    ("gen_99_baseline", "gen_99_baseline.j2"),
-])
+@pytest.mark.parametrize(
+    ("candidate_id", "expected_filename"),
+    [
+        ("gen_00_candidate_0", "gen_00_candidate_0.j2"),
+        ("gen_01_candidate_5", "gen_01_candidate_5.j2"),
+        ("gen_99_baseline", "gen_99_baseline.j2"),
+    ],
+)
 def test_prompt_template_paths(tmp_path: Path, candidate_id: str, expected_filename: str) -> None:
     """Test that prompt template paths are correctly computed."""
     storage = Storage(base_dir=tmp_path)
@@ -91,12 +94,15 @@ def test_prompt_template_paths(tmp_path: Path, candidate_id: str, expected_filen
     assert template_path == expected_path, f"Template path should be {expected_path} for candidate {candidate_id}"
 
 
-@pytest.mark.parametrize(("generation_id", "expected_dir"), [
-    (0, "gen_00"),
-    (1, "gen_01"),
-    (10, "gen_10"),
-    (99, "gen_99"),
-])
+@pytest.mark.parametrize(
+    ("generation_id", "expected_dir"),
+    [
+        (0, "gen_00"),
+        (1, "gen_01"),
+        (10, "gen_10"),
+        (99, "gen_99"),
+    ],
+)
 def test_generation_directory_paths(tmp_path: Path, generation_id: int, expected_dir: str) -> None:
     """Test that generation directory paths are correctly computed."""
     storage = Storage(base_dir=tmp_path)
@@ -143,7 +149,9 @@ def test_save_and_load_generation(tmp_path: Path, sample_generation: Generation)
     assert loaded.generation_id == sample_generation.generation_id, "Generation ID should be preserved"
     assert len(loaded.candidates) == len(sample_generation.candidates), "All candidates should be preserved"
     assert loaded.evaluations[0].map_score == pytest.approx(0.75), "MAP score should be preserved with float precision"
-    assert loaded.candidates[0].candidate_id == sample_generation.candidates[0].candidate_id, "Candidate details should be preserved"
+    assert loaded.candidates[0].candidate_id == sample_generation.candidates[0].candidate_id, (
+        "Candidate details should be preserved"
+    )
 
 
 def test_save_and_load_context(tmp_path: Path, sample_context: EvolutionContext) -> None:
@@ -157,7 +165,9 @@ def test_save_and_load_context(tmp_path: Path, sample_context: EvolutionContext)
     loaded = storage.load_context()
 
     assert loaded.current_best_prompt == sample_context.current_best_prompt, "Best prompt ID should be preserved"
-    assert loaded.current_best_score == pytest.approx(sample_context.current_best_score), "Best score should be preserved with float precision"
+    assert loaded.current_best_score == pytest.approx(sample_context.current_best_score), (
+        "Best score should be preserved with float precision"
+    )
     assert loaded.next_generation_id == sample_context.next_generation_id, "Next generation ID should be preserved"
     assert len(loaded.parent_prompts) == len(sample_context.parent_prompts), "Parent prompts should be preserved"
     assert loaded.competition_context == sample_context.competition_context, "Competition context should be preserved"

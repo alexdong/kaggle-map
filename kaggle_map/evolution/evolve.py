@@ -80,7 +80,9 @@ def build_evolution_context(  # noqa: C901
 
         for evaluation in gen.evaluations:
             candidate = next((c for c in gen.candidates if c.candidate_id == evaluation.candidate_id), None)
-            assert candidate, f"No candidate found for evaluation {evaluation.candidate_id} in generation {gen.generation_id}"
+            assert candidate, (
+                f"No candidate found for evaluation {evaluation.candidate_id} in generation {gen.generation_id}"
+            )
             all_results.append((candidate, evaluation))
 
     all_results.sort(key=lambda x: (-x[1].map_score, x[0].candidate_id))
@@ -135,12 +137,12 @@ def run_generation(context: EvolutionContext) -> Generation:
     assert context, "Cannot run generation with None context"
 
     gen_id = context.next_generation_id
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"Starting Generation {gen_id}")
     logger.info(f"Current best: {context.current_best_prompt} (MAP@3: {context.current_best_score:.4f})")
     logger.info(f"Parent prompts: {len(context.parent_prompts)}")
     logger.info(f"Failure patterns: {sum(len(f) for f in context.failure_patterns.values())}")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     # Generate candidates
     logger.info("Phase 1: Generating candidate prompts...")
@@ -166,7 +168,9 @@ def run_generation(context: EvolutionContext) -> Generation:
     evaluations = evaluate_all_candidates(candidates, sample_ratio=0.1)
 
     assert evaluations, f"No evaluations returned for generation {gen_id}"
-    assert len(evaluations) == len(candidates), f"Evaluation count mismatch: {len(evaluations)} evaluations for {len(candidates)} candidates"
+    assert len(evaluations) == len(candidates), (
+        f"Evaluation count mismatch: {len(evaluations)} evaluations for {len(candidates)} candidates"
+    )
 
     # Create generation
     generation = Generation(
@@ -220,14 +224,14 @@ def evolve_prompts(  # noqa: C901
     assert convergence_threshold > 0, f"Convergence threshold must be positive, got {convergence_threshold}"
     assert convergence_window > 0, f"Convergence window must be positive, got {convergence_window}"
 
-    logger.info(f"\n{'='*80}")
+    logger.info(f"\n{'=' * 80}")
     logger.info("STARTING PROMPT EVOLUTION SYSTEM")
-    logger.info(f"{'='*80}")
+    logger.info(f"{'=' * 80}")
     logger.info("Configuration:")
     logger.info(f"  Max generations: {max_generations}")
     logger.info(f"  Convergence threshold: {convergence_threshold:.1%} improvement")
     logger.info(f"  Convergence window: {convergence_window} generations")
-    logger.info(f"{'='*80}")
+    logger.info(f"{'=' * 80}")
 
     storage = Storage()
     all_generations = []
@@ -329,7 +333,9 @@ def evolve_prompts(  # noqa: C901
         logger.success("\n🎆 EVOLUTION COMPLETE!")
         logger.success(f"  Best candidate: {best_candidate.candidate_id} (from generation {best_generation})")
         logger.success(f"  Best MAP@3 score: {best_score:.4f}")
-        logger.success(f"  Hypothesis: {best_candidate.hypothesis[:100]}{'...' if len(best_candidate.hypothesis) > 100 else ''}")
+        logger.success(
+            f"  Hypothesis: {best_candidate.hypothesis[:100]}{'...' if len(best_candidate.hypothesis) > 100 else ''}"
+        )
         logger.success(f"  Template saved: reranker/prompts/{best_candidate.candidate_id}.j2")
     else:
         logger.error("❌ No successful candidates generated across all generations")
@@ -341,8 +347,17 @@ def main() -> None:
     """Entry point for standalone execution."""
     # Configure logging
     logger.remove()
-    logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan> - <level>{message}</level>")
-    logger.add("logs/evolution.log", level="DEBUG", rotation="10 MB", format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{line} - {message}")
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan> - <level>{message}</level>",
+    )
+    logger.add(
+        "logs/evolution.log",
+        level="DEBUG",
+        rotation="10 MB",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{line} - {message}",
+    )
 
     logger.info("Evolution system starting up...")
 

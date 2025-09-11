@@ -153,7 +153,9 @@ def test_generation_ordering(sample_prompt_candidate: PromptCandidate) -> None:
     assert gen.evaluations[2].map_score == pytest.approx(0.3), "Lowest score should be last"
 
 
-def test_evolution_context_with_real_prompt(sample_prompt_candidate: PromptCandidate, sample_failure_case: FailureCase) -> None:
+def test_evolution_context_with_real_prompt(
+    sample_prompt_candidate: PromptCandidate, sample_failure_case: FailureCase
+) -> None:
     """Test EvolutionContext with realistic prompt template."""
     context = EvolutionContext(
         current_best_prompt="gen_00_candidate_0",
@@ -167,7 +169,9 @@ def test_evolution_context_with_real_prompt(sample_prompt_candidate: PromptCandi
     assert context.current_best_prompt == "gen_00_candidate_0", "Best prompt ID should be preserved"
     assert context.current_best_score == pytest.approx(0.72), "Best score should be preserved with float precision"
     assert len(context.parent_prompts) == 1, "Should have exactly one parent prompt"
-    assert len(context.failure_patterns["gen_00_candidate_0"]) == 1, "Should have exactly one failure case for best prompt"
+    assert len(context.failure_patterns["gen_00_candidate_0"]) == 1, (
+        "Should have exactly one failure case for best prompt"
+    )
     assert context.next_generation_id == 1, "Next generation ID should be incremented"
 
 
@@ -179,11 +183,14 @@ def test_generation_id_type(generation_id: int) -> None:
     assert gen_id == generation_id, "GenerationID value should be preserved"
 
 
-@pytest.mark.parametrize("candidate_id", [
-    "gen_00_candidate_0",
-    "gen_03_candidate_2",
-    "gen_99_baseline",
-])
+@pytest.mark.parametrize(
+    "candidate_id",
+    [
+        "gen_00_candidate_0",
+        "gen_03_candidate_2",
+        "gen_99_baseline",
+    ],
+)
 def test_candidate_id_format(candidate_id: str) -> None:
     """Test CandidateID follows expected string format."""
     cand_id: CandidateID = candidate_id

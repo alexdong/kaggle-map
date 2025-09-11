@@ -104,11 +104,14 @@ def test_group_failures_by_type(failure_grouping_data: pd.DataFrame) -> None:
     assert 3 in grouped.get("wrong_misconception", []), "Row 3 should be classified as wrong misconception"
 
 
-@pytest.mark.parametrize(("max_patterns", "max_examples"), [
-    (1, 1),
-    (3, 2),
-    (5, 3),
-])
+@pytest.mark.parametrize(
+    ("max_patterns", "max_examples"),
+    [
+        (1, 1),
+        (3, 2),
+        (5, 3),
+    ],
+)
 def test_summarize_for_gpt5(gpt5_summary_data: pd.DataFrame, max_patterns: int, max_examples: int) -> None:
     """Test generating summary for GPT-5 context."""
     summary = summarize_for_gpt5(gpt5_summary_data, max_patterns=max_patterns, max_examples=max_examples)
@@ -123,21 +126,25 @@ def test_summarize_for_gpt5(gpt5_summary_data: pd.DataFrame, max_patterns: int, 
 
     # Should be concise (not too long for GPT context)
     max_length = 5000
-    assert len(summary) < max_length, f"Summary should be under {max_length} characters for GPT context, got {len(summary)}"
+    assert len(summary) < max_length, (
+        f"Summary should be under {max_length} characters for GPT context, got {len(summary)}"
+    )
 
 
 def test_summarize_for_gpt5_empty_data() -> None:
     """Test summarize_for_gpt5 handles empty data gracefully."""
-    empty_df = pd.DataFrame({
-        "QuestionId": [],
-        "Category": [],
-        "MC_Answer": [],
-        "actual_misconception": [],
-        "predicted_category": [],
-        "predicted_misconception": [],
-        "QuestionText": [],
-        "StudentExplanation": [],
-    })
+    empty_df = pd.DataFrame(
+        {
+            "QuestionId": [],
+            "Category": [],
+            "MC_Answer": [],
+            "actual_misconception": [],
+            "predicted_category": [],
+            "predicted_misconception": [],
+            "QuestionText": [],
+            "StudentExplanation": [],
+        }
+    )
 
     summary = summarize_for_gpt5(empty_df, max_patterns=3, max_examples=2)
 

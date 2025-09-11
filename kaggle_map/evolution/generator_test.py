@@ -106,12 +106,15 @@ def test_validate_template_variables_invalid(invalid_template: str) -> None:
     assert is_valid is False, "Invalid template missing required variables should fail validation"
 
 
-@pytest.mark.parametrize("missing_var", [
-    "question_text",
-    "category",
-    "mc_answer",
-    "student_explanation",
-])
+@pytest.mark.parametrize(
+    "missing_var",
+    [
+        "question_text",
+        "category",
+        "mc_answer",
+        "student_explanation",
+    ],
+)
 def test_validate_template_variables_missing_specific(missing_var: str) -> None:
     """Test template validation when specific required variables are missing."""
     # Create template missing one specific variable
@@ -125,8 +128,7 @@ def test_validate_template_variables_missing_specific(missing_var: str) -> None:
     # Remove the specified variable
     del all_vars[missing_var]
 
-    template = "\n".join(f"{key.replace('_', ' ').title()}: {value}"
-                        for key, value in all_vars.items())
+    template = "\n".join(f"{key.replace('_', ' ').title()}: {value}" for key, value in all_vars.items())
 
     is_valid = validate_template_variables(template)
     assert is_valid is False, f"Template missing {missing_var} should fail validation"
@@ -143,13 +145,17 @@ def test_parse_structured_response(sample_structured_response: str, generation_i
     # Check first candidate
     assert candidates[0].hypothesis == "Using chain-of-thought reasoning", "First candidate hypothesis should match"
     assert candidates[0].generation == generation_id, f"First candidate should have generation ID {generation_id}"
-    assert candidates[0].candidate_id == f"gen_{generation_id:02d}_candidate_0", "First candidate should have correct ID format"
+    assert candidates[0].candidate_id == f"gen_{generation_id:02d}_candidate_0", (
+        "First candidate should have correct ID format"
+    )
     assert "{{ question_text }}" in candidates[0].prompt, "First candidate template should contain required variables"
 
     # Check second candidate
     assert candidates[1].hypothesis == "Adding misconception examples", "Second candidate hypothesis should match"
     assert candidates[1].generation == generation_id, f"Second candidate should have generation ID {generation_id}"
-    assert candidates[1].candidate_id == f"gen_{generation_id:02d}_candidate_1", "Second candidate should have correct ID format"
+    assert candidates[1].candidate_id == f"gen_{generation_id:02d}_candidate_1", (
+        "Second candidate should have correct ID format"
+    )
     assert "{{ question_text }}" in candidates[1].prompt, "Second candidate template should contain required variables"
 
 
@@ -161,13 +167,19 @@ def test_parse_gpt5_response(sample_gpt5_response: str, generation_id: int) -> N
     assert len(candidates) == 2, "Should parse exactly 2 candidates from GPT-5 response"
 
     # Check first candidate
-    assert candidates[0].candidate_id == f"gen_{generation_id:02d}_candidate_0", "First candidate should have correct ID format"
+    assert candidates[0].candidate_id == f"gen_{generation_id:02d}_candidate_0", (
+        "First candidate should have correct ID format"
+    )
     assert "more context" in candidates[0].hypothesis, "First candidate hypothesis should contain key phrase"
-    assert "{{ question_text }}" in candidates[0].prompt, "First candidate prompt should contain required template variables"
+    assert "{{ question_text }}" in candidates[0].prompt, (
+        "First candidate prompt should contain required template variables"
+    )
     assert candidates[0].generation == generation_id, f"First candidate should have generation ID {generation_id}"
 
     # Check second candidate
-    assert candidates[1].candidate_id == f"gen_{generation_id:02d}_candidate_1", "Second candidate should have correct ID format"
+    assert candidates[1].candidate_id == f"gen_{generation_id:02d}_candidate_1", (
+        "Second candidate should have correct ID format"
+    )
     assert "Chain-of-thought" in candidates[1].hypothesis, "Second candidate hypothesis should contain key phrase"
     assert "step by step" in candidates[1].prompt, "Second candidate prompt should contain key phrase"
     assert candidates[1].generation == generation_id, f"Second candidate should have generation ID {generation_id}"
@@ -202,7 +214,9 @@ def test_generate_candidates(mock_openai: MagicMock, sample_evolution_context: E
     assert candidates[0].generation == 1, "Generated candidate should have correct generation ID"
     assert candidates[0].candidate_id == "gen_01_candidate_0", "Generated candidate should have correct ID format"
     assert "Test hypothesis" in candidates[0].hypothesis, "Generated candidate should preserve hypothesis from response"
-    assert "{{ question_text }}" in candidates[0].prompt, "Generated candidate should contain required template variables"
+    assert "{{ question_text }}" in candidates[0].prompt, (
+        "Generated candidate should contain required template variables"
+    )
 
     # Verify OpenAI client was called
     assert mock_client.responses.create.called, "OpenAI client should have been called to generate response"
@@ -210,25 +224,28 @@ def test_generate_candidates(mock_openai: MagicMock, sample_evolution_context: E
 
 @patch("kaggle_map.evolution.generator.OpenAI")
 @pytest.mark.parametrize("num_candidates", [1, 2, 3])
-def test_generate_candidates_multiple(mock_openai: MagicMock, sample_evolution_context: EvolutionContext, num_candidates: int) -> None:
+def test_generate_candidates_multiple(
+    mock_openai: MagicMock, sample_evolution_context: EvolutionContext, num_candidates: int
+) -> None:
     """Test generating multiple candidates."""
     # Mock the OpenAI client
     mock_client = MagicMock()
     mock_openai.return_value = mock_client
 
     # Create properly formatted response with multiple candidates that will pass validation
-    candidates_text = []
-    for i in range(num_candidates):
-        candidates_text.append(f"""
-CANDIDATE {i+1}
-HYPOTHESIS: Test hypothesis {i+1} for improved performance
+    candidates_text = [
+        f"""
+CANDIDATE {i + 1}
+HYPOTHESIS: Test hypothesis {i + 1} for improved performance
 TEMPLATE:
 Question: {{{{ question_text }}}}
 Category: {{{{ category }}}}
 MC Answer: {{{{ mc_answer }}}}
 Student Explanation: {{{{ student_explanation }}}}
-Additional content for candidate {i+1} that provides specific improvements...
-        """.strip())
+Additional content for candidate {i + 1} that provides specific improvements...
+        """.strip()
+        for i in range(num_candidates)
+    ]
 
     mock_response = MagicMock()
     mock_response.content = "\n\n".join(candidates_text)
@@ -243,5 +260,5 @@ Additional content for candidate {i+1} that provides specific improvements...
     for i, candidate in enumerate(candidates):
         expected_id = f"gen_01_candidate_{i}"
         assert candidate.candidate_id == expected_id, f"Candidate {i} should have correct ID format"
-        assert f"Test hypothesis {i+1}" in candidate.hypothesis, f"Candidate {i} should have correct hypothesis"
+        assert f"Test hypothesis {i + 1}" in candidate.hypothesis, f"Candidate {i} should have correct hypothesis"
         assert "{{ question_text }}" in candidate.prompt, f"Candidate {i} should contain required template variables"

@@ -58,7 +58,9 @@ def test_stratified_sample_basic(basic_test_data: pd.DataFrame) -> None:
     # Should have approximately 10% of original size
     expected_min = 2
     expected_max = 4
-    assert expected_min <= len(sampled) <= expected_max, f"Sample size {len(sampled)} should be between {expected_min} and {expected_max} for 10% of {len(basic_test_data)} rows"
+    assert expected_min <= len(sampled) <= expected_max, (
+        f"Sample size {len(sampled)} should be between {expected_min} and {expected_max} for 10% of {len(basic_test_data)} rows"
+    )
 
     # All original columns should be present
     assert list(sampled.columns) == list(basic_test_data.columns), "Sampled data should preserve all original columns"
@@ -92,7 +94,9 @@ def test_stratified_sample_min_samples(rare_strata_data: pd.DataFrame) -> None:
     # Total sample size should be reasonable (allow some oversampling)
     target_size = int(len(rare_strata_data) * 0.1)  # ~5
     max_allowed = target_size * 2  # Allow up to 2x for rare preservation
-    assert target_size <= len(sampled) <= max_allowed, f"Sample size {len(sampled)} should be between {target_size} and {max_allowed}"
+    assert target_size <= len(sampled) <= max_allowed, (
+        f"Sample size {len(sampled)} should be between {target_size} and {max_allowed}"
+    )
 
 
 @pytest.mark.parametrize("random_seed", [42, 123, 456])
@@ -134,7 +138,9 @@ def test_stratified_sample_handles_small_strata(sample_ratio: float) -> None:
     # Should handle single-item strata gracefully
     min_expected = 1
     max_expected = len(data)
-    assert min_expected <= len(sampled) <= max_expected, f"Sample size {len(sampled)} should be between {min_expected} and {max_expected} for ratio {sample_ratio}"
+    assert min_expected <= len(sampled) <= max_expected, (
+        f"Sample size {len(sampled)} should be between {min_expected} and {max_expected} for ratio {sample_ratio}"
+    )
 
     # All sampled rows should be from original data
     for idx in sampled.index:
