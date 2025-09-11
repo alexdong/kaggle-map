@@ -8,6 +8,9 @@ from sklearn.preprocessing import LabelEncoder
 from torch import nn
 
 from kaggle_map.core.models import ActivationType, ArchitectureSize, QuestionId
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,9 @@ from loguru import logger
 from torch.nn.functional import cosine_similarity
 
 from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 # Constants
 MIN_EMBEDDINGS_FOR_DIVERSITY = 2
@@ -142,10 +145,6 @@ def select_diverse_samples(  # noqa: C901
 
 if __name__ == "__main__":
     """Standalone validation of diverse sampling."""
-    import sys
-
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
 
     logger.info("=== Diverse Sampler Module Validation ===")
 

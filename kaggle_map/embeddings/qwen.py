@@ -35,6 +35,9 @@ from llama_cpp import Llama
 from loguru import logger
 
 from kaggle_map.utils.device import get_device
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 class QwenEmbeddingModel:
