@@ -4,10 +4,11 @@ from pathlib import Path
 
 from jinja2 import Template
 from loguru import logger
+from rich.console import Console
+from rich.table import Table
 
 from kaggle_map.core.models import Category, EvaluationRow, Prediction
 from kaggle_map.dataloader import load_validation_data, stratified_sample
-from kaggle_map.embeddings.sampler import select_diverse_samples
 from kaggle_map.utils.gguf_model import (
     GGUFModelLoadConfig,
     GGUFModelName,
@@ -45,6 +46,10 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path | None 
 def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     """Parse LLM response to extract predictions.
 
+    The LLM returns three predictions on ONE line separated by spaces.
+    Format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
+    Example: "True_Correct:NA True_Neither:NA True_Misconception:Division"
+
     Args:
         response: Raw LLM response containing predictions
 
@@ -53,20 +58,31 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     """
     predictions = []
 
-    for raw_line in response.strip().split("\n"):
-        line = raw_line.strip()
-        if not line or ":" not in line:
+    # The response should be a single line with three space-separated predictions
+    response_clean = response.strip()
+
+    # Handle case where LLM might return multiple lines - take the first non-empty line
+    for line in response_clean.split("\n"):
+        if line.strip() and ":" in line:
+            response_clean = line.strip()
+            break
+
+    # Split by spaces to get individual predictions
+    prediction_parts = response_clean.split()
+
+    for part in prediction_parts:
+        if ":" not in part:
             continue
 
         try:
-            prediction = Prediction.from_string(line)
+            prediction = Prediction.from_string(part)
             predictions.append(prediction)
 
             max_predictions = 3
             if len(predictions) >= max_predictions:
                 break
         except Exception as e:
-            logger.debug(f"Failed to parse prediction line '{line}': {e}")
+            logger.debug(f"Failed to parse prediction '{part}': {e}")
             continue
 
     # Pad with default predictions if needed
@@ -77,49 +93,76 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     return predictions[:max_predictions]
 
 
-def analyze_errors(error_cases: dict) -> None:
-    """Analyze and log error patterns with diverse examples.
+def display_evaluation_details(
+    evaluation_results: list[dict],
+) -> None:
+    """Display detailed evaluation results for each row.
 
     Args:
-        error_cases: Dictionary mapping (category, misconception) to list of errors
+        evaluation_results: List of evaluation result dictionaries
     """
-    if not error_cases:
+    if not evaluation_results:
         return
 
-    logger.info(f"\n{'=' * 50}")
-    logger.info("Error Analysis Summary")
-    logger.info(f"{'=' * 50}")
+    console = Console()
 
-    # Sort by frequency
-    sorted_errors = sorted(error_cases.items(), key=lambda x: len(x[1]), reverse=True)
+    # Configuration
+    max_explanation_length = 80
+    max_llm_labels_length = 100
 
-    for (category, misconception), errors in sorted_errors[:10]:  # Top 10 error types
-        logger.info(f"\n[{category}] {misconception}")
-        logger.info(f"  Errors: {len(errors)}")
+    # Create rich table
+    table = Table(
+        title="\n📊 Detailed Evaluation Results",
+        show_header=True,
+        header_style="bold magenta",
+        show_lines=True,
+        width=None,
+    )
 
-        # Select diverse examples
-        if len(errors) > 1:
-            explanations = [e["explanation"] for e in errors]
-            n_examples = min(3, len(errors))
-            diverse_indices, diversity_score = select_diverse_samples(explanations, n_samples=n_examples)
+    # Add columns
+    table.add_column("Row ID", style="cyan", no_wrap=True)
+    table.add_column("MC Answer", style="yellow", overflow="fold")
+    table.add_column("Explanation", style="white", overflow="fold", max_width=max_explanation_length)
+    table.add_column("Category", style="green")
+    table.add_column("Misconception", style="blue", overflow="fold")
+    table.add_column("LLM Labels", style="dim", overflow="fold", max_width=max_llm_labels_length)
+    table.add_column("MAP@3", style="red bold", justify="center")
 
-            logger.info(f"  Example explanations (diversity: {diversity_score:.2f}):")
-            for idx in diverse_indices:
-                error = errors[idx]
-                logger.info(f"    • {error['explanation'][:100]}...")
-                logger.info(f"      (Q: {error['question'][:50]}...)")
-                logger.info(f"      Predicted: [{error['predicted'].category}] {error['predicted'].misconception}")
-        else:
-            error = errors[0]
-            logger.info(f"  Example: {error['explanation'][:100]}...")
-            logger.info(f"    (Q: {error['question'][:50]}...)")
-            logger.info(f"    Predicted: [{error['predicted'].category}] {error['predicted'].misconception}")
+    # Add each row
+    for result in evaluation_results:
+        # Truncate explanation if needed
+        explanation = result["explanation"]
+        if len(explanation) > max_explanation_length:
+            explanation = explanation[: max_explanation_length - 3] + "..."
 
-    logger.info(f"\n{'=' * 50}")
+        # Format LLM predictions
+        llm_labels = " | ".join([str(pred) for pred in result["predictions"]])
+        if len(llm_labels) > max_llm_labels_length:
+            llm_labels = llm_labels[: max_llm_labels_length - 3] + "..."
+
+        # Format MAP@3 score
+        score_str = f"{result['score']:.2f}"
+
+        # Add row
+        table.add_row(
+            str(result["row_id"]),
+            result["mc_answer"],
+            explanation,
+            result["category"],
+            result["misconception"],
+            llm_labels,
+            score_str,
+        )
+
+    # Display the table
+    console.print(table)
+    console.print(f"\nTotal rows evaluated: {len(evaluation_results)}")
+    avg_score = sum(r["score"] for r in evaluation_results) / len(evaluation_results) if evaluation_results else 0
+    console.print(f"Average MAP@3: {avg_score:.4f}\n")
 
 
-def evaluate_with_llm(  # noqa: C901
-    validation_path: Path = Path("datasets/33474_validation.csv"),
+def evaluate_with_llm(
+    validation_path: Path = Path("datasets/33474_train.csv"),
     sample_ratio: float = 0.2,
     model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT,
     quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL,
@@ -190,10 +233,8 @@ def evaluate_with_llm(  # noqa: C901
     scores = []
     stop_tokens = get_stop_tokens(model_name)
 
-    # Track errors for analysis
-    from collections import defaultdict  # noqa: PLC0415
-
-    error_cases = defaultdict(list)  # (category, misconception) -> list of error details
+    # Track all evaluation results for detailed output
+    evaluation_results = []
 
     for row_number, (_, row) in enumerate(sampled_df.iterrows()):
         # Reconstruct evaluation row
@@ -234,25 +275,18 @@ def evaluate_with_llm(  # noqa: C901
         score = calculate_map_at_3(ground_truth, predictions)
         scores.append(score)
 
-        # Track errors if prediction was wrong
-        if score < 1.0:
-            # Check if ground truth was in top 3 predictions
-            predicted_correctly = any(
-                pred.category == ground_truth.category and pred.misconception == ground_truth.misconception
-                for pred in predictions
-            )
-
-            if not predicted_correctly:
-                key = (ground_truth.category, ground_truth.misconception)
-                error_cases[key].append(
-                    {
-                        "question": eval_row.question_text,
-                        "mc_answer": eval_row.mc_answer,
-                        "explanation": eval_row.student_explanation,
-                        "predicted": predictions[0],  # Top prediction
-                        "row_id": eval_row.row_id,
-                    }
-                )
+        # Store detailed result for every row
+        evaluation_results.append(
+            {
+                "row_id": eval_row.row_id,
+                "mc_answer": eval_row.mc_answer,
+                "explanation": eval_row.student_explanation,
+                "category": ground_truth.category.value,
+                "misconception": ground_truth.misconception,
+                "predictions": predictions,
+                "score": score,
+            }
+        )
 
         if (row_number + 1) % 10 == 0:
             current_avg = sum(scores) / len(scores)
@@ -268,8 +302,8 @@ def evaluate_with_llm(  # noqa: C901
     logger.success(f"Average MAP@3: {avg_score:.4f}")
     logger.success(f"{'=' * 50}")
 
-    # Generate error analysis summary
-    analyze_errors(error_cases)
+    # Display detailed evaluation results
+    display_evaluation_details(evaluation_results)
 
     return avg_score
 
@@ -290,7 +324,7 @@ if __name__ == "__main__":
     @click.option(
         "--validation-path",
         type=click.Path(exists=True, path_type=Path),
-        default=Path("datasets/33474_validation.csv"),
+        default=Path("datasets/33474_train.csv"),
         help="Path to validation CSV file",
     )
     @click.option(

@@ -93,11 +93,14 @@ def load_validation_data(
         )
 
         # Create Prediction from the actual ground truth
+        # Handle both column names: "Misconception" (train.csv) and "actual_misconception" (validation.csv)
+        misconception_value = row.get("Misconception", row.get("actual_misconception", "NA"))
+
         # Map Category column (uppercase) to the format expected by Prediction
         mapped_row = pd.Series(
             {
                 "Category": row["Category"],  # This is already in uppercase format
-                "Misconception": row.get("actual_misconception", "NA"),
+                "Misconception": misconception_value,
             }
         )
         prediction = Prediction.from_ground_truth_row(mapped_row)
