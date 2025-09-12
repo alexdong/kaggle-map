@@ -143,4 +143,4 @@ def load_rows_by_ids(data_path: Path, row_ids: list[int]) -> pd.DataFrame:
 
     assert not filtered_df.empty, f"No rows found for IDs: {row_ids}"
 
-    return filtered_df
+    return pd.DataFrame(filtered_df)

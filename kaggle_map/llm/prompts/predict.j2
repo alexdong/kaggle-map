@@ -1,40 +1,25 @@
-You are an expert math educator on working with students to understand their reasoning, identify misconceptions, and provide accurate feedback.
-Your task is to return the three most likely <Labels> for the given student answer and explaination.
+You are a math educator. Your job is to review a student's answer and explanation carefully.
+Your goal is to rerank the labels for the student's response based on the correctness of their answer and the quality of their explanation.
 
 Question: Sally has 2/3 of a cake; Robert eats 1/3 of that; which number sentence solves it?
 Correct Answer: (1/3) * (2/3)
 MC_Answer: {{mc_answer}}
 StudentExplanation: {{student_explanation}}
 
-Please note that the student's answer is {% if mc_answer == "(1/3) * (2/3)" %}correct{% else %}incorrect{% endif %}.
 <Labels>
 {% if mc_answer == "(1/3) * (2/3)" %}
 - True_Correct:NA
-- True_Neither:NA
 - True_Misconception:Subtraction
 - True_Misconception:Division
+- True_Neither:NA (Explaination does not address any math concedpts or it exhibts misconceptions not covered above.)
 {% else %}
-- False_Correct:NA
-- False_Neither:NA
+- False_Correct:NA (Explaination is correct but student selected wrong answer.)
 - False_Misconception:Subtraction
 - False_Misconception:Division
+- False_Neither:NA (Explaination does not address any math concedpts or it exhibts misconceptions not covered above.)
 {% endif %}
 </Labels>
 
+Rerank the above <Labels>. Put the most likely label on the top.
 
-LABEL RULES:
-
-- If the student's explanation is vague, not explain the math thinking, return {% if mc_answer == "(1/3) * (2/3)" %}True_Neither:NA{% else %}False_Neither:NA{% endif %} the first label.
-- If there is clear multiplication intent AND no explicit subtraction/division reasoning, return {% if mc_answer == "(1/3) *
- (2/3)" %}True_Correct:NA{% else %}False_Correct:NA{% endif %} the first label.
-- If the student's explanation mentions Subtraction, return {% if mc_answer == "(1/3) * (2/3)" %}True_Misconception:Subtraction{% else %}False_Msconception:Subtraction{% endif %} as the first label.
-- If the student's explanation mentions Division, return {% if mc_answer == "(1/3) * (2/3)" %}True_Misconception:Division{% else %}False_Msconception:Division{% endif %} as the first label.
-
-OUTPUT:
-
-- Return exactly THREE DISTINCT <Labels>s, separated by single spaces. No extra text. No punctuation.
-- Each <Labels> can show up ONLY ONCE in YOUR OUTPUT.
-- Rank the <Labels> by likelihood. Put the most likely label first. 
-
-
-YOUR OUTPUT
+Only return the top 3 labels. Nothing else.

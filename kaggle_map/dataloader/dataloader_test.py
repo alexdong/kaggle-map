@@ -138,12 +138,46 @@ def test_load_all_validation_data():
 def test_load_rows_by_ids(tmp_path):
     """Test loading specific rows by ID."""
     # Create test CSV
-    test_data = pd.DataFrame([
-        {"row_id": 1, "QuestionId": 100, "QuestionText": "Q1", "MC_Answer": "A", "StudentExplanation": "Exp1", "Category": "True_Correct", "Misconception": "NA"},
-        {"row_id": 2, "QuestionId": 101, "QuestionText": "Q2", "MC_Answer": "B", "StudentExplanation": "Exp2", "Category": "True_Correct", "Misconception": "NA"},
-        {"row_id": 3, "QuestionId": 102, "QuestionText": "Q3", "MC_Answer": "C", "StudentExplanation": "Exp3", "Category": "True_Misconception", "Misconception": "Test"},
-        {"row_id": 4, "QuestionId": 103, "QuestionText": "Q4", "MC_Answer": "D", "StudentExplanation": "Exp4", "Category": "True_Neither", "Misconception": "NA"},
-    ])
+    test_data = pd.DataFrame(
+        [
+            {
+                "row_id": 1,
+                "QuestionId": 100,
+                "QuestionText": "Q1",
+                "MC_Answer": "A",
+                "StudentExplanation": "Exp1",
+                "Category": "True_Correct",
+                "Misconception": "NA",
+            },
+            {
+                "row_id": 2,
+                "QuestionId": 101,
+                "QuestionText": "Q2",
+                "MC_Answer": "B",
+                "StudentExplanation": "Exp2",
+                "Category": "True_Correct",
+                "Misconception": "NA",
+            },
+            {
+                "row_id": 3,
+                "QuestionId": 102,
+                "QuestionText": "Q3",
+                "MC_Answer": "C",
+                "StudentExplanation": "Exp3",
+                "Category": "True_Misconception",
+                "Misconception": "Test",
+            },
+            {
+                "row_id": 4,
+                "QuestionId": 103,
+                "QuestionText": "Q4",
+                "MC_Answer": "D",
+                "StudentExplanation": "Exp4",
+                "Category": "True_Neither",
+                "Misconception": "NA",
+            },
+        ]
+    )
 
     test_file = tmp_path / "test_data.csv"
     test_data.to_csv(test_file, index=False)

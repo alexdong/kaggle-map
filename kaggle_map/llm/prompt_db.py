@@ -40,31 +40,25 @@ def save_prompt(conn: sqlite3.Connection, prompt: str, row_ids: list[int]) -> in
     cursor = conn.cursor()
     row_ids_str = ",".join(map(str, row_ids))
 
-    cursor.execute(
-        "INSERT INTO prompt_history (prompt, row_ids) VALUES (?, ?)",
-        (prompt, row_ids_str)
-    )
+    cursor.execute("INSERT INTO prompt_history (prompt, row_ids) VALUES (?, ?)", (prompt, row_ids_str))
     conn.commit()
 
-    return cursor.lastrowid
+    result = cursor.lastrowid
+    assert result is not None, "Failed to get last row ID after insert"
+    return result
 
 
 def update_evaluation_results(
-    conn: sqlite3.Connection,
-    prompt_id: int,
-    results: list[EvaluationResult],
-    score: float
+    conn: sqlite3.Connection, prompt_id: int, results: list[EvaluationResult], score: float
 ) -> None:
     """Update evaluation results for a prompt."""
-    results_str = "\n".join([
-        f"{r.row_id},{r.question_id},{r.score:.3f},{' | '.join(str(p) for p in r.predictions)}"
-        for r in results
-    ])
+    results_str = "\n".join(
+        [f"{r.row_id},{r.question_id},{r.score:.3f},{' | '.join(str(p) for p in r.predictions)}" for r in results]
+    )
 
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE prompt_history SET evaluation_results = ?, score = ? WHERE id = ?",
-        (results_str, score, prompt_id)
+        "UPDATE prompt_history SET evaluation_results = ?, score = ? WHERE id = ?", (results_str, score, prompt_id)
     )
     conn.commit()
 
@@ -90,9 +84,7 @@ def get_all_prompts(conn: sqlite3.Connection) -> list[dict]:
 def get_latest_prompt(conn: sqlite3.Connection) -> dict | None:
     """Get the most recent prompt with all its data."""
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM prompt_history ORDER BY id DESC LIMIT 1"
-    )
+    cursor.execute("SELECT * FROM prompt_history ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
 
     if row:

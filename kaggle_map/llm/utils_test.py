@@ -37,32 +37,32 @@ def test_parse_predictions_partial():
 def test_evaluate_dataframe():
     """Test evaluation of a DataFrame with mock LLM."""
     # Create test DataFrame
-    df = pd.DataFrame([
-        {
-            "row_id": 1,
-            "QuestionId": 100,
-            "QuestionText": "What is 2+2?",
-            "MC_Answer": "C",
-            "StudentExplanation": "I added them together",
-            "Category": "True_Correct",
-            "Misconception": "NA"
-        },
-        {
-            "row_id": 2,
-            "QuestionId": 101,
-            "QuestionText": "What is 3x4?",
-            "MC_Answer": "B",
-            "StudentExplanation": "I multiplied",
-            "Category": "True_Misconception",
-            "Misconception": "Multiplication"
-        }
-    ])
+    df = pd.DataFrame(
+        [
+            {
+                "row_id": 1,
+                "QuestionId": 100,
+                "QuestionText": "What is 2+2?",
+                "MC_Answer": "C",
+                "StudentExplanation": "I added them together",
+                "Category": "True_Correct",
+                "Misconception": "NA",
+            },
+            {
+                "row_id": 2,
+                "QuestionId": 101,
+                "QuestionText": "What is 3x4?",
+                "MC_Answer": "B",
+                "StudentExplanation": "I multiplied",
+                "Category": "True_Misconception",
+                "Misconception": "Multiplication",
+            },
+        ]
+    )
 
     # Mock LLM that returns predictable results
     mock_llm = MagicMock()
-    mock_llm.return_value = {
-        "choices": [{"text": "True_Correct:NA True_Neither:NA True_Misconception:Division"}]
-    }
+    mock_llm.return_value = {"choices": [{"text": "True_Correct:NA True_Neither:NA True_Misconception:Division"}]}
 
     # Simple template
     template = Template("Question: {{ question_text }}")

@@ -24,6 +24,25 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str
     )
 
 
+def _extract_prediction_line(response: str) -> str:
+    """Extract the first valid prediction line from response."""
+    for line in response.strip().split("\n"):
+        if line.strip() and ":" in line:
+            return line.strip()
+    return response.strip()
+
+
+def _parse_single_prediction(part: str) -> Prediction | None:
+    """Parse a single prediction string."""
+    if ":" not in part:
+        return None
+    try:
+        return Prediction.from_string(part)
+    except Exception as e:
+        logger.debug(f"Failed to parse prediction '{part}': {e}")
+        return None
+
+
 def parse_predictions(response: str) -> list[Prediction]:
     """Parse LLM response to extract predictions.
 
@@ -37,41 +56,20 @@ def parse_predictions(response: str) -> list[Prediction]:
     Returns:
         List of up to 3 Prediction objects
     """
-    predictions = []
-
-    # The response should be a single line with three space-separated predictions
-    response_clean = response.strip()
-
-    # Handle case where LLM might return multiple lines - take the first non-empty line
-    for line in response_clean.split("\n"):
-        if line.strip() and ":" in line:
-            response_clean = line.strip()
-            break
-
-    # Split by spaces to get individual predictions
-    prediction_parts = response_clean.split()
-
-    for part in prediction_parts:
-        if ":" not in part:
-            continue
-
-        try:
-            prediction = Prediction.from_string(part)
-            predictions.append(prediction)
-
-            max_predictions = 3
-            if len(predictions) >= max_predictions:
-                break
-        except Exception as e:
-            logger.debug(f"Failed to parse prediction '{part}': {e}")
-            continue
-
-    # Pad with default predictions if needed
     max_predictions = 3
-    while len(predictions) < max_predictions:
-        predictions.append(Prediction(category=Category.TRUE_CORRECT, misconception="NA"))
+    default_prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
 
-    return predictions[:max_predictions]
+    # Extract and parse predictions
+    prediction_line = _extract_prediction_line(response)
+    predictions = [pred for part in prediction_line.split() if (pred := _parse_single_prediction(part)) is not None][
+        :max_predictions
+    ]
+
+    # Pad with defaults if needed
+    while len(predictions) < max_predictions:
+        predictions.append(default_prediction)
+
+    return predictions
 
 
 def evaluate_dataframe(
@@ -118,7 +116,7 @@ def evaluate_dataframe(
             category=(
                 row["Category"]
                 if isinstance(row["Category"], Category)
-                else Category.from_csv_string(row["Category"])
+                else Category.from_csv_string(str(row["Category"]))
             ),
             misconception=row["Misconception"] if pd.notna(row["Misconception"]) else "NA",
         )
@@ -143,6 +141,7 @@ def evaluate_dataframe(
         )
 
         response_text = response["choices"][0]["text"]
+        logger.debug(f"LLM response for row {eval_row.row_id}:\n{response_text}\n")
 
         # Parse predictions
         predictions = parse_predictions(response_text)
