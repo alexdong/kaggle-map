@@ -35,14 +35,8 @@ DEFAULT_TEMPLATE_PATH = Path("kaggle_map/llm/prompts/predict.j2")
 DB_PATH = Path("kaggle_map/llm/prompts.db")
 
 
-class VimTextArea(TextArea):
-    """TextArea with vim-like keybindings and external editor support."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.vim_mode = "insert"  # insert, normal, or visual
-        self.visual_start = None
-        self.yanked_text = ""
+class EditableTextArea(TextArea):
+    """TextArea with external editor support."""
 
     def open_in_editor(self) -> None:
         """Open current text in external editor."""
@@ -62,147 +56,6 @@ class VimTextArea(TextArea):
         finally:
             # Clean up temp file
             Path(temp_path).unlink(missing_ok=True)
-
-    def on_key(self, event: events.Key) -> None:
-        """Handle vim-like key bindings."""
-        if self.vim_mode == "normal":
-            if event.key == "i":
-                self.vim_mode = "insert"
-                self.border_title = "-- INSERT --"
-                event.prevent_default()
-            elif event.key == "a":
-                self.vim_mode = "insert"
-                self.border_title = "-- INSERT --"
-                self.action_cursor_right()
-                event.prevent_default()
-            elif event.key == "o":
-                # Open line below
-                self.vim_mode = "insert"
-                self.border_title = "-- INSERT --"
-                self.action_cursor_line_end()
-                self.insert("\n")
-                event.prevent_default()
-            elif event.key == "O":
-                # Open line above
-                self.vim_mode = "insert"
-                self.border_title = "-- INSERT --"
-                self.action_cursor_line_start()
-                self.insert("\n")
-                self.action_cursor_up()
-                event.prevent_default()
-            elif event.key == "v":
-                # Visual mode
-                self.vim_mode = "visual"
-                self.border_title = "-- VISUAL --"
-                self.visual_start = self.cursor_location
-                event.prevent_default()
-            elif event.key == "V":
-                # Visual line mode
-                self.vim_mode = "visual_line"
-                self.border_title = "-- VISUAL LINE --"
-                self.action_select_line()
-                event.prevent_default()
-            elif event.key == "y":
-                # Yank current line
-                self.action_select_line()
-                self.action_copy()
-                self.yanked_text = self.selected_text
-                event.prevent_default()
-            elif event.key == "p":
-                # Paste after cursor
-                if self.yanked_text:
-                    self.insert(self.yanked_text)
-                else:
-                    self.action_paste()
-                event.prevent_default()
-            elif event.key == "d":
-                # Delete current line
-                self.action_select_line()
-                self.action_delete_left()
-                event.prevent_default()
-            elif event.key == "x":
-                # Delete character
-                self.action_delete_right()
-                event.prevent_default()
-            elif event.key == "e":
-                # Open in external editor (custom keybinding)
-                self.open_in_editor()
-                event.prevent_default()
-            elif event.key == "h":
-                self.action_cursor_left()
-                event.prevent_default()
-            elif event.key == "j":
-                self.action_cursor_down()
-                event.prevent_default()
-            elif event.key == "k":
-                self.action_cursor_up()
-                event.prevent_default()
-            elif event.key == "l":
-                self.action_cursor_right()
-                event.prevent_default()
-            elif event.key == "0":
-                self.action_cursor_line_start()
-                event.prevent_default()
-            elif event.key == "dollar":
-                self.action_cursor_line_end()
-                event.prevent_default()
-            elif event.key == "g":
-                self.action_cursor_document_start()
-                event.prevent_default()
-            elif event.key == "G":
-                self.action_cursor_document_end()
-                event.prevent_default()
-        elif self.vim_mode == "visual":
-            if event.key == "escape":
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-            elif event.key == "y":
-                # Yank selection
-                self.action_copy()
-                self.yanked_text = self.selected_text
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-            elif event.key == "d":
-                # Delete selection
-                self.action_delete_left()
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-            elif event.key in "hjkl":
-                # Extend selection
-                if event.key == "h":
-                    self.action_cursor_left(select=True)
-                elif event.key == "j":
-                    self.action_cursor_down(select=True)
-                elif event.key == "k":
-                    self.action_cursor_up(select=True)
-                elif event.key == "l":
-                    self.action_cursor_right(select=True)
-                event.prevent_default()
-        elif self.vim_mode == "visual_line":
-            if event.key == "escape":
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-            elif event.key == "y":
-                # Yank lines
-                self.action_copy()
-                self.yanked_text = self.selected_text
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-            elif event.key == "d":
-                # Delete lines
-                self.action_delete_left()
-                self.vim_mode = "normal"
-                self.border_title = "-- NORMAL --"
-                event.prevent_default()
-        elif self.vim_mode == "insert" and event.key == "escape":
-            self.vim_mode = "normal"
-            self.border_title = "-- NORMAL --"
-            event.prevent_default()
 
 
 class LoadingScreen(ModalScreen):
@@ -286,11 +139,11 @@ class PromptWorkbenchApp(App):
     """
 
     BINDINGS = [
-        ("ctrl+e", "evaluate", "Evaluate"),
+        ("ctrl+e", "open_editor", "Open in Editor"),
+        ("ctrl+r", "evaluate", "Run Evaluation"),
         ("ctrl+s", "save_template", "Save Template"),
         ("ctrl+p", "prev_prompt", "Previous Prompt"),
         ("ctrl+n", "next_prompt", "Next Prompt"),
-        ("ctrl+h", "show_help", "Show Help"),
         ("ctrl+q", "quit", "Quit"),
     ]
 
@@ -307,10 +160,10 @@ class PromptWorkbenchApp(App):
 
         # Left panel: Row IDs and controls
         with Vertical(classes="left-panel"):
-            yield Label("Row IDs [Ctrl+H for help]:")
-            yield VimTextArea(id="row_ids", classes="row-ids-area")
+            yield Label("Row IDs [Ctrl+E to edit in $EDITOR]:")
+            yield EditableTextArea(id="row_ids", classes="row-ids-area")
             yield Vertical(
-                Button("Evaluate [Ctrl+E]", id="btn_evaluate", variant="primary"),
+                Button("Evaluate [Ctrl+R]", id="btn_evaluate", variant="primary"),
                 Button("Save Template [Ctrl+S]", id="btn_save", variant="success"),
                 Button("◀ Previous [Ctrl+P]", id="btn_prev"),
                 Button("Next ▶ [Ctrl+N]", id="btn_next"),
@@ -320,8 +173,8 @@ class PromptWorkbenchApp(App):
 
         # Center panel: Prompt template editor
         with Vertical(classes="center-panel"):
-            yield Label("Prompt Template [Ctrl+H for vim help]:")
-            yield VimTextArea(id="prompt_template", classes="prompt-area")
+            yield Label("Prompt Template [Ctrl+E to edit in $EDITOR]:")
+            yield EditableTextArea(id="prompt_template", classes="prompt-area")
 
         # Right panel: Results table
         with ScrollableContainer(classes="right-panel"):
@@ -338,14 +191,14 @@ class PromptWorkbenchApp(App):
 
         # Load default template
         if DEFAULT_TEMPLATE_PATH.exists():
-            template_area = self.query_one("#prompt_template", VimTextArea)
+            template_area = self.query_one("#prompt_template", EditableTextArea)
             template_area.text = DEFAULT_TEMPLATE_PATH.read_text()
 
         # Load last used row IDs if available
         if self.conn:
             latest = self._get_latest_prompt()
             if latest and latest.get("row_ids"):
-                row_ids_area = self.query_one("#row_ids", VimTextArea)
+                row_ids_area = self.query_one("#row_ids", EditableTextArea)
                 row_ids_list = latest["row_ids"].split(",")
                 row_ids_area.text = "\n".join(row_ids_list)
 
@@ -468,8 +321,8 @@ class PromptWorkbenchApp(App):
 
     async def _evaluate(self) -> None:
         """Run evaluation with current inputs."""
-        row_ids_area = self.query_one("#row_ids", VimTextArea)
-        prompt_area = self.query_one("#prompt_template", VimTextArea)
+        row_ids_area = self.query_one("#row_ids", EditableTextArea)
+        prompt_area = self.query_one("#prompt_template", EditableTextArea)
 
         row_ids_text = row_ids_area.text.strip()
         prompt_text = prompt_area.text.strip()
@@ -522,7 +375,7 @@ class PromptWorkbenchApp(App):
 
     async def _save_template(self) -> None:
         """Save template to file."""
-        prompt_area = self.query_one("#prompt_template", VimTextArea)
+        prompt_area = self.query_one("#prompt_template", EditableTextArea)
         prompt_text = prompt_area.text.strip()
 
         if not prompt_text:
@@ -573,12 +426,12 @@ class PromptWorkbenchApp(App):
         self.current_prompt_id = prompt_data["id"]
 
         # Update row IDs
-        row_ids_area = self.query_one("#row_ids", VimTextArea)
+        row_ids_area = self.query_one("#row_ids", EditableTextArea)
         row_ids_list = prompt_data["row_ids"].split(",")
         row_ids_area.text = "\n".join(row_ids_list)
 
         # Update prompt template
-        prompt_area = self.query_one("#prompt_template", VimTextArea)
+        prompt_area = self.query_one("#prompt_template", EditableTextArea)
         prompt_area.text = prompt_data["prompt"]
 
         # Update status
@@ -594,12 +447,14 @@ class PromptWorkbenchApp(App):
         else:
             self._update_status(f"📝 Prompt #{prompt_data['id']} (not evaluated)")
 
-    async def action_show_help(self) -> None:
-        """Show vim keybindings help."""
-        self._update_status("Vim Help: " + " | ".join([
-            "ESC=normal", "i/a=insert", "v=visual", "y/p=copy/paste",
-            "d=delete", "e=$EDITOR", "hjkl=move"
-        ]))
+    async def action_open_editor(self) -> None:
+        """Open current focused textarea in external editor."""
+        focused = self.app.focused
+        if isinstance(focused, EditableTextArea):
+            focused.open_in_editor()
+            self._update_status(f"✓ Opened in {os.environ.get('EDITOR', 'vi')}")
+        else:
+            self._update_status("Focus a text area first to edit", error=True)
 
 
 def main() -> None:

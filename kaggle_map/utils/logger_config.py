@@ -49,7 +49,7 @@ def configure_logger(
     console_level: str = "INFO",
     file_level: str = "DEBUG",
     rotation: str = "10 MB",
-    retention: int = 5,
+    retention: int = 90,
     compression: str = "zip",
 ) -> None:
     """Configure module-specific logger with console and file handlers.
