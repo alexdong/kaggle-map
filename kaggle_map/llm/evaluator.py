@@ -19,6 +19,7 @@ from kaggle_map.utils.gguf_model import (
     get_stop_tokens,
     load_llm_model,
 )
+from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
 
 
@@ -50,6 +51,9 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     Format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
     Example: "True_Correct:NA True_Neither:NA True_Misconception:Division"
 
+    Also supports categories without colons (assumes NA misconception):
+    Example: "True_Correct True_Misconception:Division True_Neither"
+
     Args:
         response: Raw LLM response containing predictions
 
@@ -62,20 +66,37 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     response_clean = response.strip()
 
     # Handle case where LLM might return multiple lines - take the first non-empty line
+    # Look for lines that contain category names
     for line in response_clean.split("\n"):
-        if line.strip() and ":" in line:
-            response_clean = line.strip()
+        line_stripped = line.strip()
+        if line_stripped and any(cat.value in line_stripped for cat in Category):
+            response_clean = line_stripped
             break
 
     # Split by spaces to get individual predictions
     prediction_parts = response_clean.split()
 
     for part in prediction_parts:
-        if ":" not in part:
-            continue
-
         try:
-            prediction = Prediction.from_string(part)
+            if ":" in part:
+                # Standard format: Category:Misconception
+                prediction = Prediction.from_string(part)
+            else:
+                # Check if it's a valid category without a colon
+                # Try to match against Category enum values
+                category = None
+                for cat in Category:
+                    if part == cat.value:
+                        category = cat
+                        break
+
+                if category is None:
+                    logger.debug(f"Skipping invalid prediction part: '{part}'")
+                    continue
+
+                # Create prediction with NA misconception for categories without colons
+                prediction = Prediction(category=category, misconception="NA")
+
             predictions.append(prediction)
 
             max_predictions = 3
@@ -270,6 +291,7 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         )
 
         response_text = response["choices"][0]["text"]  # type: ignore[index]
+        logger.debug(f"LLM response for row {eval_row.row_id}:\n{response_text}\n")
 
         # Parse predictions
         predictions = parse_predictions(response_text)
@@ -314,7 +336,6 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
 
 if __name__ == "__main__":
     """Run evaluation with default settings."""
-    import sys
 
     import click
 
@@ -345,9 +366,8 @@ if __name__ == "__main__":
     )
     def main(sample_ratio: float, row_ids: str | None, data_path: Path, template_path: Path) -> None:
         """Evaluate LLM predictions on validation data."""
-        # Configure logging
-        logger.remove()
-        logger.add(sys.stderr, level="INFO")
+        # Configure logging with DEBUG level to see LLM responses
+        configure_logger(__name__, console_level="DEBUG")
 
         # Parse row_ids if provided
         row_ids_list = None
