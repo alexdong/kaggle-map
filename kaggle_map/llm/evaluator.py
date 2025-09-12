@@ -1,6 +1,7 @@
 """LLM-based evaluator for student misconception predictions."""
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from jinja2 import Template
@@ -156,7 +157,7 @@ def evaluate_with_llm(
     # Create wrapper for llm to handle format_chat_prompt
     stop_tokens = get_stop_tokens(model_name)
 
-    def llm_wrapper(prompt, **kwargs):
+    def llm_wrapper(prompt: str, **kwargs: Any) -> Any:  # noqa: ANN401
         full_prompt = format_chat_prompt(model_name, prompt)
         return llm(full_prompt, **kwargs)
 

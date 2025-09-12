@@ -47,17 +47,17 @@ class VimTextArea(TextArea):
     def open_in_editor(self) -> None:
         """Open current text in external editor."""
         editor = os.environ.get("EDITOR", "vi")
-        
+
         with tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False) as f:
             f.write(self.text)
             temp_path = f.name
-        
+
         try:
             # Open editor and wait for it to close
             subprocess.run([editor, temp_path], check=True)
-            
+
             # Read back the edited content
-            with open(temp_path, "r") as f:
+            with open(temp_path) as f:
                 self.text = f.read()
         finally:
             # Clean up temp file
@@ -596,25 +596,6 @@ class PromptWorkbenchApp(App):
 
     async def action_show_help(self) -> None:
         """Show vim keybindings help."""
-        help_text = """
-        VIM KEYBINDINGS:
-        ================
-        ESC     - Enter normal mode
-        i       - Insert mode
-        a       - Append mode
-        o/O     - Open line below/above
-        v/V     - Visual/Visual line mode
-        y       - Yank (copy) line
-        p       - Paste
-        d       - Delete line
-        x       - Delete character
-        e       - Open in $EDITOR
-        h/j/k/l - Move left/down/up/right
-        0/$     - Line start/end
-        g/G     - Document start/end
-        
-        Press any key to close...
-        """
         self._update_status("Vim Help: " + " | ".join([
             "ESC=normal", "i/a=insert", "v=visual", "y/p=copy/paste",
             "d=delete", "e=$EDITOR", "hjkl=move"

@@ -61,19 +61,19 @@ class GGUFRepoSpec:
 GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
     GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
+        filename_pattern="gpt-oss-20b-{quant}.gguf",
         available_quantizations=pydash.without(
             list(GGUFModelQuantizationLevel.__members__.values()), GGUFModelQuantizationLevel.Q5_K_XL
         ),
     ),
     GGUFModelName.QWEN3_14B: GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
-        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
+        filename_pattern="Qwen3-14B-{quant}.gguf",
         # Temporarily test only Q5_K_XL due to sequential loading conflicts
     ),
     GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",
-        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
+        filename_pattern="gemma-3-12b-it-{quant}.gguf",
     ),
 }
 

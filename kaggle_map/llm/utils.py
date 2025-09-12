@@ -1,6 +1,7 @@
 """Shared utilities for LLM evaluation."""
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from jinja2 import Template
@@ -76,7 +77,7 @@ def parse_predictions(response: str) -> list[Prediction]:
 def evaluate_dataframe(
     df: pd.DataFrame,
     template: Template | str,
-    llm,
+    llm: Any,  # noqa: ANN401
     stop_tokens: list[str] | None = None,
 ) -> tuple[list[EvaluationResult], float]:
     """Evaluate rows in a DataFrame using an LLM.
@@ -114,7 +115,11 @@ def evaluate_dataframe(
 
         # Create ground truth prediction
         ground_truth = Prediction(
-            category=row["Category"] if isinstance(row["Category"], Category) else Category.from_csv_string(row["Category"]),
+            category=(
+                row["Category"]
+                if isinstance(row["Category"], Category)
+                else Category.from_csv_string(row["Category"])
+            ),
             misconception=row["Misconception"] if pd.notna(row["Misconception"]) else "NA",
         )
 

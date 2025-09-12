@@ -101,11 +101,11 @@ def test_all_xl_quantizations_have_correct_local_path() -> None:
 
 
 def test_all_models_filename_patterns_include_ud() -> None:
-    """Test that all models' GGUF configs have correct UD- pattern."""
+    """Test that all models' GGUF configs have correct filename pattern."""
     for model_name in [GGUFModelName.GEMMA_3_12B_IT, GGUFModelName.QWEN3_14B, GGUFModelName.GPT_OSS_20B]:
         config = GGUF_MODELS[model_name]
-        assert "UD-" in config.filename_pattern, f"Missing UD- in pattern for {model_name}"
-        expected = f"{model_name.value}-UD-{{quant}}.gguf"
+        # Verify the pattern matches the expected format without UD-
+        expected = f"{model_name.value}-{{quant}}.gguf"
         assert config.filename_pattern == expected, f"Expected {expected}, got {config.filename_pattern}"
 
 
