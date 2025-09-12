@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 """TUI interface for iterating on LLM prompts with evaluation tracking."""
 
+import os
 import sqlite3
+import subprocess
+import tempfile
 from pathlib import Path
 
 from jinja2 import Template
@@ -33,11 +36,32 @@ DB_PATH = Path("kaggle_map/llm/prompts.db")
 
 
 class VimTextArea(TextArea):
-    """TextArea with basic vim-like keybindings."""
+    """TextArea with vim-like keybindings and external editor support."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.vim_mode = "insert"  # insert or normal
+        self.vim_mode = "insert"  # insert, normal, or visual
+        self.visual_start = None
+        self.yanked_text = ""
+
+    def open_in_editor(self) -> None:
+        """Open current text in external editor."""
+        editor = os.environ.get("EDITOR", "vi")
+        
+        with tempfile.NamedTemporaryFile(mode="w+", suffix=".txt", delete=False) as f:
+            f.write(self.text)
+            temp_path = f.name
+        
+        try:
+            # Open editor and wait for it to close
+            subprocess.run([editor, temp_path], check=True)
+            
+            # Read back the edited content
+            with open(temp_path, "r") as f:
+                self.text = f.read()
+        finally:
+            # Clean up temp file
+            Path(temp_path).unlink(missing_ok=True)
 
     def on_key(self, event: events.Key) -> None:
         """Handle vim-like key bindings."""
@@ -50,6 +74,59 @@ class VimTextArea(TextArea):
                 self.vim_mode = "insert"
                 self.border_title = "-- INSERT --"
                 self.action_cursor_right()
+                event.prevent_default()
+            elif event.key == "o":
+                # Open line below
+                self.vim_mode = "insert"
+                self.border_title = "-- INSERT --"
+                self.action_cursor_line_end()
+                self.insert("\n")
+                event.prevent_default()
+            elif event.key == "O":
+                # Open line above
+                self.vim_mode = "insert"
+                self.border_title = "-- INSERT --"
+                self.action_cursor_line_start()
+                self.insert("\n")
+                self.action_cursor_up()
+                event.prevent_default()
+            elif event.key == "v":
+                # Visual mode
+                self.vim_mode = "visual"
+                self.border_title = "-- VISUAL --"
+                self.visual_start = self.cursor_location
+                event.prevent_default()
+            elif event.key == "V":
+                # Visual line mode
+                self.vim_mode = "visual_line"
+                self.border_title = "-- VISUAL LINE --"
+                self.action_select_line()
+                event.prevent_default()
+            elif event.key == "y":
+                # Yank current line
+                self.action_select_line()
+                self.action_copy()
+                self.yanked_text = self.selected_text
+                event.prevent_default()
+            elif event.key == "p":
+                # Paste after cursor
+                if self.yanked_text:
+                    self.insert(self.yanked_text)
+                else:
+                    self.action_paste()
+                event.prevent_default()
+            elif event.key == "d":
+                # Delete current line
+                self.action_select_line()
+                self.action_delete_left()
+                event.prevent_default()
+            elif event.key == "x":
+                # Delete character
+                self.action_delete_right()
+                event.prevent_default()
+            elif event.key == "e":
+                # Open in external editor (custom keybinding)
+                self.open_in_editor()
                 event.prevent_default()
             elif event.key == "h":
                 self.action_cursor_left()
@@ -70,11 +147,57 @@ class VimTextArea(TextArea):
                 self.action_cursor_line_end()
                 event.prevent_default()
             elif event.key == "g":
-                # gg to go to start
                 self.action_cursor_document_start()
                 event.prevent_default()
             elif event.key == "G":
                 self.action_cursor_document_end()
+                event.prevent_default()
+        elif self.vim_mode == "visual":
+            if event.key == "escape":
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
+                event.prevent_default()
+            elif event.key == "y":
+                # Yank selection
+                self.action_copy()
+                self.yanked_text = self.selected_text
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
+                event.prevent_default()
+            elif event.key == "d":
+                # Delete selection
+                self.action_delete_left()
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
+                event.prevent_default()
+            elif event.key in "hjkl":
+                # Extend selection
+                if event.key == "h":
+                    self.action_cursor_left(select=True)
+                elif event.key == "j":
+                    self.action_cursor_down(select=True)
+                elif event.key == "k":
+                    self.action_cursor_up(select=True)
+                elif event.key == "l":
+                    self.action_cursor_right(select=True)
+                event.prevent_default()
+        elif self.vim_mode == "visual_line":
+            if event.key == "escape":
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
+                event.prevent_default()
+            elif event.key == "y":
+                # Yank lines
+                self.action_copy()
+                self.yanked_text = self.selected_text
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
+                event.prevent_default()
+            elif event.key == "d":
+                # Delete lines
+                self.action_delete_left()
+                self.vim_mode = "normal"
+                self.border_title = "-- NORMAL --"
                 event.prevent_default()
         elif self.vim_mode == "insert" and event.key == "escape":
             self.vim_mode = "normal"
@@ -167,8 +290,8 @@ class PromptWorkbenchApp(App):
         ("ctrl+s", "save_template", "Save Template"),
         ("ctrl+p", "prev_prompt", "Previous Prompt"),
         ("ctrl+n", "next_prompt", "Next Prompt"),
+        ("ctrl+h", "show_help", "Show Help"),
         ("ctrl+q", "quit", "Quit"),
-        ("escape", "toggle_vim", "Vim Normal Mode"),
     ]
 
     def __init__(self) -> None:
@@ -184,7 +307,7 @@ class PromptWorkbenchApp(App):
 
         # Left panel: Row IDs and controls
         with Vertical(classes="left-panel"):
-            yield Label("Row IDs (one per line) [ESC=vim]:")
+            yield Label("Row IDs [Ctrl+H for help]:")
             yield VimTextArea(id="row_ids", classes="row-ids-area")
             yield Vertical(
                 Button("Evaluate [Ctrl+E]", id="btn_evaluate", variant="primary"),
@@ -197,7 +320,7 @@ class PromptWorkbenchApp(App):
 
         # Center panel: Prompt template editor
         with Vertical(classes="center-panel"):
-            yield Label("Prompt Template (Jinja2) [ESC=vim]:")
+            yield Label("Prompt Template [Ctrl+H for vim help]:")
             yield VimTextArea(id="prompt_template", classes="prompt-area")
 
         # Right panel: Results table
@@ -470,6 +593,32 @@ class PromptWorkbenchApp(App):
             table.clear()
         else:
             self._update_status(f"📝 Prompt #{prompt_data['id']} (not evaluated)")
+
+    async def action_show_help(self) -> None:
+        """Show vim keybindings help."""
+        help_text = """
+        VIM KEYBINDINGS:
+        ================
+        ESC     - Enter normal mode
+        i       - Insert mode
+        a       - Append mode
+        o/O     - Open line below/above
+        v/V     - Visual/Visual line mode
+        y       - Yank (copy) line
+        p       - Paste
+        d       - Delete line
+        x       - Delete character
+        e       - Open in $EDITOR
+        h/j/k/l - Move left/down/up/right
+        0/$     - Line start/end
+        g/G     - Document start/end
+        
+        Press any key to close...
+        """
+        self._update_status("Vim Help: " + " | ".join([
+            "ESC=normal", "i/a=insert", "v=visual", "y/p=copy/paste",
+            "d=delete", "e=$EDITOR", "hjkl=move"
+        ]))
 
 
 def main() -> None:
