@@ -23,11 +23,9 @@ from kaggle_map.utils.gguf_model import (
 from kaggle_map.utils.logger_config import configure_logger
 
 # Configure module-specific logging
-configure_logger(__name__)
-
-
-
-
+# When run as a script, explicitly use the module path
+module_name = "kaggle_map.llm.evaluator" if __name__ == "__main__" else __name__
+configure_logger(module_name)
 
 
 def display_evaluation_details(
@@ -162,19 +160,14 @@ def evaluate_with_llm(
         return llm(full_prompt, **kwargs)
 
     # Evaluate using the new utility function
-    evaluation_results, avg_score = evaluate_dataframe(
-        sampled_df,
-        template,
-        llm_wrapper,
-        stop_tokens=stop_tokens
-    )
+    evaluation_results, avg_score = evaluate_dataframe(sampled_df, template, llm_wrapper, stop_tokens=stop_tokens)
 
-    logger.success(f"\n{'=' * 50}")
-    logger.success("Evaluation Complete")
-    logger.success(f"{'=' * 50}")
-    logger.success(f"Samples evaluated: {len(evaluation_results)}")
-    logger.success(f"Average MAP@3: {avg_score:.4f}")
-    logger.success(f"{'=' * 50}")
+    logger.debug(f"\n{'=' * 50}")
+    logger.debug("Evaluation Complete")
+    logger.debug(f"{'=' * 50}")
+    logger.debug(f"Samples evaluated: {len(evaluation_results)}")
+    logger.debug(f"Average MAP@3: {avg_score:.4f}")
+    logger.debug(f"{'=' * 50}")
 
     # Display detailed evaluation results
     display_evaluation_details(evaluation_results)
