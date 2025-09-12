@@ -1,6 +1,7 @@
 """LLM-based evaluator for student misconception predictions."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -114,6 +115,53 @@ def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
     return predictions[:max_predictions]
 
 
+def save_evaluation_results_to_csv(
+    evaluation_results: list[dict],
+    output_dir: Path = Path("logs"),
+) -> Path:
+    """Save evaluation results to CSV file.
+
+    Args:
+        evaluation_results: List of evaluation result dictionaries
+        output_dir: Directory to save the CSV file
+
+    Returns:
+        Path to the saved CSV file
+    """
+    assert evaluation_results, "Cannot save empty evaluation results to CSV"
+
+    # Create logs directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = output_dir / f"llm_evaluation_{timestamp}.csv"
+
+    # Convert results to DataFrame
+    df_data = []
+    for result in evaluation_results:
+        # Convert predictions to string format
+        predictions_str = " | ".join([str(pred) for pred in result["predictions"]])
+
+        df_data.append(
+            {
+                "row_id": result["row_id"],
+                "mc_answer": result["mc_answer"],
+                "explanation": result["explanation"],
+                "true_category": result["category"],
+                "true_misconception": result["misconception"],
+                "predicted_labels": predictions_str,
+                "map_at_3": result["score"],
+            }
+        )
+
+    df = pd.DataFrame(df_data)
+    df.to_csv(output_path, index=False)
+
+    logger.info(f"Evaluation results saved to: {output_path}")
+    return output_path
+
+
 def display_evaluation_details(
     evaluation_results: list[dict],
 ) -> None:
@@ -122,8 +170,7 @@ def display_evaluation_details(
     Args:
         evaluation_results: List of evaluation result dictionaries
     """
-    if not evaluation_results:
-        return
+    assert evaluation_results, "Cannot display empty evaluation results"
 
     console = Console()
 
@@ -330,6 +377,9 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
 
     # Display detailed evaluation results
     display_evaluation_details(evaluation_results)
+
+    # Save results to CSV
+    save_evaluation_results_to_csv(evaluation_results)
 
     return avg_score
 

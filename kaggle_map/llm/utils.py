@@ -133,8 +133,7 @@ def evaluate_dataframe(
         # Generate predictions
         response = llm(
             user_prompt,
-            max_tokens=256,
-            temperature=0.1,
+            temperature=0.01,
             top_p=0.95,
             stop=stop_tokens if stop_tokens else [],
             echo=False,

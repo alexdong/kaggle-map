@@ -23,6 +23,8 @@ class GGUFModelName(str, Enum):
     """Available GGUF model options."""
 
     QWEN3_14B = "Qwen3-14B"
+    QWEN3_30B = "Qwen3-30B-A3B-Instruct-2507"
+    QWEN3_30B_Thinking = "Qwen3-30B-A3B-Thinking-2507"
     GEMMA_3_12B_IT = "gemma-3-12b-it"
     GPT_OSS_20B = "gpt-oss-20b"
 
@@ -71,6 +73,16 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
         filename_pattern="Qwen3-14B-{quant}.gguf",
         # Temporarily test only Q5_K_XL due to sequential loading conflicts
     ),
+    GGUFModelName.QWEN3_30B: GGUFRepoSpec(
+        repo="unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+        filename_pattern="Qwen3-30B-A3B-Instruct-2507-UD-{quant}_K_XL.gguf",
+        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
+    ),
+    GGUFModelName.QWEN3_30B_Thinking: GGUFRepoSpec(
+        repo="unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF",
+        filename_pattern="Qwen3-30B-A3B-Thinking-2507-UD-{quant}_K_XL.gguf",
+        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
+    ),
     GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",
         filename_pattern="gemma-3-12b-it-{quant}.gguf",
@@ -90,9 +102,9 @@ class GGUFModelLoadConfig:
     Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
     """
 
-    model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT
-    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL
-    n_ctx: int = 4096  # Context window size
+    model_name: GGUFModelName = GGUFModelName.QWEN3_30B_Thinking
+    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_XL
+    n_ctx: int = 4096 * 18  # Context window size
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
     n_threads: int = 8  # CPU threads for inference

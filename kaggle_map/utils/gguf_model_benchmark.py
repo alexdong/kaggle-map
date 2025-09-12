@@ -102,7 +102,6 @@ def benchmark_single_model(
 
         response = llm(
             full_prompt,
-            max_tokens=50,
             temperature=0.01,
             stop=["\n", ".", ";"],
             echo=False,
