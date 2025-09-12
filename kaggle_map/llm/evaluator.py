@@ -26,14 +26,12 @@ from kaggle_map.utils.metrics import calculate_map_at_3
 
 @dataclass
 class EvaluationConfig:
-    """Configuration for LLM evaluation."""
-
     template_path: Path
     data_path: Path
-    sample_ratio: float = 0.2
-    row_ids: list[int] | None = None
-    model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT
-    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL
+    sample_ratio: float
+    row_ids: list[int] | None
+    model_name: GGUFModelName
+    quantization: GGUFModelQuantizationLevel
 
 
 def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
@@ -431,8 +429,8 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            model_name=GGUFModelName.GEMMA_3_12B_IT,
-            quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+            model_name=GGUFModelName.QWEN3_30B_Thinking,
+            quantization=GGUFModelQuantizationLevel.Q2_K_XL,
         )
         avg_map_score = evaluate_with_llm(config)
 

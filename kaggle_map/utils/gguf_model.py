@@ -75,12 +75,12 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
     ),
     GGUFModelName.QWEN3_30B: GGUFRepoSpec(
         repo="unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
-        filename_pattern="Qwen3-30B-A3B-Instruct-2507-UD-{quant}_K_XL.gguf",
+        filename_pattern="Qwen3-30B-A3B-Instruct-2507-UD-{quant}.gguf",
         available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
     ),
     GGUFModelName.QWEN3_30B_Thinking: GGUFRepoSpec(
         repo="unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF",
-        filename_pattern="Qwen3-30B-A3B-Thinking-2507-UD-{quant}_K_XL.gguf",
+        filename_pattern="Qwen3-30B-A3B-Thinking-2507-UD-{quant}.gguf",
         available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
     ),
     GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
@@ -136,7 +136,7 @@ def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
         return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
     if "qwen" in model_name.value.lower():
         # Include empty think tags to disable thinking mode (per Qwen3 documentation)
-        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n"
+        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
     if "gpt-oss" in model_name.value.lower():
         # gpt-oss uses a more complex format with system/developer messages
         # For simplicity, using basic user/assistant format here
