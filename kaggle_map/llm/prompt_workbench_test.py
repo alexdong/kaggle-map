@@ -3,7 +3,7 @@
 
 
 from kaggle_map.core.models import Category, EvaluationResult, Prediction
-from kaggle_map.llm.prompt_workbench import (
+from kaggle_map.llm.prompt_db import (
     get_all_prompts,
     get_latest_prompt,
     get_prompt_by_id,
