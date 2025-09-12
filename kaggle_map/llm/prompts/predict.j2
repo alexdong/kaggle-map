@@ -9,17 +9,19 @@ StudentExplanation: {{student_explanation}}
 <Labels>
 {% if mc_answer == "(1/3) * (2/3)" %}
 - True_Correct:NA
+- True_Neither:NA (Explanation does not address any math concepts or it exhibits misconceptions not covered above.)
 - True_Misconception:Subtraction
 - True_Misconception:Division
-- True_Neither:NA (Explaination does not address any math concedpts or it exhibts misconceptions not covered above.)
 {% else %}
-- False_Correct:NA (Explaination is correct but student selected wrong answer.)
+- False_Correct:NA (Explanation is correct but student selected wrong answer.)
+- False_Neither:NA (Explanation does not address any math concepts or it exhibits misconceptions not covered above.)
 - False_Misconception:Subtraction
 - False_Misconception:Division
-- False_Neither:NA (Explaination does not address any math concedpts or it exhibts misconceptions not covered above.)
 {% endif %}
 </Labels>
 
-Rerank the above <Labels>. Put the most likely label on the top.
+Carefully think about the StudentExplanation and understand the reasoning behind it.
 
-Only return the top 3 labels. Nothing else.
+Then rerank the above <Labels>. Put the most likely label on the top. 
+
+Put all labels onto one line. Space seperated. No punctuation. 

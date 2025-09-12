@@ -46,7 +46,7 @@ def get_log_file_path(module_name: str) -> Path:
 
 def configure_logger(
     module_name: str,
-    console_level: str = "INFO",
+    console_level: str = "DEBUG",
     file_level: str = "DEBUG",
     rotation: str = "10 MB",
     retention: int = 90,
