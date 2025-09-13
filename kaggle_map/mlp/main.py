@@ -4,11 +4,14 @@ This module provides both a Python API and command-line interface for training,
 evaluating, and using Multi-Layer Perceptron models for student misconception prediction.
 """
 
+import argparse
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from loguru import logger
 from torch.nn import functional
@@ -357,9 +360,8 @@ def load(filepath: Path) -> QuestionSpecificMLP:
     return model
 
 
-def handle_fit(args: "argparse.Namespace") -> None:
+def handle_fit(args: argparse.Namespace) -> None:
     """Handle the fit command to train a model."""
-    from pathlib import Path
 
     # Configure logging level
     if args.verbose:
@@ -391,10 +393,8 @@ def handle_fit(args: "argparse.Namespace") -> None:
     logger.success(f"Model saved to {output_path}")
 
 
-def handle_eval(args: "argparse.Namespace") -> None:
+def handle_eval(args: argparse.Namespace) -> None:
     """Handle the eval command to evaluate a model."""
-    import sys
-    from pathlib import Path
 
     # Configure logging level
     if args.verbose:
@@ -428,12 +428,8 @@ def handle_eval(args: "argparse.Namespace") -> None:
         logger.info(f"Evaluation complete. Model achieved MAP@3 score of {map_score:.4f}")
 
 
-def handle_predict(args: "argparse.Namespace") -> None:
+def handle_predict(args: argparse.Namespace) -> None:
     """Handle the predict command to generate predictions."""
-    import sys
-    from pathlib import Path
-
-    import pandas as pd
 
     # Configure logging level
     if args.verbose:
@@ -480,12 +476,13 @@ def handle_predict(args: "argparse.Namespace") -> None:
     predictions = predict(model, eval_rows)
 
     # Convert predictions to submission format
-    submission_rows = []
-    for pred in predictions:
-        submission_rows.append({
+    submission_rows = [
+        {
             "id": pred.row_id,
             "prediction": " ".join(pred.predictions[:3]),  # Take top 3 predictions
-        })
+        }
+        for pred in predictions
+    ]
 
     # Save predictions
     output_path = Path(args.output_file)
@@ -499,10 +496,8 @@ def handle_predict(args: "argparse.Namespace") -> None:
         logger.info(f"Generated predictions for {len(submission_rows)} samples")
 
 
-if __name__ == "__main__":
-    import argparse
-    import sys
-
+def main() -> None:
+    """Main entry point for CLI execution."""
     parser = argparse.ArgumentParser(
         description="MLP model for student misconception prediction",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -648,3 +643,7 @@ Examples:
         if args.verbose if hasattr(args, "verbose") else False:
             logger.exception("Full traceback:")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

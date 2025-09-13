@@ -193,14 +193,14 @@ kaggle_map/mlp/
 ### Task 9: Testing and Validation
 **Goal**: Ensure all functionality works correctly
 
-- [ ] Test `python -m kaggle_map.mlp fit` with default settings
-- [ ] Test `python -m kaggle_map.mlp eval` with saved model
-- [ ] Test `python -m kaggle_map.mlp predict` with sample data
-- [ ] Verify backward compatibility of Python API
-- [ ] Test error cases (missing files, invalid arguments)
-- [ ] Run existing test suite and fix any failures
-- [ ] Add new tests for CLI functionality
-- [ ] Benchmark performance vs old implementation
+- [x] Test `python -m kaggle_map.mlp fit` with default settings
+- [x] Test `python -m kaggle_map.mlp eval` with saved model
+- [x] Test `python -m kaggle_map.mlp predict` with sample data
+- [x] Verify backward compatibility of Python API
+- [x] Test error cases (missing files, invalid arguments)
+- [x] Run existing test suite and fix any failures
+- [x] Add new tests for CLI functionality
+- [x] Benchmark performance vs old implementation
 
 ### Task 10: Integration and Cleanup
 **Goal**: Final integration and code cleanup
