@@ -26,7 +26,7 @@ Use this label when:
 - The explanation is mathematically incorrect but doesn't match the specific misconceptions above
 - The explanation contains unrelated math operations or nonsensical calculations
 - The student's work is too unclear to determine their specific approach
-- The result shown (like 1 1/3) doesn't match what would come from the correct operation
+- The result shown doesn't match what would come from the correct operation
 </True_Neither:NA>
 {% else %}
 <False_Correct:NA>
@@ -34,16 +34,16 @@ The student's explanation clearly demonstrates understanding of multiplying (1/3
 </False_Correct:NA>
 
 <False_Misconception:Subtraction>
-The student selected the wrong answer AND their explanation shows they tried to solve using subtraction. This label requires evidence of subtraction in their work.
+The student specifically tries to solve using subtraction: (2/3) - (1/3) or (1/3) - (2/3). This label ONLY applies when the student explicitly shows or describes subtracting these fractions.
 </False_Misconception:Subtraction>
 
 <False_Misconception:Division>
-The student selected the wrong answer AND their explanation shows they tried to solve using division. This label requires evidence of division in their work.
+The student specifically tries to solve using division: (1/3) ÷ (2/3) or (2/3) ÷ (1/3). This label ONLY applies when the student explicitly shows or describes dividing these fractions.
 </False_Misconception:Division>
 
 <False_Neither:NA>
 Use this label when:
-- The student selected the wrong answer AND their explanation doesn't fit the other categories
+- The student's explanation doesn't fit the other categories
 - The explanation is unclear, nonsensical, or contains unrelated math operations
 - The explanation doesn't mention any relevant math concepts
 </False_Neither:NA>
@@ -55,7 +55,7 @@ Instructions:
    - Use unconventional notation
    - Show incomplete thinking
 
-2. Determine which label best describes their actual approach (not what they selected in multiple choice)
+2. Determine which label best describes their actual approach (not only what their Multiple Choice Answer is).
 
 3. Rank all four labels from most to least likely
 
@@ -63,7 +63,7 @@ Scoring Note: Your ranking is evaluated by MAP@3 (Mean Average Precision @ 3):
 - Correct label in 1st position = 1.0 points
 - Correct label in 2nd position = 0.66 points
 - Correct label in 3rd position = 0.33 points
-- When uncertain between labels, prioritize getting the correct one in the top 3.
+- When uncertain between labels, prioritize getting the relative order correct.
 
 Output Format:
 List all labels on one line, space-separated, from most to least likely. Include the colon in each label.
