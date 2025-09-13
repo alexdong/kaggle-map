@@ -69,3 +69,20 @@ Output Format:
 List all labels on one line, space-separated, from most to least likely. Include the colon in each label.
 
 Example: {% if mc_answer == "(1/3) * (2/3)" %}True_Neither:NA True_Correct:NA True_Misconception:Subtraction True_Misconception:Division{% else %}False_Neither:NA False_Correct:NA False_Misconception:Subtraction False_Misconception:Division{% endif %}
+
+CRITICAL - Exact Label Format:
+You MUST use ONLY the exact labels provided above. Do not create variations, abbreviations, or modified versions. The valid labels are exactly:
+
+{% if mc_answer == "(1/3) * (2/3)" %}
+True_Correct:NA
+True_Misconception:Subtraction
+True_Misconception:Division
+True_Neither:NA
+{% else %}
+False_Correct:NA
+False_Misconception:Subtraction
+False_Misconception:Division
+False_Neither:NA
+{% endif %}
+
+Before submitting your answer, verify that each label in your ranking matches one of these four options CHARACTER-FOR-CHARACTER.
