@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-import pydash
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
@@ -26,6 +25,7 @@ class GGUFModelName(str, Enum):
     QWEN3_30B = "Qwen3-30B-A3B-Instruct-2507"
     QWEN3_30B_Thinking = "Qwen3-30B-A3B-Thinking-2507"
     GEMMA_3_12B_IT = "gemma-3-12b-it"
+    GEMMA_3_27B_IT = "gemma-3-27b-it"
     GPT_OSS_20B = "gpt-oss-20b"
 
 
@@ -63,10 +63,13 @@ class GGUFRepoSpec:
 GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
     GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-{quant}.gguf",
-        available_quantizations=pydash.without(
-            list(GGUFModelQuantizationLevel.__members__.values()), GGUFModelQuantizationLevel.Q5_K_XL
-        ),
+        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",  # Updated with UD- prefix for Unsloth Dynamic 2.0
+        # For 16GB VRAM, Q4_K_XL fits comfortably (~14GB requirement)
+        available_quantizations=[
+            GGUFModelQuantizationLevel.Q2_K_XL,
+            GGUFModelQuantizationLevel.Q3_K_XL,
+            GGUFModelQuantizationLevel.Q4_K_XL,
+        ],
     ),
     GGUFModelName.QWEN3_14B: GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
@@ -86,6 +89,12 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
     GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",
         filename_pattern="gemma-3-12b-it-{quant}.gguf",
+    ),
+    GGUFModelName.GEMMA_3_27B_IT: GGUFRepoSpec(
+        repo="unsloth/gemma-3-27b-it-GGUF",
+        filename_pattern="gemma-3-27b-it-UD-{quant}.gguf",
+        # For 16GB VRAM, only Q2_K and Q3_K_S quantizations fit comfortably
+        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL, GGUFModelQuantizationLevel.Q3_K_XL],
     ),
 }
 

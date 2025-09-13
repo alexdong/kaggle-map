@@ -16,14 +16,17 @@ from kaggle_map.utils.gguf_model import (
     GGUFModelQuantizationLevel,
     format_chat_prompt,
     get_model_path,
+    get_stop_tokens,
 )
 
 
 def test_gemma_model_formatting() -> None:
     user_content = "What is the capital of France?"
-    result = format_chat_prompt(GGUFModelName.GEMMA_3_12B_IT, user_content)
-    expected = f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
-    assert result == expected, "Failed for model Gemma"
+    # Test both Gemma models
+    for model in [GGUFModelName.GEMMA_3_12B_IT, GGUFModelName.GEMMA_3_27B_IT]:
+        result = format_chat_prompt(model, user_content)
+        expected = f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
+        assert result == expected, f"Failed for model {model.value}"
 
 
 def test_qwen_model_formatting() -> None:
@@ -64,56 +67,93 @@ def test_all_xl_quantizations_have_correct_local_path() -> None:
     XL quantizations from Unsloth have "UD-" prefix in download URLs,
     but local files should NOT have the "UD-" prefix after download.
 
-    Note: Not all models have all XL quantizations available:
-    - Gemma and Qwen have Q2, Q3, Q4, Q5, Q6, Q8 XL versions
-    - GPT-OSS-20B only has Q4, Q6, Q8 XL versions (missing Q2, Q3, Q5)
+    Note: Not all models have all XL quantizations available.
+    We test based on what's configured in GGUF_MODELS.
     """
-    # Define which quantizations are available for each model
-    model_quantizations = {
-        GGUFModelName.GEMMA_3_12B_IT: [
-            GGUFModelQuantizationLevel.Q2_K_XL,
-            GGUFModelQuantizationLevel.Q3_K_XL,
-            GGUFModelQuantizationLevel.Q4_K_XL,
-            GGUFModelQuantizationLevel.Q5_K_XL,
-            GGUFModelQuantizationLevel.Q6_K_XL,
-        ],
-        GGUFModelName.QWEN3_14B: [
-            GGUFModelQuantizationLevel.Q2_K_XL,
-            GGUFModelQuantizationLevel.Q3_K_XL,
-            GGUFModelQuantizationLevel.Q4_K_XL,
-            GGUFModelQuantizationLevel.Q5_K_XL,
-            GGUFModelQuantizationLevel.Q6_K_XL,
-        ],
-        GGUFModelName.GPT_OSS_20B: [
-            GGUFModelQuantizationLevel.Q4_K_XL,
-            GGUFModelQuantizationLevel.Q6_K_XL,
-            # Q8_K_XL exists but not in our enum
-        ],
-    }
+    # Use the actual available quantizations from GGUF_MODELS
+    for model_name, config in GGUF_MODELS.items():
+        quantizations = config.available_quantizations
 
-    for model, quantizations in model_quantizations.items():
         for quant in quantizations:
-            path = get_model_path(model, quant)
+            path = get_model_path(model_name, quant)
             # Local files should NOT have UD- prefix
-            assert "UD-" not in str(path), f"Unexpected UD- prefix in local path for {model} {quant}: {path}"
-            expected = f"models/gguf/{model.value}-{quant.value}.gguf"
+            assert "UD-" not in str(path), f"Unexpected UD- prefix in local path for {model_name} {quant}: {path}"
+            expected = f"models/gguf/{model_name.value}-{quant.value}.gguf"
             assert str(path) == expected, f"Expected {expected}, got {path}"
 
 
-def test_all_models_filename_patterns_include_ud() -> None:
-    """Test that all models' GGUF configs have correct filename pattern."""
-    for model_name in [GGUFModelName.GEMMA_3_12B_IT, GGUFModelName.QWEN3_14B, GGUFModelName.GPT_OSS_20B]:
+def test_all_models_filename_patterns() -> None:
+    """Test that all models' GGUF configs have correct filename patterns.
+
+    Some models use UD- prefix (Unsloth Dynamic), others don't.
+    This depends on the specific model and how it's hosted.
+    """
+    expected_patterns = {
+        GGUFModelName.GEMMA_3_12B_IT: "gemma-3-12b-it-{quant}.gguf",
+        GGUFModelName.GEMMA_3_27B_IT: "gemma-3-27b-it-UD-{quant}.gguf",  # Has UD- prefix
+        GGUFModelName.QWEN3_14B: "Qwen3-14B-{quant}.gguf",
+        GGUFModelName.QWEN3_30B: "Qwen3-30B-A3B-Instruct-2507-UD-{quant}.gguf",  # Has UD- prefix
+        GGUFModelName.QWEN3_30B_Thinking: "Qwen3-30B-A3B-Thinking-2507-UD-{quant}.gguf",  # Has UD- prefix
+        GGUFModelName.GPT_OSS_20B: "gpt-oss-20b-UD-{quant}.gguf",  # Has UD- prefix
+    }
+
+    for model_name, expected in expected_patterns.items():
         config = GGUF_MODELS[model_name]
-        # Verify the pattern matches the expected format without UD-
-        expected = f"{model_name.value}-{{quant}}.gguf"
-        assert config.filename_pattern == expected, f"Expected {expected}, got {config.filename_pattern}"
+        assert config.filename_pattern == expected, (
+            f"Model {model_name}: Expected {expected}, got {config.filename_pattern}"
+        )
 
 
-def test_non_xl_quantizations_no_ud_prefix() -> None:
-    """Test that non-XL quantizations don't get UD- prefix."""
-    # Test a non-XL quantization (if we had Q4_K_M for example)
-    # This test would need actual non-XL quantizations to be meaningful
-    # For now, just verify the logic in get_model_path
+def test_new_models_configuration() -> None:
+    """Test that new models (GPT-OSS-20B and GEMMA-3-27B-IT) are properly configured."""
+    # Test GPT-OSS-20B
+    assert GGUFModelName.GPT_OSS_20B in GGUF_MODELS
+    gpt_config = GGUF_MODELS[GGUFModelName.GPT_OSS_20B]
+    assert gpt_config.repo == "unsloth/gpt-oss-20b-GGUF"
+    assert gpt_config.filename_pattern == "gpt-oss-20b-UD-{quant}.gguf"
+    assert GGUFModelQuantizationLevel.Q4_K_XL in gpt_config.available_quantizations
 
-    # Since all our quantizations are XL, we can't test this properly
-    # but we document the expected behavior
+    # Test GEMMA-3-27B-IT
+    assert GGUFModelName.GEMMA_3_27B_IT in GGUF_MODELS
+    gemma27_config = GGUF_MODELS[GGUFModelName.GEMMA_3_27B_IT]
+    assert gemma27_config.repo == "unsloth/gemma-3-27b-it-GGUF"
+    assert gemma27_config.filename_pattern == "gemma-3-27b-it-UD-{quant}.gguf"
+    assert GGUFModelQuantizationLevel.Q2_K_XL in gemma27_config.available_quantizations
+    assert GGUFModelQuantizationLevel.Q3_K_XL in gemma27_config.available_quantizations
+
+
+def test_get_stop_tokens() -> None:
+    """Test stop tokens for all models."""
+    # Test Gemma models
+    for model in [GGUFModelName.GEMMA_3_12B_IT, GGUFModelName.GEMMA_3_27B_IT]:
+        tokens = get_stop_tokens(model)
+        assert "<end_of_turn>" in tokens
+        assert "\n" in tokens
+
+    # Test Qwen models
+    for model in [GGUFModelName.QWEN3_14B, GGUFModelName.QWEN3_30B, GGUFModelName.QWEN3_30B_Thinking]:
+        tokens = get_stop_tokens(model)
+        assert "<|im_end|>" in tokens
+
+    # Test GPT-OSS model
+    tokens = get_stop_tokens(GGUFModelName.GPT_OSS_20B)
+    assert "<|end|>" in tokens
+    assert "\n" in tokens
+
+
+def test_models_fit_16gb_vram() -> None:
+    """Test that models configured for 16GB VRAM have appropriate quantizations."""
+    # Models that should fit in 16GB VRAM
+    models_16gb = {
+        GGUFModelName.GPT_OSS_20B: [
+            GGUFModelQuantizationLevel.Q2_K_XL,
+            GGUFModelQuantizationLevel.Q3_K_XL,
+            GGUFModelQuantizationLevel.Q4_K_XL,
+        ],
+        GGUFModelName.GEMMA_3_27B_IT: [GGUFModelQuantizationLevel.Q2_K_XL, GGUFModelQuantizationLevel.Q3_K_XL],
+    }
+
+    for model, expected_quants in models_16gb.items():
+        config = GGUF_MODELS[model]
+        for quant in expected_quants:
+            assert quant in config.available_quantizations, f"{model} should support {quant} for 16GB VRAM"

@@ -478,8 +478,8 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            model_name=GGUFModelName.QWEN3_30B_Thinking,
-            quantization=GGUFModelQuantizationLevel.Q2_K_XL,
+            model_name=GGUFModelName.GEMMA_3_27B_IT,
+            quantization=GGUFModelQuantizationLevel.Q3_K_XL,
         )
         avg_map_score = evaluate_with_llm(config)
 
