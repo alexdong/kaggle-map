@@ -270,10 +270,10 @@ def suggest_ctx_length(
     n_ctx = (max_tokens // 4096) * 4096
 
     # Ensure minimum context of 4096 if any tokens fit
-    MIN_CONTEXT_SIZE = 4096
-    MIN_TOKEN_THRESHOLD = 2048
-    if max_tokens >= MIN_TOKEN_THRESHOLD and n_ctx < MIN_CONTEXT_SIZE:
-        n_ctx = MIN_CONTEXT_SIZE
+    min_context_size = 4096
+    min_token_threshold = 2048
+    if max_tokens >= min_token_threshold and n_ctx < min_context_size:
+        n_ctx = min_context_size
 
     return n_ctx
 
@@ -408,6 +408,29 @@ def load_llm_model(config: GGUFModelLoadConfig) -> Llama:
     )
 
 
+def _extract_ranking_from_analysis(thinking_trace: str) -> str | None:
+    """Extract label ranking from analysis text."""
+    # Pattern 1: Space-separated labels like "False_Neither:NA False_Correct:NA ..."
+    ranking_pattern = r'"?([A-Za-z_]+:[A-Za-z_]+(?:\s+[A-Za-z_]+:[A-Za-z_]+)+)"?'
+    rankings = re.findall(ranking_pattern, thinking_trace)
+
+    # Pattern 2: Labels separated by > symbols like "False_Neither:NA > False_Correct:NA > ..."
+    order_pattern = r"([A-Za-z_]+:[A-Za-z_]+(?:\s*>\s*[A-Za-z_]+:[A-Za-z_]+)+)"
+    order_rankings = re.findall(order_pattern, thinking_trace)
+
+    if rankings:
+        # Use the last space-separated ranking found
+        result = rankings[-1]
+        logger.debug(f"Extracted space-separated ranking from analysis: {result}")
+        return result
+    if order_rankings:
+        # Convert > separated to space-separated
+        result = order_rankings[-1].replace(" > ", " ").replace(">", " ")
+        logger.debug(f"Extracted order ranking from analysis: {result}")
+        return result
+    return None
+
+
 def _parse_harmony_format(response: str) -> tuple[str | None, str]:
     """Parse GPT-OSS Harmony format response.
 
@@ -437,23 +460,9 @@ def _parse_harmony_format(response: str) -> tuple[str | None, str]:
         logger.debug("No final channel found, attempting to extract from analysis")
         # If no final channel, try to extract predictions from the analysis section
         if thinking_trace:
-            # Look for the last occurrence of a label ranking in the analysis
-            # Pattern 1: Space-separated labels like "False_Neither:NA False_Correct:NA ..."
-            ranking_pattern = r'"?([A-Za-z_]+:[A-Za-z_]+(?:\s+[A-Za-z_]+:[A-Za-z_]+)+)"?'
-            rankings = re.findall(ranking_pattern, thinking_trace)
-
-            # Pattern 2: Labels separated by > symbols like "False_Neither:NA > False_Correct:NA > ..."
-            order_pattern = r"([A-Za-z_]+:[A-Za-z_]+(?:\s*>\s*[A-Za-z_]+:[A-Za-z_]+)+)"
-            order_rankings = re.findall(order_pattern, thinking_trace)
-
-            if rankings:
-                # Use the last space-separated ranking found
-                clean_response = rankings[-1]
-                logger.debug(f"Extracted space-separated ranking from analysis: {clean_response}")
-            elif order_rankings:
-                # Convert > separated to space-separated
-                clean_response = order_rankings[-1].replace(" > ", " ").replace(">", " ")
-                logger.debug(f"Extracted order ranking from analysis: {clean_response}")
+            extracted_ranking = _extract_ranking_from_analysis(thinking_trace)
+            if extracted_ranking:
+                clean_response = extracted_ranking
             else:
                 # If still no rankings, remove analysis and use what's left
                 clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
