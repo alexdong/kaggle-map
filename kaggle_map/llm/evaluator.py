@@ -1,6 +1,5 @@
 """LLM-based evaluator for student misconception predictions."""
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +10,7 @@ from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.core.models import EvaluationRow, Prediction
 from kaggle_map.dataloader import load_validation_data, stratified_sample
 from kaggle_map.utils.gguf_model import (
     GGUFModelLoadConfig,
@@ -20,6 +19,7 @@ from kaggle_map.utils.gguf_model import (
     format_chat_prompt,
     get_stop_tokens,
     load_llm_model,
+    parse_llm_response,
 )
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -28,14 +28,6 @@ from kaggle_map.utils.metrics import calculate_map_at_3
 # Set to -1 for unlimited generation (will generate until context window limit or stop token)
 # Set to a positive value to limit response length
 MAX_RESPONSE_TOKENS = -1  # Unlimited generation within context window
-
-
-@dataclass
-class ParseResult:
-    """Result from parsing LLM response."""
-
-    predictions: list[Prediction]
-    thinking_trace: str | None = None
 
 
 @dataclass
@@ -55,106 +47,6 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str
         mc_answer=eval_row.mc_answer,
         student_explanation=eval_row.student_explanation,
     )
-
-
-def _parse_harmony_format(response: str) -> tuple[str | None, str]:
-    """Parse GPT-OSS Harmony format response.
-
-    Args:
-        response: Raw response with Harmony format tags
-
-    Returns:
-        Tuple of (thinking_trace, clean_response_for_predictions)
-    """
-    thinking_trace = None
-    clean_response = response
-
-    # Extract analysis channel content as thinking trace
-    analysis_pattern = r"<\|channel\|>analysis<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
-    analysis_match = re.search(analysis_pattern, response, re.DOTALL)
-    if analysis_match:
-        thinking_trace = analysis_match.group(1).strip()
-
-    # Extract final channel content for predictions
-    final_pattern = r"<\|channel\|>final<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
-    final_match = re.search(final_pattern, response, re.DOTALL)
-    if final_match:
-        clean_response = final_match.group(1).strip()
-    else:
-        # If no final channel, try to parse the entire response after removing analysis
-        clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
-
-    return thinking_trace, clean_response
-
-
-def _parse_think_tags(response: str) -> tuple[str | None, str]:
-    """Parse standard <think>...</think> format response.
-
-    Args:
-        response: Raw response with think tags
-
-    Returns:
-        Tuple of (thinking_trace, clean_response_for_predictions)
-    """
-    thinking_pattern = r"<think>(.*?)</think>"
-    thinking_match = re.search(thinking_pattern, response, re.DOTALL)
-
-    thinking_trace = None
-    if thinking_match:
-        thinking_trace = thinking_match.group(1).strip()
-
-    # Remove thinking tags from response for prediction parsing
-    clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
-
-    return thinking_trace, clean_response
-
-
-def parse_predictions_enhanced(response: str) -> ParseResult:
-    """Parse LLM response to extract predictions and thinking trace.
-
-    Handles both standard <think>...</think> tags and GPT-OSS Harmony format
-    with <|channel|>analysis<|message|> and <|channel|>final<|message|> tags.
-
-    Args:
-        response: Raw LLM response containing predictions and possibly thinking tags
-
-    Returns:
-        ParseResult with predictions and optional thinking trace
-    """
-    # Check for GPT-OSS Harmony format first
-    if "<|channel|>" in response:
-        thinking_trace, clean_response = _parse_harmony_format(response)
-    else:
-        # Standard <think>...</think> format
-        thinking_trace, clean_response = _parse_think_tags(response)
-
-    # Parse predictions from cleaned response
-    predictions = parse_predictions(clean_response)
-
-    return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
-
-
-def parse_predictions(response: str) -> list[Prediction]:
-    predictions = []
-    response_clean = response.strip()
-    response = " ".join([s.strip() for s in response_clean.split("\n") if s.strip()])
-    prediction_parts = response.split()
-
-    for part in prediction_parts:
-        if ":" in part:
-            # Standard format: Category:Misconception
-            prediction = Prediction.from_string(part)
-        else:
-            # Check if it's a valid category without a colon
-            category = next((cat for cat in Category if part == cat.value), None)
-            if category is None:
-                logger.debug(f"Skipping invalid prediction part: '{part}'")
-                continue
-            # Create prediction with NA misconception for categories without colons
-            prediction = Prediction(category=category, misconception="NA")
-
-        predictions.append(prediction)
-    return predictions[:3]
 
 
 def save_evaluation_results_to_csv(
@@ -377,7 +269,7 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         logger.debug(f"LLM response for row {eval_row.row_id}:\n{response_text}\n")
 
         # Parse predictions and extract thinking trace
-        result = parse_predictions_enhanced(response_text)
+        result = parse_llm_response(response_text, Prediction.parse)
         predictions = result.predictions
 
         # Log thinking trace if present
@@ -476,7 +368,7 @@ if __name__ == "__main__":
             # model_name=GGUFModelName.GEMMA_3_27B_IT,
             # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
             model_name=GGUFModelName.GPT_OSS_20B,
-            quantization=GGUFModelQuantizationLevel.Q5_K_M,
+            quantization=GGUFModelQuantizationLevel.Q2_K_L,
         )
         avg_map_score = evaluate_with_llm(config)
 

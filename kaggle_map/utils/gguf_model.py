@@ -1,5 +1,7 @@
 """Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -16,6 +18,14 @@ configure_logger(__name__)
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
+
+
+@dataclass
+class ParseResult:
+    """Result from parsing LLM response."""
+
+    predictions: list  # Will be list[Prediction] but avoiding circular import
+    thinking_trace: str | None = None
 
 
 class GGUFModelName(str, Enum):
@@ -36,6 +46,7 @@ class GGUFModelQuantizationLevel(str, Enum):
     Use only one quantization per benchmark session to avoid GPU context corruption
     """
 
+    Q2_K_L = "Q2_K_L"
     Q2_K_XL = "Q2_K_XL"
     Q3_K_M = "Q3_K_M"
     Q3_K_XL = "Q3_K_XL"
@@ -91,7 +102,7 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
         repo="unsloth/gpt-oss-20b-GGUF",
         filename_pattern="gpt-oss-20b-{quant}.gguf",
         available_quantizations=[
-            GGUFModelQuantizationLevel.Q2_K_XL,
+            GGUFModelQuantizationLevel.Q2_K_L,
             GGUFModelQuantizationLevel.Q3_K_M,
             GGUFModelQuantizationLevel.Q4_K_M,
             GGUFModelQuantizationLevel.Q5_K_M,
@@ -255,3 +266,82 @@ def load_llm_model(config: GGUFModelLoadConfig) -> Llama:
         verbose=config.verbose,
         n_threads=config.n_threads,
     )
+
+
+def _parse_harmony_format(response: str) -> tuple[str | None, str]:
+    """Parse GPT-OSS Harmony format response.
+
+    Args:
+        response: Raw response with Harmony format tags
+
+    Returns:
+        Tuple of (thinking_trace, clean_response_for_predictions)
+    """
+    thinking_trace = None
+    clean_response = response
+
+    # Extract analysis channel content as thinking trace
+    analysis_pattern = r"<\|channel\|>analysis<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
+    analysis_match = re.search(analysis_pattern, response, re.DOTALL)
+    if analysis_match:
+        thinking_trace = analysis_match.group(1).strip()
+
+    # Extract final channel content for predictions
+    final_pattern = r"<\|channel\|>final<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
+    final_match = re.search(final_pattern, response, re.DOTALL)
+    if final_match:
+        clean_response = final_match.group(1).strip()
+    else:
+        # If no final channel, try to parse the entire response after removing analysis
+        clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
+
+    return thinking_trace, clean_response
+
+
+def _parse_think_tags(response: str) -> tuple[str | None, str]:
+    """Parse standard <think>...</think> format response.
+
+    Args:
+        response: Raw response with think tags
+
+    Returns:
+        Tuple of (thinking_trace, clean_response_for_predictions)
+    """
+    thinking_pattern = r"<think>(.*?)</think>"
+    thinking_match = re.search(thinking_pattern, response, re.DOTALL)
+
+    thinking_trace = None
+    if thinking_match:
+        thinking_trace = thinking_match.group(1).strip()
+
+    # Remove thinking tags from response for prediction parsing
+    clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
+
+    return thinking_trace, clean_response
+
+
+def parse_llm_response(response: str, parse_predictions_fn: Callable[[str], list] | None = None) -> ParseResult:
+    """Parse LLM response to extract predictions and thinking trace.
+
+    Handles both standard <think>...</think> tags and GPT-OSS Harmony format
+    with <|channel|>analysis<|message|> and <|channel|>final<|message|> tags.
+
+    Args:
+        response: Raw LLM response containing predictions and possibly thinking tags
+        parse_predictions_fn: Function to parse predictions from cleaned response.
+                             If None, returns empty list.
+
+    Returns:
+        ParseResult with predictions and optional thinking trace
+    """
+    # Check for GPT-OSS Harmony format first
+    if "<|channel|>" in response:
+        thinking_trace, clean_response = _parse_harmony_format(response)
+    else:
+        # Standard <think>...</think> format
+        thinking_trace, clean_response = _parse_think_tags(response)
+
+    # Parse predictions from cleaned response
+    predictions = parse_predictions_fn(clean_response) if parse_predictions_fn else []
+
+    return ParseResult(predictions=predictions, thinking_trace=thinking_trace)

@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
@@ -110,6 +111,37 @@ class Prediction(BaseModel):
         if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
+
+    @classmethod
+    def parse(cls, response: str) -> list["Prediction"]:
+        """Parse predictions from LLM response text.
+
+        Args:
+            response: Raw response text containing predictions
+
+        Returns:
+            List of up to 3 Prediction objects
+        """
+        predictions = []
+        response_clean = response.strip()
+        response = " ".join([s.strip() for s in response_clean.split("\n") if s.strip()])
+        prediction_parts = response.split()
+
+        for part in prediction_parts:
+            if ":" in part:
+                # Standard format: Category:Misconception
+                prediction = cls.from_string(part)
+            else:
+                # Check if it's a valid category without a colon
+                category = next((cat for cat in Category if part == cat.value), None)
+                if category is None:
+                    logger.debug(f"Skipping invalid prediction part: '{part}'")
+                    continue
+                # Create prediction with NA misconception for categories without colons
+                prediction = cls(category=category, misconception="NA")
+
+            predictions.append(prediction)
+        return predictions[:3]
 
 
 def normalize_label(label: Label) -> Label:
