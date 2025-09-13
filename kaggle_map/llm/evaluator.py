@@ -232,10 +232,7 @@ def _get_optimal_context(model_name: GGUFModelName, quantization: GGUFModelQuant
         )
         return min_context
     if optimal_ctx < standard_context:
-        logger.warning(
-            f"Limited context of {optimal_ctx} tokens for "
-            f"{model_name.value} {quantization.value}"
-        )
+        logger.warning(f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}")
     return optimal_ctx
 
 
@@ -398,10 +395,10 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            model_name=GGUFModelName.GEMMA_3_27B_IT,
-            quantization=GGUFModelQuantizationLevel.Q3_K_XL,
-            # model_name=GGUFModelName.GPT_OSS_20B,
-            # quantization=GGUFModelQuantizationLevel.Q5_K_M,
+            # model_name=GGUFModelName.GEMMA_3_27B_IT,
+            # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
+            model_name=GGUFModelName.GPT_OSS_20B,
+            quantization=GGUFModelQuantizationLevel.Q2_K_L,
         )
         avg_map_score = evaluate_with_llm(config)
 
