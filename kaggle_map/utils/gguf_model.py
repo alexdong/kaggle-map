@@ -176,6 +176,23 @@ class GGUFModelLoadConfig:
         return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
 
+def suggest_max_tokens(llm_kwargs: dict) -> dict:
+    """Prevent infinite reasoning loops by setting token limits."""
+    updated_kwargs = llm_kwargs.copy()
+
+    if updated_kwargs.get("max_tokens", -1) > 0:
+        return updated_kwargs
+
+    if "reasoning_effort" in updated_kwargs:
+        # GPT-OSS models with reasoning capability need more tokens
+        updated_kwargs["max_tokens"] = 8192 if updated_kwargs["reasoning_effort"] == "high" else 4096
+    else:
+        updated_kwargs["max_tokens"] = 2048
+
+    logger.debug(f"Applied token limit: max_tokens={updated_kwargs['max_tokens']}")
+    return updated_kwargs
+
+
 def suggest_ctx_length(
     vram_gb: float,
     model_name: GGUFModelName,

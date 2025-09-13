@@ -21,6 +21,7 @@ from kaggle_map.utils.gguf_model import (
     get_stop_tokens,
     parse_llm_response,
     suggest_ctx_length,
+    suggest_max_tokens,
 )
 
 
@@ -561,6 +562,96 @@ def test_suggest_ctx_length_all_models_coverage() -> None:
             for vram in standard_vram_sizes:
                 result = suggest_ctx_length(vram, model_name, quantization)
                 _validate_ctx_length(result, model_name, quantization, vram)
+
+
+# =============================================================================
+# Tests for Token Limit Suggestions
+# =============================================================================
+
+
+def test_suggest_max_tokens_preserves_existing_limit():
+    """Existing max_tokens should not be overridden."""
+    llm_kwargs = {"max_tokens": 1024, "temperature": 0.5}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 1024, "Should preserve user-specified token limit"
+    assert result["temperature"] == 0.5, "Should preserve other parameters"
+
+
+def test_suggest_max_tokens_with_high_reasoning_effort():
+    """High reasoning effort gets 8192 tokens for complex reasoning tasks."""
+    llm_kwargs = {"reasoning_effort": "high", "temperature": 1.0}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 8192, "High reasoning needs 8192 tokens"
+    assert result["reasoning_effort"] == "high", "Should preserve reasoning_effort"
+
+
+def test_suggest_max_tokens_with_medium_reasoning_effort():
+    """Medium reasoning effort gets 4096 tokens."""
+    llm_kwargs = {"reasoning_effort": "medium"}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 4096, "Medium reasoning needs 4096 tokens"
+
+
+def test_suggest_max_tokens_for_standard_models():
+    """Models without reasoning_effort get standard 2048 token limit."""
+    llm_kwargs = {"temperature": 0.1, "top_p": 0.95}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 2048, "Standard models get 2048 tokens"
+    assert result["temperature"] == 0.1, "Should preserve temperature"
+    assert result["top_p"] == 0.95, "Should preserve top_p"
+
+
+def test_suggest_max_tokens_empty_kwargs():
+    """Empty kwargs should get default token limit."""
+    result = suggest_max_tokens({})
+
+    assert result["max_tokens"] == 2048, "Empty kwargs gets standard limit"
+
+
+def test_suggest_max_tokens_does_not_mutate_input():
+    """Function should not modify the original kwargs dict."""
+    original = {"temperature": 0.5}
+    result = suggest_max_tokens(original)
+
+    assert "max_tokens" not in original, "Original dict should not be modified"
+    assert "max_tokens" in result, "Result should have max_tokens"
+
+
+@pytest.mark.parametrize(
+    ("reasoning", "expected"),
+    [
+        ("high", 8192),
+        ("medium", 4096),
+        ("low", 4096),
+        ("", 4096),
+    ],
+)
+def test_suggest_max_tokens_reasoning_variations(reasoning, expected):
+    """Different reasoning efforts map to appropriate token limits."""
+    llm_kwargs = {"reasoning_effort": reasoning}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == expected, f"Reasoning '{reasoning}' should get {expected} tokens"
+
+
+def test_suggest_max_tokens_zero_is_treated_as_unset():
+    """Zero max_tokens should be treated as unset and replaced."""
+    llm_kwargs = {"max_tokens": 0}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 2048, "Zero should be replaced with default"
+
+
+def test_suggest_max_tokens_negative_is_treated_as_unset():
+    """Negative max_tokens should be treated as unset and replaced."""
+    llm_kwargs = {"max_tokens": -1}
+    result = suggest_max_tokens(llm_kwargs)
+
+    assert result["max_tokens"] == 2048, "Negative should be replaced with default"
 
 
 if __name__ == "__main__":

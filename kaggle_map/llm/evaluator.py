@@ -25,6 +25,7 @@ from kaggle_map.utils.gguf_model import (
     load_llm_model,
     parse_llm_response,
     suggest_ctx_length,
+    suggest_max_tokens,
 )
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -276,6 +277,9 @@ def _evaluate_single_sample(
 
     if is_gpt_oss:
         llm_kwargs["reasoning_effort"] = "high"
+
+    # Limit tokens to prevent repetitive reasoning patterns
+    llm_kwargs = suggest_max_tokens(llm_kwargs)
 
     response = llm(full_prompt, **llm_kwargs)
     response_text = response["choices"][0]["text"]  # type: ignore[index]
