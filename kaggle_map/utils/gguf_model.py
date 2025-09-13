@@ -125,7 +125,7 @@ class GGUFModelLoadConfig:
 
     model_name: GGUFModelName = GGUFModelName.QWEN3_30B_Thinking
     quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_XL
-    n_ctx: int = 4096 * 18  # Context window size
+    n_ctx: int = 4096 * 5  # Context window size (20,480 tokens - optimal for 16GB VRAM)
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
     n_threads: int = 8  # CPU threads for inference

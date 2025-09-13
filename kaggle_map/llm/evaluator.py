@@ -368,7 +368,7 @@ if __name__ == "__main__":
             # model_name=GGUFModelName.GEMMA_3_27B_IT,
             # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
             model_name=GGUFModelName.GPT_OSS_20B,
-            quantization=GGUFModelQuantizationLevel.Q2_K_L,
+            quantization=GGUFModelQuantizationLevel.Q5_K_M,
         )
         avg_map_score = evaluate_with_llm(config)
 
