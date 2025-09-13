@@ -94,11 +94,11 @@ kaggle_map/mlp/
 ### Task 1: Remove CLI Infrastructure
 **Goal**: Clean up pyproject.toml and remove CLI references
 
-- [ ] Remove `[project.scripts]` section from pyproject.toml
-- [ ] Verify no other files reference `kaggle_map.cli:main`
-- [ ] Check for any CLI-related imports in other modules
-- [ ] Ensure pyproject.toml remains valid TOML syntax
-- [ ] Document removal in git commit message
+- [x] Remove `[project.scripts]` section from pyproject.toml
+- [x] Verify no other files reference `kaggle_map.cli:main`
+- [x] Check for any CLI-related imports in other modules
+- [x] Ensure pyproject.toml remains valid TOML syntax
+- [x] Document removal in git commit message
 
 ### Task 2: Rename and Restructure Main Module
 **Goal**: Rename predictor.py to main.py maintaining all functionality
@@ -213,23 +213,6 @@ kaggle_map/mlp/
 - [ ] Create migration guide for users of old CLI
 - [ ] Test on fresh environment
 - [ ] Document any breaking changes
-
-## Success Criteria
-
-1. **Functionality**: All existing MLP capabilities work via `python -m kaggle_map.mlp`
-2. **Simplicity**: Reduced code complexity, no CLI routing overhead
-3. **Independence**: MLP module runs without external CLI dependencies
-4. **Documentation**: Clear usage instructions in README
-5. **Testing**: All tests pass, including new CLI tests
-6. **Performance**: No regression in training/inference speed
-
-## Risk Mitigation
-
-1. **Breaking Changes**: Document migration path from old CLI
-2. **Import Errors**: Thoroughly test all import paths
-3. **Model Compatibility**: Ensure saved models still load correctly
-4. **Memory Issues**: Test with large datasets
-5. **Platform Differences**: Test on Linux/Mac/Windows if possible
 
 ## Notes
 

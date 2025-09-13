@@ -19,7 +19,6 @@ from kaggle_map.llm.utils import build_prediction_prompt
 from kaggle_map.utils.gguf_model import (
     GGUFModelLoadConfig,
     GGUFModelName,
-    GGUFModelQuantizationLevel,
     format_chat_prompt,
     get_stop_tokens,
     load_llm_model,
