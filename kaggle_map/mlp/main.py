@@ -355,3 +355,138 @@ def load(filepath: Path) -> QuestionSpecificMLP:
 
     model.load_state_dict(torch.load(filepath))
     return model
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+    
+    parser = argparse.ArgumentParser(
+        description="MLP model for student misconception prediction",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Train a model with default settings
+  python -m kaggle_map.mlp fit
+  
+  # Train with custom parameters
+  python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001
+  
+  # Evaluate a trained model
+  python -m kaggle_map.mlp eval --model-path models/mlp.pkl
+  
+  # Generate predictions for submission
+  python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv
+        """,
+    )
+    
+    # Add subparsers for different commands
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Fit command
+    fit_parser = subparsers.add_parser("fit", help="Train the MLP model")
+    fit_parser.add_argument(
+        "--train-data",
+        type=str,
+        default="datasets/train.csv",
+        help="Path to training data CSV (default: datasets/train.csv)",
+    )
+    fit_parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+        help="Number of training epochs (default: 50)",
+    )
+    fit_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=256,
+        help="Batch size for training (default: 256)",
+    )
+    fit_parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=1e-4,
+        help="Learning rate (default: 1e-4)",
+    )
+    fit_parser.add_argument(
+        "--train-split",
+        type=float,
+        default=0.7,
+        help="Fraction of data for training (default: 0.7)",
+    )
+    fit_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/mlp.pkl",
+        help="Path to save the trained model (default: models/mlp.pkl)",
+    )
+    fit_parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show detailed training progress",
+    )
+    
+    # Eval command
+    eval_parser = subparsers.add_parser("eval", help="Evaluate the MLP model")
+    eval_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/mlp.pkl",
+        help="Path to the saved model (default: models/mlp.pkl)",
+    )
+    eval_parser.add_argument(
+        "--train-data",
+        type=str,
+        default="datasets/train.csv",
+        help="Path to training data CSV for evaluation (default: datasets/train.csv)",
+    )
+    eval_parser.add_argument(
+        "--train-split",
+        type=float,
+        default=0.7,
+        help="Fraction of data used for training (default: 0.7)",
+    )
+    eval_parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show detailed evaluation metrics",
+    )
+    
+    # Predict command
+    predict_parser = subparsers.add_parser("predict", help="Generate predictions")
+    predict_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/mlp.pkl",
+        help="Path to the saved model (default: models/mlp.pkl)",
+    )
+    predict_parser.add_argument(
+        "--input-file",
+        type=str,
+        required=True,
+        help="Path to input CSV file with test data",
+    )
+    predict_parser.add_argument(
+        "--output-file",
+        type=str,
+        required=True,
+        help="Path to output CSV file for predictions",
+    )
+    predict_parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show prediction progress",
+    )
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    # Show help if no command specified
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+    
+    # Dispatch to appropriate handler (will be implemented in Task 5)
+    logger.error(f"Command '{args.command}' not yet implemented")
+    sys.exit(1)

@@ -112,17 +112,17 @@ kaggle_map/mlp/
 ### Task 3: Implement Command-Line Interface
 **Goal**: Add argparse-based CLI in __main__ block
 
-- [ ] Import argparse and sys modules
-- [ ] Create ArgumentParser with proper description
-- [ ] Add subparsers for fit, eval, predict commands
-- [ ] Define arguments for each subcommand:
+- [x] Import argparse and sys modules
+- [x] Create ArgumentParser with proper description
+- [x] Add subparsers for fit, eval, predict commands
+- [x] Define arguments for each subcommand:
   - fit: --train-data, --epochs, --batch-size, --learning-rate, --train-split, --model-path
   - eval: --model-path, --train-data, --train-split
   - predict: --model-path, --input-file, --output-file
-- [ ] Add proper help messages for each argument
-- [ ] Implement command dispatch logic
-- [ ] Add error handling for missing arguments
-- [ ] Include verbose/quiet logging options
+- [x] Add proper help messages for each argument
+- [x] Implement command dispatch logic
+- [x] Add error handling for missing arguments
+- [x] Include verbose/quiet logging options
 
 ### Task 4: Update Module Imports
 **Goal**: Fix imports throughout MLP module
