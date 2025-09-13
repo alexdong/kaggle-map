@@ -14,14 +14,13 @@ import pytest
 from kaggle_map.core.models import Category, Prediction
 from kaggle_map.utils.gguf_model import (
     GGUF_MODELS,
+    GGUFModelLoadConfig,
     GGUFModelName,
     GGUFModelQuantizationLevel,
     format_chat_prompt,
     get_model_path,
     get_stop_tokens,
     parse_llm_response,
-    suggest_ctx_length,
-    suggest_max_tokens,
 )
 
 
@@ -430,228 +429,28 @@ True_Correct:NA"""
     assert result.predictions == []
 
 
-@pytest.mark.parametrize(
-    ("vram_gb", "model_name", "quantization", "expected_ctx"),
-    [
-        # 16GB VRAM scenarios (like RTX 2000 Ada)
-        # GPT-OSS-20B with different quantizations
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 20480),  # 4096 * 5
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 4096),  # 4096 * 1 (minimal)
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),  # Won't fit
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M, 0),  # Won't fit
-        # 24GB VRAM scenarios (like RTX 3090/4090)
-        (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 86016),  # 4096 * 21
-        (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 69632),  # 4096 * 17
-        (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 57344),  # 4096 * 14
-        (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M, 40960),  # 4096 * 10
-        # 12GB VRAM scenarios (like RTX 3060)
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),  # Won't fit
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 0),  # Won't fit
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),  # Won't fit
-        # 8GB VRAM scenarios (like RTX 3050)
-        (8.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),  # Won't fit
-        # Gemma-3-27B scenarios (16GB VRAM)
-        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL, 0),  # Won't fit
-        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL, 0),  # Won't fit
-        # Qwen3-30B scenarios (16GB VRAM)
-        (16.0, GGUFModelName.QWEN3_30B_Thinking, GGUFModelQuantizationLevel.Q2_K_XL, 0),  # Won't fit
-        # Qwen3-14B scenarios (16GB VRAM) - smaller model, more context
-        (16.0, GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q4_K_XL, 53248),  # 4096 * 13
-        (16.0, GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q6_K_XL, 32768),  # 4096 * 8
-    ],
-)
-def test_suggest_ctx_length(
-    vram_gb: float, model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel, expected_ctx: int
-) -> None:
-    """Test context length suggestions for various VRAM and model configurations."""
-    result = suggest_ctx_length(vram_gb, model_name, quantization)
-    assert result == expected_ctx, (
-        f"Expected {expected_ctx} for {vram_gb}GB with {model_name}/{quantization}, got {result}"
-    )
+def test_static_configs_exist() -> None:
+    """Test that static configs exist for common models."""
+    # Test GPT-OSS static config
+    config = GGUFModelLoadConfig.GPT_OSS_20B
+    assert config.model_name == GGUFModelName.GPT_OSS_20B
+    assert config.quantization == GGUFModelQuantizationLevel.Q2_K_L
+    assert config.n_ctx == 20480
+    assert config.n_batch == 512
+    assert config.n_gpu_layers == -1
+    assert config.n_threads == 8
 
+    # Test GEMMA static config
+    config = GGUFModelLoadConfig.GEMMA_3_27B_IT
+    assert config.model_name == GGUFModelName.GEMMA_3_27B_IT
+    assert config.quantization == GGUFModelQuantizationLevel.Q2_K_L
+    assert config.n_ctx == 8192
 
-@pytest.mark.parametrize(
-    ("vram_gb", "model_name", "quantization", "desktop_overhead", "safety_margin", "expected_ctx"),
-    [
-        # Test custom overhead and margin settings
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.5, 0.5, 24576),  # Less overhead
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 1.0, 2.0, 8192),  # More safety
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 2.0, 3.0, 0),  # Very conservative
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.0, 0.0, 32768),  # No overhead (risky!)
-        # Edge cases
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 5.0, 5.0, 0),  # Too much overhead
-        (4.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.0, 0.0, 0),  # Not enough VRAM
-    ],
-)
-def test_suggest_ctx_length_custom_params(  # noqa: PLR0913
-    vram_gb: float,
-    model_name: GGUFModelName,
-    quantization: GGUFModelQuantizationLevel,
-    desktop_overhead: float,
-    safety_margin: float,
-    expected_ctx: int,
-) -> None:
-    """Test context length suggestions with custom overhead and safety margin."""
-    result = suggest_ctx_length(
-        vram_gb, model_name, quantization, desktop_overhead_gb=desktop_overhead, safety_margin_gb=safety_margin
-    )
-    assert result == expected_ctx, (
-        f"Expected {expected_ctx} for {vram_gb}GB with {model_name}/{quantization}, "
-        f"overhead={desktop_overhead}, margin={safety_margin}, got {result}"
-    )
-
-
-def test_suggest_ctx_length_minimum_context() -> None:
-    """Test that minimum context of 4096 is returned when possible."""
-    # This should have just enough for minimal context
-    result = suggest_ctx_length(
-        vram_gb=13.0,
-        model_name=GGUFModelName.GPT_OSS_20B,
-        quantization=GGUFModelQuantizationLevel.Q2_K_L,
-        desktop_overhead_gb=0.5,
-        safety_margin_gb=0.2,
-    )
-    assert result == 4096, "Should return minimum context of 4096 when barely fitting"
-
-
-def test_suggest_ctx_length_rounding() -> None:
-    """Test that context is always rounded to multiples of 4096."""
-    # This configuration should give us a value that needs rounding
-    result = suggest_ctx_length(
-        vram_gb=18.0,  # Not a clean multiple calculation
-        model_name=GGUFModelName.GPT_OSS_20B,
-        quantization=GGUFModelQuantizationLevel.Q2_K_L,
-    )
-    assert result % 4096 == 0, f"Result {result} should be a multiple of 4096"
-    assert result > 0, "Should return a positive context length"
-
-
-def test_suggest_ctx_length_unknown_model_quantization() -> None:
-    """Test fallback logic for unknown model/quantization combinations."""
-    # Using a combination not in the hardcoded sizes
-    result = suggest_ctx_length(
-        vram_gb=16.0,
-        model_name=GGUFModelName.QWEN3_14B,
-        quantization=GGUFModelQuantizationLevel.Q3_K_M,  # Not in our hardcoded list
-    )
-    # Should still return a reasonable value using fallback logic
-    assert result > 0, "Should use fallback calculation for unknown combinations"
-    assert result % 4096 == 0, "Should still be a multiple of 4096"
-
-
-def _validate_ctx_length(
-    result: int, model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel, vram: float
-) -> None:
-    """Validate context length result for a given configuration."""
-    assert result >= 0, f"Negative result for {model_name}/{quantization} on {vram}GB"
-    assert result % 4096 == 0 or result == 0, f"Not a multiple of 4096: {result}"
-    if result > 0:
-        assert result >= 4096, f"Non-zero result below minimum: {result}"
-
-
-def test_suggest_ctx_length_all_models_coverage() -> None:
-    """Verify that all models return reasonable values for standard VRAM sizes."""
-    standard_vram_sizes = [8.0, 12.0, 16.0, 24.0, 32.0, 48.0]
-
-    for model_name in GGUFModelName.__members__.values():
-        model_spec = GGUF_MODELS.get(model_name)
-        if not model_spec:
-            continue
-
-        for quantization in model_spec.available_quantizations:
-            for vram in standard_vram_sizes:
-                result = suggest_ctx_length(vram, model_name, quantization)
-                _validate_ctx_length(result, model_name, quantization, vram)
-
-
-# =============================================================================
-# Tests for Token Limit Suggestions
-# =============================================================================
-
-
-def test_suggest_max_tokens_preserves_existing_limit():
-    """Existing max_tokens should not be overridden."""
-    llm_kwargs = {"max_tokens": 1024, "temperature": 0.5}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 1024, "Should preserve user-specified token limit"
-    assert result["temperature"] == 0.5, "Should preserve other parameters"
-
-
-def test_suggest_max_tokens_with_high_reasoning_effort():
-    """High reasoning effort gets 8192 tokens for complex reasoning tasks."""
-    llm_kwargs = {"reasoning_effort": "high", "temperature": 1.0}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 8192, "High reasoning needs 8192 tokens"
-    assert result["reasoning_effort"] == "high", "Should preserve reasoning_effort"
-
-
-def test_suggest_max_tokens_with_medium_reasoning_effort():
-    """Medium reasoning effort gets 4096 tokens."""
-    llm_kwargs = {"reasoning_effort": "medium"}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 4096, "Medium reasoning needs 4096 tokens"
-
-
-def test_suggest_max_tokens_for_standard_models():
-    """Models without reasoning_effort get standard 2048 token limit."""
-    llm_kwargs = {"temperature": 0.1, "top_p": 0.95}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 2048, "Standard models get 2048 tokens"
-    assert result["temperature"] == 0.1, "Should preserve temperature"
-    assert result["top_p"] == 0.95, "Should preserve top_p"
-
-
-def test_suggest_max_tokens_empty_kwargs():
-    """Empty kwargs should get default token limit."""
-    result = suggest_max_tokens({})
-
-    assert result["max_tokens"] == 2048, "Empty kwargs gets standard limit"
-
-
-def test_suggest_max_tokens_does_not_mutate_input():
-    """Function should not modify the original kwargs dict."""
-    original = {"temperature": 0.5}
-    result = suggest_max_tokens(original)
-
-    assert "max_tokens" not in original, "Original dict should not be modified"
-    assert "max_tokens" in result, "Result should have max_tokens"
-
-
-@pytest.mark.parametrize(
-    ("reasoning", "expected"),
-    [
-        ("high", 8192),
-        ("medium", 4096),
-        ("low", 4096),
-        ("", 4096),
-    ],
-)
-def test_suggest_max_tokens_reasoning_variations(reasoning, expected):
-    """Different reasoning efforts map to appropriate token limits."""
-    llm_kwargs = {"reasoning_effort": reasoning}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == expected, f"Reasoning '{reasoning}' should get {expected} tokens"
-
-
-def test_suggest_max_tokens_zero_is_treated_as_unset():
-    """Zero max_tokens should be treated as unset and replaced."""
-    llm_kwargs = {"max_tokens": 0}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 2048, "Zero should be replaced with default"
-
-
-def test_suggest_max_tokens_negative_is_treated_as_unset():
-    """Negative max_tokens should be treated as unset and replaced."""
-    llm_kwargs = {"max_tokens": -1}
-    result = suggest_max_tokens(llm_kwargs)
-
-    assert result["max_tokens"] == 2048, "Negative should be replaced with default"
+    # Test Thinking model static config
+    config = GGUFModelLoadConfig.QWEN_30B
+    assert config.model_name == GGUFModelName.QWEN3_30B
+    assert config.quantization == GGUFModelQuantizationLevel.Q4_K_XL
+    assert config.n_ctx == 20480
 
 
 if __name__ == "__main__":

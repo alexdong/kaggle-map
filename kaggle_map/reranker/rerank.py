@@ -131,18 +131,13 @@ if __name__ == "__main__":
     from kaggle_map.core.models import Category, EvaluationRow, Prediction
     from kaggle_map.utils.gguf_model import (
         GGUFModelLoadConfig,
-        GGUFModelName,
-        GGUFModelQuantizationLevel,
         load_llm_model,
     )
 
     logger.info("Testing rerank_predictions function")
 
-    # Use default model configuration from benchmark.py
-    load_config = GGUFModelLoadConfig(
-        model_name=GGUFModelName.GEMMA_3_12B_IT,
-        quantization=GGUFModelQuantizationLevel.Q4_K_XL,
-    )
+    # Use specific model configuration for testing
+    load_config = GGUFModelLoadConfig.GPT_OSS_20B
 
     logger.info(f"Loading model: {load_config.model_name} with {load_config.quantization} quantization")
     llm = load_llm_model(load_config)

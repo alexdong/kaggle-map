@@ -24,8 +24,6 @@ from kaggle_map.utils.gguf_model import (
     get_stop_tokens,
     load_llm_model,
     parse_llm_response,
-    suggest_ctx_length,
-    suggest_max_tokens,
 )
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -42,8 +40,6 @@ class EvaluationConfig:
     data_path: Path
     sample_ratio: float
     row_ids: list[int] | None
-    model_name: GGUFModelName
-    quantization: GGUFModelQuantizationLevel
 
 
 def save_evaluation_results_to_csv(
@@ -208,40 +204,6 @@ def _sample_dataframe(
     return sampled_df
 
 
-def _get_optimal_context(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> int:
-    """Calculate optimal context size for model/quantization."""
-    optimal_ctx = suggest_ctx_length(
-        vram_gb=16.0,  # RTX 2000 Ada has 16GB VRAM
-        model_name=model_name,
-        quantization=quantization,
-        desktop_overhead_gb=0.7,
-        safety_margin_gb=1.0,
-    )
-
-    # Model-specific minimum context requirements
-    is_gpt_oss = model_name == GGUFModelName.GPT_OSS_20B
-    min_context = 16384 if is_gpt_oss else 2048  # OpenAI recommends 16k for GPT-OSS
-    standard_context = 16384 if is_gpt_oss else 4096
-
-    if optimal_ctx <= 0:
-        logger.warning(
-            f"Model {model_name.value} {quantization.value} "
-            f"may not fit in 16GB VRAM. Using minimum context of {min_context}"
-        )
-        return min_context
-
-    if optimal_ctx < standard_context:
-        if is_gpt_oss:
-            logger.warning(
-                f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}. "
-                f"OpenAI recommends minimum {standard_context}"
-            )
-        else:
-            logger.warning(f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}")
-
-    return optimal_ctx
-
-
 def _evaluate_single_sample(
     row: pd.Series, config: EvaluationConfig, llm: Llama, stop_tokens: list[str]
 ) -> tuple[float, dict[str, Any]]:
@@ -268,18 +230,10 @@ def _evaluate_single_sample(
     top_p = 1.0 if is_gpt_oss else 0.95
 
     llm_kwargs: dict[str, Any] = {
-        "max_tokens": MAX_RESPONSE_TOKENS,
         "temperature": temperature,
         "top_p": top_p,
         "stop": stop_tokens,
-        "echo": False,
     }
-
-    if is_gpt_oss:
-        llm_kwargs["reasoning_effort"] = "high"
-
-    # Limit tokens to prevent repetitive reasoning patterns
-    llm_kwargs = suggest_max_tokens(llm_kwargs)
 
     response = llm(full_prompt, **llm_kwargs)
     response_text = response["choices"][0]["text"]  # type: ignore[index]
@@ -306,29 +260,6 @@ def _evaluate_single_sample(
     }
 
     return score, result_dict
-
-
-def _setup_model(config: EvaluationConfig) -> Llama:
-    """Setup and configure the LLM model."""
-    optimal_ctx = _get_optimal_context(config.model_name, config.quantization)
-
-    model_config = GGUFModelLoadConfig(
-        model_name=config.model_name,
-        quantization=config.quantization,
-        n_ctx=optimal_ctx,
-    )
-
-    is_gpt_oss = config.model_name == GGUFModelName.GPT_OSS_20B
-    logger.info(f"Loading {config.model_name.value} with {config.quantization.value} quantization")
-    logger.info(f"Using dynamic context size: {optimal_ctx} tokens")
-    logger.info(f"GPU layers: {model_config.n_gpu_layers} (-1 means use all available)")
-
-    if is_gpt_oss:
-        logger.info("Using OpenAI recommended parameters: temperature=1.0, top_p=1.0")
-    else:
-        logger.info("Using standard parameters: temperature=0.1, top_p=0.95")
-
-    return load_llm_model(model_config)
 
 
 def _finalize_results(scores: list[float], evaluation_results: list[dict[str, Any]], start_time: float) -> float:
@@ -369,13 +300,13 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
     df = _prepare_dataframe(validation_pairs)
     sampled_df = _sample_dataframe(df, config.row_ids, config.sample_ratio)
 
-    llm = _setup_model(config)
+    # Setup model using config
+    model_config = GGUFModelLoadConfig.GPT_OSS_20B
+    llm = load_llm_model(model_config)
 
     # Evaluate each sample
     scores = []
     stop_tokens = get_stop_tokens(config.model_name)
-
-    # Track all evaluation results for detailed output
     evaluation_results = []
 
     # Track timing
@@ -463,10 +394,6 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            # model_name=GGUFModelName.GEMMA_3_27B_IT,
-            # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
-            model_name=GGUFModelName.GPT_OSS_20B,
-            quantization=GGUFModelQuantizationLevel.Q2_K_L,
         )
         avg_map_score = evaluate_with_llm(config)
 

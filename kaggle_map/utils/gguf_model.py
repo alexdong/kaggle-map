@@ -3,6 +3,31 @@
 https://huggingface.co/unsloth/gemma-3-27b-it-GGUF
 https://huggingface.co/unsloth/gpt-oss-20b-GGUF
 https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking
+
+  n_ctx (Context Window)
+
+  - Total memory allocation for the entire conversation
+  - Includes ALL tokens: prompt + reasoning/thinking + final response
+  - Set during model initialization (can't change per request)
+  - For GPT-OSS-20B: typically 16k-32k tokens recommended
+
+  max_tokens (Generation Limit)
+
+  - Maximum NEW tokens the model can generate in response
+  - Only counts tokens generated AFTER the prompt
+  - Can be adjusted per request
+  - For thinking models: needs to be large enough for both reasoning + answer
+
+  Why This Matters for Thinking Models
+
+  Thinking models like GPT-OSS-20B use a special process:
+  1. Reasoning phase: Internal chain-of-thought (can be thousands of tokens)
+  2. Answer phase: Final formatted response
+
+  The total token usage is:
+  [Prompt tokens] + [Reasoning tokens] + [Answer tokens] ≤ n_ctx
+                    └────── Both limited by max_tokens ──────┘
+
 """
 
 import re
@@ -129,173 +154,53 @@ class GGUFModelLoadConfig:
     Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
     """
 
-    model_name: GGUFModelName = GGUFModelName.QWEN3_30B_Thinking
-    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_XL
-
-    # Context window size calculation for 16GB VRAM:
-    #
-    # Memory breakdown:
-    # - Total VRAM: 16GB
-    # - Desktop/OS overhead: ~0.7GB
-    # - Available for model: ~15.3GB
-    #
-    # Model memory requirements:
-    # - Q2_K_L quantization of 20B model: ~11.8GB (loaded weights)
-    # - Q3_K_M quantization of 20B model: ~13.5GB
-    # - Q4_K_M quantization of 20B model: ~15GB
-    # - Q5_K_M quantization of 20B model: ~17GB (won't fit)
-    #
-    # KV cache memory per token (for 20B models):
-    # - Estimated architecture: 32-40 layers, 32 KV heads, 128 head dim
-    # - KV cache per token: ~0.5-1MB (depends on precision)
-    # - Conservative estimate: 1MB per 1k tokens
-    #
-    # Calculation for Q2_K_L (our default):
-    # - Model weights: 11.8GB
-    # - Remaining for KV cache + overhead: 15.3 - 11.8 = 3.5GB
-    # - Reserve 1GB for processing overhead
-    # - Available for KV cache: 2.5GB
-    # - Max tokens: 2.5GB / 1MB per 1k = ~2,500k tokens
-    # - Safe tokens with headroom: 20k (4096 * 5)
-    #
-    # Multiplier guide by quantization:
-    # - Q2_K_L: 4096 * 5 (20k tokens) - current setting
-    # - Q3_K_M: 4096 * 3 (12k tokens) - less room due to larger model
-    # - Q4_K_M: 4096 * 2 (8k tokens) - minimal context, model barely fits
-    # - Q5_K_M: Won't fit in 16GB VRAM
-    n_ctx: int = 4096 * 5  # 20,480 tokens - optimal for Q2_K_L on 16GB VRAM
-    n_batch: int = 512  # Batch size for prompt processing
-    n_gpu_layers: int = -1  # Use all available GPU layers
-    n_threads: int = 8  # CPU threads for inference
-    random_seed: int = 42
-    verbose: bool = False  # Verbose llama.cpp output
+    model_name: GGUFModelName
+    quantization: GGUFModelQuantizationLevel
+    n_ctx: int  # Context window (total conversation memory)
+    n_batch: int  # Batch size for prompt processing
+    n_gpu_layers: int  # GPU layers (-1 for all)
+    n_threads: int  # CPU threads for inference
 
     @property
     def model_filename(self) -> str:
         """Get the GGUF filename for this configuration."""
         return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
+    @classmethod
+    @property
+    def QWEN_30B(cls) -> "GGUFModelLoadConfig":
+        return cls(
+            model_name=GGUFModelName.QWEN3_30B,
+            quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+            n_ctx=20480,
+            n_batch=512,
+            n_gpu_layers=-1,
+            n_threads=8,
+        )
 
-def suggest_max_tokens(llm_kwargs: dict) -> dict:
-    """Prevent infinite reasoning loops by setting token limits."""
-    updated_kwargs = llm_kwargs.copy()
+    @classmethod
+    @property
+    def GPT_OSS_20B(cls) -> "GGUFModelLoadConfig":
+        return cls(
+            model_name=GGUFModelName.GPT_OSS_20B,
+            quantization=GGUFModelQuantizationLevel.Q2_K_L,
+            n_ctx=20480,
+            n_batch=512,
+            n_gpu_layers=-1,
+            n_threads=8,
+        )
 
-    if updated_kwargs.get("max_tokens", -1) > 0:
-        return updated_kwargs
-
-    if "reasoning_effort" in updated_kwargs:
-        # GPT-OSS models with reasoning capability need more tokens
-        updated_kwargs["max_tokens"] = 8192 if updated_kwargs["reasoning_effort"] == "high" else 4096
-    else:
-        updated_kwargs["max_tokens"] = 2048
-
-    logger.debug(f"Applied token limit: max_tokens={updated_kwargs['max_tokens']}")
-    return updated_kwargs
-
-
-def suggest_ctx_length(
-    vram_gb: float,
-    model_name: GGUFModelName,
-    quantization: GGUFModelQuantizationLevel,
-    desktop_overhead_gb: float = 0.7,
-    safety_margin_gb: float = 1.0,
-) -> int:
-    """Calculate optimal context length based on available VRAM and model configuration.
-
-    Args:
-        vram_gb: Total VRAM in gigabytes (e.g., 16 for 16GB)
-        model_name: The GGUF model being used
-        quantization: Quantization level of the model
-        desktop_overhead_gb: Memory reserved for desktop/OS (default 0.7GB)
-        safety_margin_gb: Additional safety margin to prevent OOM (default 1.0GB)
-
-    Returns:
-        Optimal n_ctx value (multiple of 4096) that fits in available VRAM
-
-    The calculation follows this formula:
-    1. Available VRAM = Total - Desktop overhead
-    2. Model weights size based on quantization
-    3. Remaining for KV cache = Available - Model weights - Safety margin
-    4. Context tokens = KV cache memory / Memory per token
-    5. Round down to nearest 4096 multiple
-    """
-    # Model weight sizes in GB (approximate, based on empirical measurements)
-    model_weight_sizes = {
-        # 20B parameter models
-        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L): 11.8,
-        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M): 13.5,
-        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M): 15.0,
-        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M): 17.0,
-        # 27B parameter models (Gemma)
-        (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL): 14.5,
-        (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL): 16.5,
-        # 30B parameter models (Qwen)
-        (GGUFModelName.QWEN3_30B, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
-        (GGUFModelName.QWEN3_30B_Thinking, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
-        # 14B parameter models
-        (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q4_K_XL): 9.5,
-        (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q6_K_XL): 11.5,
-    }
-
-    # KV cache memory per 1k tokens in GB (conservative estimate)
-    # For 20B models: ~32-40 layers * 32 heads * 128 dim * 2 (K+V) * 2 bytes = ~1MB per token
-    # So 1k tokens = ~120MB of KV cache (empirically tuned for common VRAM sizes)
-    kv_cache_per_1k_tokens = {
-        GGUFModelName.GPT_OSS_20B: 0.12,  # ~120MB per 1k tokens (tuned for 16GB -> 5*4096)
-        GGUFModelName.GEMMA_3_27B_IT: 0.15,  # ~150MB per 1k tokens
-        GGUFModelName.QWEN3_30B: 0.16,  # ~160MB per 1k tokens
-        GGUFModelName.QWEN3_30B_Thinking: 0.16,  # ~160MB per 1k tokens
-        GGUFModelName.QWEN3_14B: 0.085,  # ~85MB per 1k tokens (tuned for more context)
-    }
-
-    # Get model weight size
-    model_key = (model_name, quantization)
-    if model_key not in model_weight_sizes:
-        # Default conservative estimate based on quantization alone
-        quant_multipliers = {
-            GGUFModelQuantizationLevel.Q2_K_L: 0.6,
-            GGUFModelQuantizationLevel.Q2_K_XL: 0.6,
-            GGUFModelQuantizationLevel.Q3_K_M: 0.7,
-            GGUFModelQuantizationLevel.Q3_K_XL: 0.7,
-            GGUFModelQuantizationLevel.Q4_K_M: 0.8,
-            GGUFModelQuantizationLevel.Q4_K_XL: 0.8,
-            GGUFModelQuantizationLevel.Q5_K_M: 0.9,
-            GGUFModelQuantizationLevel.Q6_K_XL: 1.0,
-        }
-        # Rough estimate: 20B model at Q4 is about 15GB
-        base_size = 15.0
-        multiplier = quant_multipliers.get(quantization, 0.8)
-        model_weight_gb = base_size * multiplier
-    else:
-        model_weight_gb = model_weight_sizes[model_key]
-
-    # Calculate available memory for KV cache
-    available_vram = vram_gb - desktop_overhead_gb
-    kv_cache_budget = available_vram - model_weight_gb - safety_margin_gb
-
-    # If model doesn't fit at all, return 0
-    if kv_cache_budget <= 0:
-        return 0
-
-    # Get KV cache requirement per token
-    kv_per_1k = kv_cache_per_1k_tokens.get(model_name, 0.125)  # Default to 125MB per 1k tokens
-
-    # Calculate maximum context tokens
-    # kv_cache_budget is in GB, kv_per_1k is GB per 1000 tokens
-    # So tokens = (budget_GB / kv_per_1k_GB) * 1000
-    max_tokens = int((kv_cache_budget / kv_per_1k) * 1000)
-
-    # Round down to nearest multiple of 4096
-    # This ensures clean alignment with typical context window sizes
-    n_ctx = (max_tokens // 4096) * 4096
-
-    # Ensure minimum context of 4096 if any tokens fit
-    min_context_size = 4096
-    min_token_threshold = 2048
-    if max_tokens >= min_token_threshold and n_ctx < min_context_size:
-        n_ctx = min_context_size
-
-    return n_ctx
+    @classmethod
+    @property
+    def GEMMA_3_27B_IT(cls) -> "GGUFModelLoadConfig":
+        return cls(
+            model_name=GGUFModelName.GEMMA_3_27B_IT,
+            quantization=GGUFModelQuantizationLevel.Q2_K_L,
+            n_ctx=8192,
+            n_batch=512,
+            n_gpu_layers=-1,
+            n_threads=8,
+        )
 
 
 def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
@@ -423,7 +328,6 @@ def load_llm_model(config: GGUFModelLoadConfig) -> Llama:
         n_ctx=config.n_ctx,
         n_batch=config.n_batch,
         n_gpu_layers=config.n_gpu_layers,
-        verbose=config.verbose,
         n_threads=config.n_threads,
     )
 

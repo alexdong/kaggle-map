@@ -131,6 +131,11 @@ max-complexity = 5
     "SLF001",   # Private member access needed for checking logger state
 ]
 
+# GGUF model configuration uses uppercase for static configs
+"kaggle_map/utils/gguf_model.py" = [
+    "N802",     # Function names can be uppercase for class properties
+]
+
 [tool.pytest.ini_options]
 testpaths = ["kaggle_map", "tests"]
 python_files = ["*_test.py"]
