@@ -103,11 +103,11 @@ kaggle_map/mlp/
 ### Task 2: Rename and Restructure Main Module
 **Goal**: Rename predictor.py to main.py maintaining all functionality
 
-- [ ] Git move `kaggle_map/mlp/predictor.py` to `kaggle_map/mlp/main.py`
-- [ ] Update module docstring to reflect new role as entry point
-- [ ] Verify all existing functions remain unchanged
-- [ ] Check for any hardcoded references to "predictor" in comments
-- [ ] Ensure all imports within the file are still valid
+- [x] Git move `kaggle_map/mlp/predictor.py` to `kaggle_map/mlp/main.py`
+- [x] Update module docstring to reflect new role as entry point
+- [x] Verify all existing functions remain unchanged
+- [x] Check for any hardcoded references to "predictor" in comments
+- [x] Ensure all imports within the file are still valid
 
 ### Task 3: Implement Command-Line Interface
 **Goal**: Add argparse-based CLI in __main__ block
@@ -127,11 +127,11 @@ kaggle_map/mlp/
 ### Task 4: Update Module Imports
 **Goal**: Fix imports throughout MLP module
 
-- [ ] Update `kaggle_map/mlp/__init__.py` to import from `main` instead of `predictor`
-- [ ] Verify public API remains unchanged (fit, predict, evaluate, save, load)
-- [ ] Check for any cross-module imports that need updating
-- [ ] Test that `from kaggle_map.mlp import fit` still works
-- [ ] Update any test files that import from predictor
+- [x] Update `kaggle_map/mlp/__init__.py` to import from `main` instead of `predictor`
+- [x] Verify public API remains unchanged (fit, predict, evaluate, save, load)
+- [x] Check for any cross-module imports that need updating
+- [x] Test that `from kaggle_map.mlp import fit` still works
+- [x] Update any test files that import from predictor
 
 ### Task 5: Implement Command Handlers
 **Goal**: Create handler functions for each CLI command

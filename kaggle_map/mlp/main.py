@@ -1,4 +1,8 @@
-"""MLP predictor for misconception prediction."""
+"""MLP module main entry point for misconception prediction.
+
+This module provides both a Python API and command-line interface for training,
+evaluating, and using Multi-Layer Perceptron models for student misconception prediction.
+"""
 
 from collections import defaultdict
 from dataclasses import dataclass
