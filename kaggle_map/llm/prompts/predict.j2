@@ -1,88 +1,74 @@
-You are a math educator reviewing a student's work. Your task is to rank labels based on how well they describe the student's response.
+Overview
+-------------------
+You are a math educator reviewing a student's work. 
+Your goal is to rank labels based on how well they describe the student's response.
+Your task is to carefully consider the problem solving approach based on the Student's Multiple Choice Answer and their Written Explanation. 
 
-Problem Context:
+Problem Context
+-------------------
 - Question: Sally has 2/3 of a cake; Robert eats 1/3 of that; which number sentence solves it?
 - Correct Answer: (1/3) * (2/3)
 - Student's Multiple Choice Answer: {{mc_answer}}
 - Student's Written Explanation: {{student_explanation}}
 
-Label Definitions:
+Label Definitions
+-------------------
 
 {% if mc_answer == "(1/3) * (2/3)" %}
 <True_Correct:NA>
-The student's explanation clearly demonstrates understanding of multiplying (1/3) * (2/3). Look for evidence they understand "1/3 OF 2/3" means multiplication.
+The written explanation indicates that the answer would be (1/3) * (2/3) = 2/9 since the student's explanation clearly demonstrates understanding of multiplying.
 </True_Correct:NA>
 
 <True_Misconception:Subtraction>
-The student specifically tries to solve using subtraction: (2/3) - (1/3) or (1/3) - (2/3). This label ONLY applies when the student explicitly shows or describes subtracting these fractions.
+The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
 </True_Misconception:Subtraction>
 
 <True_Misconception:Division>
-The student specifically tries to solve using division: (1/3) ÷ (2/3) or (2/3) ÷ (1/3). This label ONLY applies when the student explicitly shows or describes dividing these fractions.
+The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
 </True_Misconception:Division>
 
 <True_Neither:NA>
 Use this label when:
-- The explanation is mathematically incorrect but doesn't match the specific misconceptions above
+- The written explanation produces an answer that is not 2/9, 1/3, -1/3, 2 or 1/2.
+- The explanation is mathematically incorrect, incoherent, or incomplete
 - The explanation contains unrelated math operations or nonsensical calculations
 - The student's work is too unclear to determine their specific approach
-- The result shown doesn't match what would come from the correct operation
 </True_Neither:NA>
 {% else %}
 <False_Correct:NA>
-The student's explanation clearly demonstrates understanding of multiplying (1/3) * (2/3), even though they selected the wrong answer. They may have made a selection error.
+The written explanation indicates that the answer would be 2/9 since the student's explanation clearly demonstrates understanding of multiplying (1/3) * (2/3), even though they selected the wrong answer. They may have made a selection error.
 </False_Correct:NA>
 
 <False_Misconception:Subtraction>
-The student specifically tries to solve using subtraction: (2/3) - (1/3) or (1/3) - (2/3). This label ONLY applies when the student explicitly shows or describes subtracting these fractions.
+The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
 </False_Misconception:Subtraction>
 
 <False_Misconception:Division>
-The student specifically tries to solve using division: (1/3) ÷ (2/3) or (2/3) ÷ (1/3). This label ONLY applies when the student explicitly shows or describes dividing these fractions.
+The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
 </False_Misconception:Division>
 
 <False_Neither:NA>
 Use this label when:
-- The student's explanation doesn't fit the other categories
-- The explanation is unclear, nonsensical, or contains unrelated math operations
-- The explanation doesn't mention any relevant math concepts
+- The written explanation produces an answer that is not 2/9, 1/3, -1/3, 2 or 1/2.
+- The explanation is mathematically incorrect, incoherent, or incomplete
+- The explanation contains unrelated math operations or nonsensical calculations
+- The student's work is too unclear to determine their specific approach
 </False_Neither:NA>
 {% endif %}
 
-Instructions:
-1. Parse the student's explanation carefully. Remember students may:
-   - Write unclearly or make typos
-   - Use unconventional notation
-   - Show incomplete thinking
+Instructions
+-------------------
 
-2. Determine which label best describes their actual approach (not only what their Multiple Choice Answer is).
+1. Rewrite the Question and the Student's Written Explanation carefully to ensure clarity and completeness. Output the rewritten question and explanation clearly and completely, fixing any errors or omissions.
 
-3. Rank all four labels from most to least likely
+2. Based SOLELY on the rewritten question and explanation, output the final answer they would arrive at if they fully executed their approach. 
 
-Scoring Note: Your ranking is evaluated by MAP@3 (Mean Average Precision @ 3):
-- Correct label in 1st position = 1.0 points
-- Correct label in 2nd position = 0.66 points
-- Correct label in 3rd position = 0.33 points
-- When uncertain between labels, prioritize getting the relative order correct.
+3. Review the Label Definitions based on the final answer and rank the labels from most to least likely. To recap, here are the valid labels: {% if mc_answer == "(1/3) * (2/3)" %} True_Correct:NA True_Misconception:Subtraction True_Misconception:Division True_Neither:NA {% else %}False_Correct:NA False_Misconception:Subtraction False_Misconception:Division False_Neither:NA {% endif %}
 
-Output Format:
-List all labels on one line, space-separated, from most to least likely. Include the colon in each label.
 
-Example: {% if mc_answer == "(1/3) * (2/3)" %}True_Neither:NA True_Correct:NA True_Misconception:Subtraction True_Misconception:Division{% else %}False_Neither:NA False_Correct:NA False_Misconception:Subtraction False_Misconception:Division{% endif %}
+Output Format
+-------------------
 
-CRITICAL - Exact Label Format:
-You MUST use ONLY the exact labels provided above. Do not create variations, abbreviations, or modified versions. The valid labels are exactly:
+Only provide the ranked labels as a single line of text, with no additional commentary or explanation.  Make sure you output the labels exactly as shown, including capitalization, underscores, colons, and spacing.
 
-{% if mc_answer == "(1/3) * (2/3)" %}
-True_Correct:NA
-True_Misconception:Subtraction
-True_Misconception:Division
-True_Neither:NA
-{% else %}
-False_Correct:NA
-False_Misconception:Subtraction
-False_Misconception:Division
-False_Neither:NA
-{% endif %}
-
-Before submitting your answer, verify that each label in your ranking matches one of these four options CHARACTER-FOR-CHARACTER.
+CRITICAL - Check one last time that you use ONLY the exact labels provided above. Do not create variations, abbreviations, or modified versions. 
