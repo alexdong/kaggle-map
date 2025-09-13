@@ -1,5 +1,6 @@
 """LLM-based evaluator for student misconception predictions."""
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,19 @@ from kaggle_map.utils.gguf_model import (
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
 
+# Configuration constants
+# Set to -1 for unlimited generation (will generate until context window limit or stop token)
+# Set to a positive value to limit response length
+MAX_RESPONSE_TOKENS = -1  # Unlimited generation within context window
+
+
+@dataclass
+class ParseResult:
+    """Result from parsing LLM response."""
+
+    predictions: list[Prediction]
+    thinking_trace: str | None = None
+
 
 @dataclass
 class EvaluationConfig:
@@ -41,6 +55,35 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str
         mc_answer=eval_row.mc_answer,
         student_explanation=eval_row.student_explanation,
     )
+
+
+def parse_predictions_enhanced(response: str) -> ParseResult:
+    """Parse LLM response to extract predictions and thinking trace.
+
+    Extracts content within <think>...</think> tags and returns both
+    predictions and thinking trace for debugging.
+
+    Args:
+        response: Raw LLM response containing predictions and possibly thinking tags
+
+    Returns:
+        ParseResult with predictions and optional thinking trace
+    """
+    # Extract thinking trace if present
+    thinking_pattern = r"<think>(.*?)</think>"
+    thinking_match = re.search(thinking_pattern, response, re.DOTALL)
+
+    thinking_trace = None
+    if thinking_match:
+        thinking_trace = thinking_match.group(1).strip()
+
+    # Remove thinking tags from response for prediction parsing
+    clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
+
+    # Parse predictions from cleaned response
+    predictions = parse_predictions(clean_response)
+
+    return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
 
 
 def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
@@ -325,10 +368,10 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
         full_prompt = format_chat_prompt(config.model_name, user_prompt)
 
-        # Generate predictions
+        # Generate predictions with configurable token limit
         response = llm(
             full_prompt,
-            max_tokens=256,
+            max_tokens=MAX_RESPONSE_TOKENS,
             temperature=0.1,
             top_p=0.95,
             stop=stop_tokens,
@@ -338,8 +381,14 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         response_text = response["choices"][0]["text"]  # type: ignore[index]
         logger.debug(f"LLM response for row {eval_row.row_id}:\n{response_text}\n")
 
-        # Parse predictions
-        predictions = parse_predictions(response_text)
+        # Parse predictions and extract thinking trace
+        result = parse_predictions_enhanced(response_text)
+        predictions = result.predictions
+
+        # Log thinking trace if present
+        if result.thinking_trace:
+            logger.info(f"LLM Thinking Trace for row {eval_row.row_id}:\n{result.thinking_trace}")
+
         logger.debug(f"Predictions for row {eval_row.row_id}: {predictions}")
 
         # Calculate MAP@3
