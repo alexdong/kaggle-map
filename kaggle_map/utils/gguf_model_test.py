@@ -435,40 +435,38 @@ True_Correct:NA"""
         # 16GB VRAM scenarios (like RTX 2000 Ada)
         # GPT-OSS-20B with different quantizations
         (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 20480),  # 4096 * 5
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 4096),   # 4096 * 1 (minimal)
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),      # Won't fit
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M, 0),      # Won't fit
-
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 4096),  # 4096 * 1 (minimal)
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),  # Won't fit
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M, 0),  # Won't fit
         # 24GB VRAM scenarios (like RTX 3090/4090)
         (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 86016),  # 4096 * 21
         (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 69632),  # 4096 * 17
         (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 57344),  # 4096 * 14
         (24.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M, 40960),  # 4096 * 10
-
         # 12GB VRAM scenarios (like RTX 3060)
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),      # Won't fit
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 0),      # Won't fit
-        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),      # Won't fit
-
+        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),  # Won't fit
+        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M, 0),  # Won't fit
+        (12.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M, 0),  # Won't fit
         # 8GB VRAM scenarios (like RTX 3050)
-        (8.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),       # Won't fit
-
+        (8.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0),  # Won't fit
         # Gemma-3-27B scenarios (16GB VRAM)
-        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL, 0),     # Won't fit
-        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL, 0),     # Won't fit
-
+        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL, 0),  # Won't fit
+        (16.0, GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL, 0),  # Won't fit
         # Qwen3-30B scenarios (16GB VRAM)
         (16.0, GGUFModelName.QWEN3_30B_Thinking, GGUFModelQuantizationLevel.Q2_K_XL, 0),  # Won't fit
-
         # Qwen3-14B scenarios (16GB VRAM) - smaller model, more context
         (16.0, GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q4_K_XL, 53248),  # 4096 * 13
         (16.0, GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q6_K_XL, 32768),  # 4096 * 8
     ],
 )
-def test_suggest_ctx_length(vram_gb: float, model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel, expected_ctx: int) -> None:
+def test_suggest_ctx_length(
+    vram_gb: float, model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel, expected_ctx: int
+) -> None:
     """Test context length suggestions for various VRAM and model configurations."""
     result = suggest_ctx_length(vram_gb, model_name, quantization)
-    assert result == expected_ctx, f"Expected {expected_ctx} for {vram_gb}GB with {model_name}/{quantization}, got {result}"
+    assert result == expected_ctx, (
+        f"Expected {expected_ctx} for {vram_gb}GB with {model_name}/{quantization}, got {result}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -476,30 +474,25 @@ def test_suggest_ctx_length(vram_gb: float, model_name: GGUFModelName, quantizat
     [
         # Test custom overhead and margin settings
         (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.5, 0.5, 24576),  # Less overhead
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 1.0, 2.0, 8192),   # More safety
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 2.0, 3.0, 0),      # Very conservative
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 1.0, 2.0, 8192),  # More safety
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 2.0, 3.0, 0),  # Very conservative
         (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.0, 0.0, 32768),  # No overhead (risky!)
-
         # Edge cases
-        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 5.0, 5.0, 0),      # Too much overhead
-        (4.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.0, 0.0, 0),       # Not enough VRAM
+        (16.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 5.0, 5.0, 0),  # Too much overhead
+        (4.0, GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L, 0.0, 0.0, 0),  # Not enough VRAM
     ],
 )
-def test_suggest_ctx_length_custom_params(
+def test_suggest_ctx_length_custom_params(  # noqa: PLR0913
     vram_gb: float,
     model_name: GGUFModelName,
     quantization: GGUFModelQuantizationLevel,
     desktop_overhead: float,
     safety_margin: float,
-    expected_ctx: int
+    expected_ctx: int,
 ) -> None:
     """Test context length suggestions with custom overhead and safety margin."""
     result = suggest_ctx_length(
-        vram_gb,
-        model_name,
-        quantization,
-        desktop_overhead_gb=desktop_overhead,
-        safety_margin_gb=safety_margin
+        vram_gb, model_name, quantization, desktop_overhead_gb=desktop_overhead, safety_margin_gb=safety_margin
     )
     assert result == expected_ctx, (
         f"Expected {expected_ctx} for {vram_gb}GB with {model_name}/{quantization}, "
@@ -545,12 +538,21 @@ def test_suggest_ctx_length_unknown_model_quantization() -> None:
     assert result % 4096 == 0, "Should still be a multiple of 4096"
 
 
+def _validate_ctx_length(
+    result: int, model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel, vram: float
+) -> None:
+    """Validate context length result for a given configuration."""
+    assert result >= 0, f"Negative result for {model_name}/{quantization} on {vram}GB"
+    assert result % 4096 == 0 or result == 0, f"Not a multiple of 4096: {result}"
+    if result > 0:
+        assert result >= 4096, f"Non-zero result below minimum: {result}"
+
+
 def test_suggest_ctx_length_all_models_coverage() -> None:
     """Verify that all models return reasonable values for standard VRAM sizes."""
     standard_vram_sizes = [8.0, 12.0, 16.0, 24.0, 32.0, 48.0]
 
-    for model_name in GGUFModelName:
-        # Get available quantizations for this model
+    for model_name in GGUFModelName.__members__.values():
         model_spec = GGUF_MODELS.get(model_name)
         if not model_spec:
             continue
@@ -558,14 +560,7 @@ def test_suggest_ctx_length_all_models_coverage() -> None:
         for quantization in model_spec.available_quantizations:
             for vram in standard_vram_sizes:
                 result = suggest_ctx_length(vram, model_name, quantization)
-
-                # Basic sanity checks
-                assert result >= 0, f"Negative result for {model_name}/{quantization} on {vram}GB"
-                assert result % 4096 == 0 or result == 0, f"Not a multiple of 4096: {result}"
-
-                # If there's a result, it should be at least 4096
-                if result > 0:
-                    assert result >= 4096, f"Non-zero result below minimum: {result}"
+                _validate_ctx_length(result, model_name, quantization, vram)
 
 
 if __name__ == "__main__":
