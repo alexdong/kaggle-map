@@ -169,12 +169,12 @@ kaggle_map/mlp/
 ### Task 7: Update Makefile Targets
 **Goal**: Modify Makefile to use new execution pattern
 
-- [ ] Update `fit` target to use `python -m kaggle_map.mlp fit`
-- [ ] Update `eval` target to use `python -m kaggle_map.mlp eval`
-- [ ] Remove references to strategy selection (MLP-specific now)
-- [ ] Add new convenience targets if needed
-- [ ] Test all modified targets work correctly
-- [ ] Update help text to reflect changes
+- [x] Update `fit` target to use `python -m kaggle_map.mlp fit`
+- [x] Update `eval` target to use `python -m kaggle_map.mlp eval`
+- [x] Remove references to strategy selection (MLP-specific now)
+- [x] Add new convenience targets if needed
+- [x] Test all modified targets work correctly
+- [x] Update help text to reflect changes
 
 ### Task 8: Error Handling and Validation
 **Goal**: Add robust error handling throughout
