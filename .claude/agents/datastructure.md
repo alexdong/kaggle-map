@@ -46,10 +46,14 @@ cause confusion months later.
 2. **Types are contracts between functions** - Make sure types communicate intent and prevent misuse
 3. **Prefer tight annotations over loose ones** - `list[str]` tells more than `list`
 
-## RULES TO EXPLORE TOGETHER
+## ENVIRONMENT SETUP
+The user is using both `ty` and `pyrefly` as their type checker.
+`make dev` runs the tests.
+
+## RULES
 
 ### Return Type Annotations
-- **[DS1]** Prefer `@dataclass`, `namedtuple`, `enum` instead of tuples, mixed typed lists or dicts
+- **[DS1]** Prefer Pydantic `BaseModel`, or use more lightweight `@dataclass`, `namedtuple`, `enum` instead of tuples, mixed typed lists or dicts
   - *Why?* Structured returns are self-documenting. `User(name="Alex", age=30)` beats `("Alex", 30)`
 
 ### Parse, Don't Validate
