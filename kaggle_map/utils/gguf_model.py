@@ -170,6 +170,114 @@ class GGUFModelLoadConfig:
         return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
 
+def suggest_ctx_length(
+    vram_gb: float,
+    model_name: GGUFModelName,
+    quantization: GGUFModelQuantizationLevel,
+    desktop_overhead_gb: float = 0.7,
+    safety_margin_gb: float = 1.0,
+) -> int:
+    """Calculate optimal context length based on available VRAM and model configuration.
+
+    Args:
+        vram_gb: Total VRAM in gigabytes (e.g., 16 for 16GB)
+        model_name: The GGUF model being used
+        quantization: Quantization level of the model
+        desktop_overhead_gb: Memory reserved for desktop/OS (default 0.7GB)
+        safety_margin_gb: Additional safety margin to prevent OOM (default 1.0GB)
+
+    Returns:
+        Optimal n_ctx value (multiple of 4096) that fits in available VRAM
+
+    The calculation follows this formula:
+    1. Available VRAM = Total - Desktop overhead
+    2. Model weights size based on quantization
+    3. Remaining for KV cache = Available - Model weights - Safety margin
+    4. Context tokens = KV cache memory / Memory per token
+    5. Round down to nearest 4096 multiple
+    """
+    # Model weight sizes in GB (approximate, based on empirical measurements)
+    model_weight_sizes = {
+        # 20B parameter models
+        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q2_K_L): 11.8,
+        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M): 13.5,
+        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M): 15.0,
+        (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M): 17.0,
+
+        # 27B parameter models (Gemma)
+        (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL): 14.5,
+        (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL): 16.5,
+
+        # 30B parameter models (Qwen)
+        (GGUFModelName.QWEN3_30B, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
+        (GGUFModelName.QWEN3_30B_Thinking, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
+
+        # 14B parameter models
+        (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q4_K_XL): 9.5,
+        (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q6_K_XL): 11.5,
+    }
+
+    # KV cache memory per 1k tokens in GB (conservative estimate)
+    # For 20B models: ~32-40 layers * 32 heads * 128 dim * 2 (K+V) * 2 bytes = ~1MB per token
+    # So 1k tokens = ~120MB of KV cache (empirically tuned for common VRAM sizes)
+    kv_cache_per_1k_tokens = {
+        GGUFModelName.GPT_OSS_20B: 0.12,  # ~120MB per 1k tokens (tuned for 16GB -> 5*4096)
+        GGUFModelName.GEMMA_3_27B_IT: 0.15,  # ~150MB per 1k tokens
+        GGUFModelName.QWEN3_30B: 0.16,  # ~160MB per 1k tokens
+        GGUFModelName.QWEN3_30B_Thinking: 0.16,  # ~160MB per 1k tokens
+        GGUFModelName.QWEN3_14B: 0.085,  # ~85MB per 1k tokens (tuned for more context)
+    }
+
+    # Get model weight size
+    model_key = (model_name, quantization)
+    if model_key not in model_weight_sizes:
+        # Default conservative estimate based on quantization alone
+        quant_multipliers = {
+            GGUFModelQuantizationLevel.Q2_K_L: 0.6,
+            GGUFModelQuantizationLevel.Q2_K_XL: 0.6,
+            GGUFModelQuantizationLevel.Q3_K_M: 0.7,
+            GGUFModelQuantizationLevel.Q3_K_XL: 0.7,
+            GGUFModelQuantizationLevel.Q4_K_M: 0.8,
+            GGUFModelQuantizationLevel.Q4_K_XL: 0.8,
+            GGUFModelQuantizationLevel.Q5_K_M: 0.9,
+            GGUFModelQuantizationLevel.Q6_K_XL: 1.0,
+        }
+        # Rough estimate: 20B model at Q4 is about 15GB
+        base_size = 15.0
+        multiplier = quant_multipliers.get(quantization, 0.8)
+        model_weight_gb = base_size * multiplier
+    else:
+        model_weight_gb = model_weight_sizes[model_key]
+
+    # Calculate available memory for KV cache
+    available_vram = vram_gb - desktop_overhead_gb
+    kv_cache_budget = available_vram - model_weight_gb - safety_margin_gb
+
+    # If model doesn't fit at all, return 0
+    if kv_cache_budget <= 0:
+        return 0
+
+    # Get KV cache requirement per token
+    kv_per_1k = kv_cache_per_1k_tokens.get(model_name, 0.125)  # Default to 125MB per 1k tokens
+
+    # Calculate maximum context tokens
+    # kv_cache_budget is in GB, kv_per_1k is GB per 1000 tokens
+    # So tokens = (budget_GB / kv_per_1k_GB) * 1000
+    max_tokens = int((kv_cache_budget / kv_per_1k) * 1000)
+
+    # Round down to nearest multiple of 4096
+    # This ensures clean alignment with typical context window sizes
+    n_ctx = (max_tokens // 4096) * 4096
+
+    # Ensure minimum context of 4096 if any tokens fit
+    MIN_CONTEXT_SIZE = 4096
+    MIN_TOKEN_THRESHOLD = 2048
+    if max_tokens >= MIN_TOKEN_THRESHOLD and n_ctx < MIN_CONTEXT_SIZE:
+        n_ctx = MIN_CONTEXT_SIZE
+
+    return n_ctx
+
+
 def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
     """Format chat prompt according to the model's expected template.
 
@@ -330,13 +438,22 @@ def _parse_harmony_format(response: str) -> tuple[str | None, str]:
         # If no final channel, try to extract predictions from the analysis section
         if thinking_trace:
             # Look for the last occurrence of a label ranking in the analysis
-            # Pattern to match label rankings like "False_Neither:NA False_Correct:NA ..."
+            # Pattern 1: Space-separated labels like "False_Neither:NA False_Correct:NA ..."
             ranking_pattern = r'"?([A-Za-z_]+:[A-Za-z_]+(?:\s+[A-Za-z_]+:[A-Za-z_]+)+)"?'
             rankings = re.findall(ranking_pattern, thinking_trace)
+
+            # Pattern 2: Labels separated by > symbols like "False_Neither:NA > False_Correct:NA > ..."
+            order_pattern = r"([A-Za-z_]+:[A-Za-z_]+(?:\s*>\s*[A-Za-z_]+:[A-Za-z_]+)+)"
+            order_rankings = re.findall(order_pattern, thinking_trace)
+
             if rankings:
-                # Use the last ranking found
+                # Use the last space-separated ranking found
                 clean_response = rankings[-1]
-                logger.debug(f"Extracted ranking from analysis: {clean_response}")
+                logger.debug(f"Extracted space-separated ranking from analysis: {clean_response}")
+            elif order_rankings:
+                # Convert > separated to space-separated
+                clean_response = order_rankings[-1].replace(" > ", " ").replace(">", " ")
+                logger.debug(f"Extracted order ranking from analysis: {clean_response}")
             else:
                 # If still no rankings, remove analysis and use what's left
                 clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()

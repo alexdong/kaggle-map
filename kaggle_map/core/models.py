@@ -103,7 +103,22 @@ class Prediction(BaseModel):
 
         assert ":" in pred_str, "Invalid prediction string format"
         category_part, misconception_part = pred_str.split(":", 1)
-        category = Category(category_part.strip())
+        category_str = category_part.strip()
+
+        # Fix common typos in category names
+        typo_corrections = {
+            "False_NEither": "False_Neither",
+            "False_neither": "False_Neither",
+            "True_NEither": "True_Neither",
+            "True_neither": "True_Neither",
+            "False_Misconcpetion": "False_Misconception",
+            "True_Misconcpetion": "True_Misconception",
+            "False_Miscon": "False_Misconception",
+            "True_Miscon": "True_Misconception",
+        }
+        category_str = typo_corrections.get(category_str, category_str)
+
+        category = Category(category_str)
         misconception = misconception_part.strip() if misconception_part.strip() else "NA"
         return cls(category=category, misconception=misconception)
 
