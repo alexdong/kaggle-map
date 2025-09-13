@@ -125,7 +125,39 @@ class GGUFModelLoadConfig:
 
     model_name: GGUFModelName = GGUFModelName.QWEN3_30B_Thinking
     quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_XL
-    n_ctx: int = 4096 * 5  # Context window size (20,480 tokens - optimal for 16GB VRAM)
+
+    # Context window size calculation for 16GB VRAM:
+    #
+    # Memory breakdown:
+    # - Total VRAM: 16GB
+    # - Desktop/OS overhead: ~0.7GB
+    # - Available for model: ~15.3GB
+    #
+    # Model memory requirements:
+    # - Q2_K_L quantization of 20B model: ~11.8GB (loaded weights)
+    # - Q3_K_M quantization of 20B model: ~13.5GB
+    # - Q4_K_M quantization of 20B model: ~15GB
+    # - Q5_K_M quantization of 20B model: ~17GB (won't fit)
+    #
+    # KV cache memory per token (for 20B models):
+    # - Estimated architecture: 32-40 layers, 32 KV heads, 128 head dim
+    # - KV cache per token: ~0.5-1MB (depends on precision)
+    # - Conservative estimate: 1MB per 1k tokens
+    #
+    # Calculation for Q2_K_L (our default):
+    # - Model weights: 11.8GB
+    # - Remaining for KV cache + overhead: 15.3 - 11.8 = 3.5GB
+    # - Reserve 1GB for processing overhead
+    # - Available for KV cache: 2.5GB
+    # - Max tokens: 2.5GB / 1MB per 1k = ~2,500k tokens
+    # - Safe tokens with headroom: 20k (4096 * 5)
+    #
+    # Multiplier guide by quantization:
+    # - Q2_K_L: 4096 * 5 (20k tokens) - current setting
+    # - Q3_K_M: 4096 * 3 (12k tokens) - less room due to larger model
+    # - Q4_K_M: 4096 * 2 (8k tokens) - minimal context, model barely fits
+    # - Q5_K_M: Won't fit in 16GB VRAM
+    n_ctx: int = 4096 * 5  # 20,480 tokens - optimal for Q2_K_L on 16GB VRAM
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
     n_threads: int = 8  # CPU threads for inference
@@ -285,15 +317,34 @@ def _parse_harmony_format(response: str) -> tuple[str | None, str]:
     analysis_match = re.search(analysis_pattern, response, re.DOTALL)
     if analysis_match:
         thinking_trace = analysis_match.group(1).strip()
+        logger.debug(f"Extracted analysis channel: {len(thinking_trace)} chars")
 
     # Extract final channel content for predictions
     final_pattern = r"<\|channel\|>final<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
     final_match = re.search(final_pattern, response, re.DOTALL)
     if final_match:
         clean_response = final_match.group(1).strip()
+        logger.debug(f"Extracted final channel: {clean_response[:200]}")
     else:
-        # If no final channel, try to parse the entire response after removing analysis
-        clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
+        logger.debug("No final channel found, attempting to extract from analysis")
+        # If no final channel, try to extract predictions from the analysis section
+        if thinking_trace:
+            # Look for the last occurrence of a label ranking in the analysis
+            # Pattern to match label rankings like "False_Neither:NA False_Correct:NA ..."
+            ranking_pattern = r'"?([A-Za-z_]+:[A-Za-z_]+(?:\s+[A-Za-z_]+:[A-Za-z_]+)+)"?'
+            rankings = re.findall(ranking_pattern, thinking_trace)
+            if rankings:
+                # Use the last ranking found
+                clean_response = rankings[-1]
+                logger.debug(f"Extracted ranking from analysis: {clean_response}")
+            else:
+                # If still no rankings, remove analysis and use what's left
+                clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
+                logger.debug(f"No rankings found, using cleaned response: {clean_response[:200]}")
+        else:
+            # No analysis channel either, use cleaned response
+            clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
+            logger.debug(f"No analysis channel, using cleaned response: {clean_response[:200]}")
 
     return thinking_trace, clean_response
 
