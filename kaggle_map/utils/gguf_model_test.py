@@ -29,7 +29,7 @@ def test_gemma_model_formatting() -> None:
 def test_qwen_model_formatting() -> None:
     user_content = "Solve 2+2"
     result = format_chat_prompt(GGUFModelName.QWEN3_14B, user_content)
-    expected = f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+    expected = f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n"
     assert result == expected, "Failed for model Qwen3"
 
 

@@ -135,8 +135,8 @@ def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
     if "gemma" in model_name.value.lower():
         return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
     if "qwen" in model_name.value.lower():
-        # Include empty think tags to disable thinking mode (per Qwen3 documentation)
-        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+        # Don't include empty think tags - let the model think if it wants to
+        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n"
     if "gpt-oss" in model_name.value.lower():
         # gpt-oss uses a more complex format with system/developer messages
         # For simplicity, using basic user/assistant format here
@@ -150,7 +150,7 @@ def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
     # Dict-driven configuration for stop tokens
     stop_tokens_config = {
         "gemma": ["<end_of_turn>", "\n"],
-        "qwen": ["<|im_end|>", "\n"],
+        "qwen": ["<|im_end|>"],  # Don't stop on newline for thinking model
         "gpt-oss": ["<|end|>", "\n"],
     }
 
