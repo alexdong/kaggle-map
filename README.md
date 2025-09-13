@@ -9,53 +9,70 @@ This project implements machine learning strategies to predict student misconcep
 ## Quick Start
 
 1. **Install dependencies**: `uv install`
-2. **List available strategies**: `uv run -m kaggle_map.cli list-strategies`
-3. **Train a model**: `uv run -m kaggle_map.cli run mlp fit`
-4. **Evaluate performance**: `uv run -m kaggle_map.cli run mlp eval`
+2. **Train MLP model**: `python -m kaggle_map.mlp fit`
+3. **Evaluate performance**: `python -m kaggle_map.mlp eval`
+4. **Generate predictions**: `python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv`
 
 ## Basic Commands
 
-### Strategy Management
+### MLP Module Direct Execution
+
+The MLP module can now be executed directly without the centralized CLI:
 
 ```bash
-# List all available prediction strategies
-uv run -m kaggle_map.cli list-strategies
+# Display help and available commands
+python -m kaggle_map.mlp --help
 ```
 
 ### Model Training
 
 ```bash
-# Train a strategy with default settings (70% training split, seed 42)
-uv run -m kaggle_map.cli run <strategy> fit
+# Train with default settings (70% training split, 50 epochs)
+python -m kaggle_map.mlp fit
 
 # Train with custom parameters
-uv run -m kaggle_map.cli run <strategy> fit --train-split 0.7 --random-seed 123
+python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001 --batch-size 512
 
-# Train with pre-computed embeddings
-uv run -m kaggle_map.cli run <strategy> fit --embeddings-path embeddings.npz
+# Train with specific data and save location
+python -m kaggle_map.mlp fit --train-data datasets/custom.csv --model-path models/custom.pkl
 
-# Save model to custom location
-uv run -m kaggle_map.cli run <strategy> fit --output-path my_model.pkl
+# Enable verbose logging
+python -m kaggle_map.mlp fit -v
 ```
 
 ### Model Evaluation
 
 ```bash
 # Evaluate using default model path
-uv run -m kaggle_map.cli run <strategy> eval
+python -m kaggle_map.mlp eval
 
 # Evaluate with custom model path
-uv run -m kaggle_map.cli run <strategy> eval --model-path my_model.pkl
+python -m kaggle_map.mlp eval --model-path models/custom.pkl
 
 # Evaluate with specific train/test split
-uv run -m kaggle_map.cli run <strategy> eval --train-split 0.7
+python -m kaggle_map.mlp eval --train-split 0.8
+```
+
+### Prediction Generation
+
+```bash
+# Generate predictions for submission (requires input and output files)
+python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv
+
+# Use custom model for predictions
+python -m kaggle_map.mlp predict --model-path models/custom.pkl --input-file test.csv --output-file predictions.csv
+
+# Enable verbose logging during prediction
+python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv -v
 ```
 
 ### Additional Options
 
-- `--verbose, -v`: Show detailed model information
+- `--verbose, -v`: Show detailed logging and progress information
 - `--train-split`: Fraction of data for training (default: 0.7)
-- `--random-seed`: Random seed for reproducible results (default: 42)
+- `--epochs`: Number of training epochs (default: 50)
+- `--batch-size`: Batch size for training (default: 256)
+- `--learning-rate`: Learning rate for optimizer (default: 1e-4)
 
 ## Development Commands
 
@@ -70,8 +87,12 @@ make test
 make test-all
 ```
 
-## Available Strategies
+## Module Architecture
 
-The project uses a dynamic strategy discovery system that automatically finds and registers prediction strategies in the `kaggle_map/strategies/` directory. Each strategy implements the base `Strategy` class and provides methods for training (`fit`), evaluation (`eval`), and prediction (`predict`).
+The project is organized into self-contained modules that can be executed independently:
 
-Run `uv run -m kaggle_map.cli list-strategies` to see currently available strategies and their descriptions.
+- **MLP Module** (`kaggle_map.mlp`): Multi-Layer Perceptron model with embeddings for misconception prediction
+- **LLM Module** (`kaggle_map.llm`): Large Language Model approaches using GGUF models
+- **Core Module** (`kaggle_map.core`): Shared data structures and utilities
+
+Each module provides its own command-line interface and can be executed directly using `python -m kaggle_map.<module_name>`.

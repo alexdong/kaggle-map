@@ -157,14 +157,14 @@ kaggle_map/mlp/
 ### Task 6: Update Documentation
 **Goal**: Update README and docstrings for new execution pattern
 
-- [ ] Update README.md Quick Start section:
+- [x] Update README.md Quick Start section:
   - Replace `kaggle-map run mlp` with `python -m kaggle_map.mlp`
   - Update all command examples
   - Add note about module-specific execution
-- [ ] Update Basic Commands section with new syntax
-- [ ] Add troubleshooting section for common issues
-- [ ] Update module docstrings to reflect new structure
-- [ ] Create examples for each command with expected output
+- [x] Update Basic Commands section with new syntax
+- [x] Add troubleshooting section for common issues
+- [x] Update module docstrings to reflect new structure
+- [x] Create examples for each command with expected output
 
 ### Task 7: Update Makefile Targets
 **Goal**: Modify Makefile to use new execution pattern
