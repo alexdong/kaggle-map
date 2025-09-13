@@ -2,6 +2,10 @@ import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
+
 
 class GemmaEmbeddingModel:
     _instance: "GemmaEmbeddingModel | None" = None

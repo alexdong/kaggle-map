@@ -3,6 +3,10 @@
 import torch
 from loguru import logger
 
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
+
 
 def get_device() -> torch.device:
     """Get the best available device (MPS > CUDA > CPU)."""

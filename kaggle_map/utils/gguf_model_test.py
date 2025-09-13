@@ -29,7 +29,7 @@ def test_gemma_model_formatting() -> None:
 def test_qwen_model_formatting() -> None:
     user_content = "Solve 2+2"
     result = format_chat_prompt(GGUFModelName.QWEN3_14B, user_content)
-    expected = f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+    expected = f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n"
     assert result == expected, "Failed for model Qwen3"
 
 
@@ -58,8 +58,11 @@ def test_special_characters_in_content() -> None:
     assert '"quotes"' in result
 
 
-def test_all_xl_quantizations_have_ud_prefix() -> None:
-    """Test that ALL XL quantizations use UD- prefix in filenames.
+def test_all_xl_quantizations_have_correct_local_path() -> None:
+    """Test that XL quantizations have correct local paths.
+
+    XL quantizations from Unsloth have "UD-" prefix in download URLs,
+    but local files should NOT have the "UD-" prefix after download.
 
     Note: Not all models have all XL quantizations available:
     - Gemma and Qwen have Q2, Q3, Q4, Q5, Q6, Q8 XL versions
@@ -91,17 +94,18 @@ def test_all_xl_quantizations_have_ud_prefix() -> None:
     for model, quantizations in model_quantizations.items():
         for quant in quantizations:
             path = get_model_path(model, quant)
-            assert "UD-" in str(path), f"Missing UD- prefix for {model} {quant}: {path}"
-            expected = f"models/gguf/{model.value}-UD-{quant.value}.gguf"
+            # Local files should NOT have UD- prefix
+            assert "UD-" not in str(path), f"Unexpected UD- prefix in local path for {model} {quant}: {path}"
+            expected = f"models/gguf/{model.value}-{quant.value}.gguf"
             assert str(path) == expected, f"Expected {expected}, got {path}"
 
 
 def test_all_models_filename_patterns_include_ud() -> None:
-    """Test that all models' GGUF configs have correct UD- pattern."""
+    """Test that all models' GGUF configs have correct filename pattern."""
     for model_name in [GGUFModelName.GEMMA_3_12B_IT, GGUFModelName.QWEN3_14B, GGUFModelName.GPT_OSS_20B]:
         config = GGUF_MODELS[model_name]
-        assert "UD-" in config.filename_pattern, f"Missing UD- in pattern for {model_name}"
-        expected = f"{model_name.value}-UD-{{quant}}.gguf"
+        # Verify the pattern matches the expected format without UD-
+        expected = f"{model_name.value}-{{quant}}.gguf"
         assert config.filename_pattern == expected, f"Expected {expected}, got {config.filename_pattern}"
 
 

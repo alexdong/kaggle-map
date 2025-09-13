@@ -13,6 +13,10 @@ from kaggle_map.optimise.studies import (
 from kaggle_map.optimise.studies import (
     save as save_study,
 )
+from kaggle_map.utils.logger_config import configure_logger
+
+# Configure module-specific logging
+configure_logger(__name__)
 
 
 def objective(trial: optuna.Trial, scope: set[TunableParameters]) -> float:

@@ -20,6 +20,9 @@ from kaggle_map.evolution import (
 )
 from kaggle_map.evolution.sampling import stratified_sample
 from kaggle_map.evolution.storage import Storage
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 def evaluate_candidate(
@@ -282,8 +285,7 @@ if __name__ == "__main__":
 
     from kaggle_map.evolution import PromptCandidate
 
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
+    # Logger is already configured by configure_logger(__name__)
 
     logger.info("=== Evaluator Module Validation ===")
 

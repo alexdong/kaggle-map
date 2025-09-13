@@ -10,9 +10,13 @@ from pathlib import Path
 
 from jinja2 import Template
 from llama_cpp import Llama
+from loguru import logger
 
 from kaggle_map.core.models import EvaluationRow, Prediction
 from kaggle_map.utils.gguf_model import LLMResponse, PromptTemplate
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -122,7 +126,6 @@ if __name__ == "__main__":
     from pathlib import Path
 
     import pandas as pd
-    from loguru import logger
 
     from kaggle_map.core.dataset import extract_correct_answers
     from kaggle_map.core.models import Category, EvaluationRow, Prediction

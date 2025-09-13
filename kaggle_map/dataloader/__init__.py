@@ -8,6 +8,9 @@ from loguru import logger
 from kaggle_map.core.models import EvaluationRow, Prediction, QuestionId, TrainingRow
 from kaggle_map.dataloader.sampling import stratification_report as stratification_report
 from kaggle_map.dataloader.sampling import stratified_sample as stratified_sample
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 def load_training_data(csv_path: Path, question_id: QuestionId | None = None) -> list[TrainingRow]:
@@ -93,11 +96,14 @@ def load_validation_data(
         )
 
         # Create Prediction from the actual ground truth
+        # Handle both column names: "Misconception" (train.csv) and "actual_misconception" (validation.csv)
+        misconception_value = row.get("Misconception", row.get("actual_misconception", "NA"))
+
         # Map Category column (uppercase) to the format expected by Prediction
         mapped_row = pd.Series(
             {
                 "Category": row["Category"],  # This is already in uppercase format
-                "Misconception": row.get("actual_misconception", "NA"),
+                "Misconception": misconception_value,
             }
         )
         prediction = Prediction.from_ground_truth_row(mapped_row)
@@ -110,3 +116,31 @@ def load_validation_data(
         logger.debug(f"Successfully loaded {len(result_pairs)} total validation rows")
 
     return result_pairs
+
+
+def load_rows_by_ids(data_path: Path, row_ids: list[int]) -> pd.DataFrame:
+    """Load specific rows from dataset by row_id values.
+
+    Args:
+        data_path: Path to the CSV file containing the data
+        row_ids: List of row_id values to load
+
+    Returns:
+        DataFrame containing only the requested rows
+    """
+    assert data_path.exists(), f"Data file not found at {data_path}"
+    assert row_ids, "Row IDs list cannot be empty"
+
+    logger.debug(f"Loading {len(row_ids)} specific rows from {data_path}")
+
+    # Load full dataset
+    df = pd.read_csv(data_path)
+
+    # Filter by row_id
+    filtered_df = df[df["row_id"].isin(row_ids)]
+
+    logger.debug(f"Found {len(filtered_df)} rows out of {len(row_ids)} requested")
+
+    assert not filtered_df.empty, f"No rows found for IDs: {row_ids}"
+
+    return pd.DataFrame(filtered_df)

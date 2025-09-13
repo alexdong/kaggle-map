@@ -1,6 +1,5 @@
 """Evolution orchestrator for prompt optimization."""
 
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +16,9 @@ from kaggle_map.evolution.analysis import load_and_analyze_errors
 from kaggle_map.evolution.evaluator import evaluate_all_candidates
 from kaggle_map.evolution.generator import generate_candidates
 from kaggle_map.evolution.storage import Storage
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 def check_convergence(
@@ -351,22 +353,8 @@ def evolve_prompts(  # noqa: C901, PLR0912, PLR0915
 
 def main() -> None:
     """Entry point for standalone execution."""
-    # Configure logging
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format=(
-            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan> - <level>{message}</level>"
-        ),
-    )
-    logger.add(
-        "logs/evolution.log",
-        level="DEBUG",
-        rotation="10 MB",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{line} - {message}",
-    )
+    # Reconfigure logger for standalone execution with INFO console level
+    configure_logger(__name__, console_level="INFO", file_level="DEBUG")
 
     logger.info("Evolution system starting up...")
 

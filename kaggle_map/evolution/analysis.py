@@ -6,6 +6,10 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
+
 
 @dataclass
 class ErrorPattern:
@@ -317,18 +321,8 @@ def load_and_analyze_errors(
 
 if __name__ == "__main__":
     """Run standalone analysis."""
-    import sys
 
-    # Configure logging for standalone run
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level="DEBUG",
-        format=(
-            "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
-        ),
-    )
+    # Logger is already configured by configure_logger(__name__)
 
     logger.info("Starting standalone error analysis")
 

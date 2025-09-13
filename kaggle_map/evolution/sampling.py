@@ -5,6 +5,9 @@ from loguru import logger
 
 from kaggle_map.dataloader.sampling import stratification_report, stratified_sample
 from kaggle_map.embeddings.sampler import select_diverse_samples
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 # Re-export for backward compatibility
 __all__ = ["select_diverse_samples", "stratification_report", "stratified_sample"]
@@ -16,14 +19,12 @@ MAX_QUESTION_TEXT_LENGTH = 100
 
 if __name__ == "__main__":
     """Standalone validation of sampling operations."""
-    import sys
     from pathlib import Path
 
     from rich.console import Console
     from rich.table import Table
 
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    # Logger is already configured by configure_logger(__name__)
 
     logger.info("=== Sampling Module Validation ===")
 

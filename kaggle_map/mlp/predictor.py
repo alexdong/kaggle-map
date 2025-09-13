@@ -30,7 +30,10 @@ from kaggle_map.mlp.loss import ListMLELoss
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 from kaggle_map.mlp.trainer import TrainingSetup, train_model
 from kaggle_map.utils.device import get_device
+from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
+
+configure_logger(__name__)
 
 # Maximum predictions per question as required by Kaggle MAP competition format
 # MAP@3 evaluation metric requires exactly 3 predictions per question

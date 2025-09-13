@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader
 from kaggle_map.core.models import OptimizerType, SchedulerType, TrainingConfig
 from kaggle_map.mlp.dataset import TrainingSample
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 
 @dataclass(frozen=True)

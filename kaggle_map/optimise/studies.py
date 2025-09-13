@@ -6,6 +6,9 @@ import optuna
 from loguru import logger
 
 from kaggle_map.utils.file_utils import create_timestamped_filename, ensure_directory
+from kaggle_map.utils.logger_config import configure_logger
+
+configure_logger(__name__)
 
 # Single consolidated database location
 STORAGE_URL = "sqlite:///kaggle_map/optimise/optuna.db"

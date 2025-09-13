@@ -9,6 +9,11 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
+from kaggle_map.utils.logger_config import configure_logger
+
+# Configure module-specific logging
+configure_logger(__name__)
+
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
@@ -18,6 +23,8 @@ class GGUFModelName(str, Enum):
     """Available GGUF model options."""
 
     QWEN3_14B = "Qwen3-14B"
+    QWEN3_30B = "Qwen3-30B-A3B-Instruct-2507"
+    QWEN3_30B_Thinking = "Qwen3-30B-A3B-Thinking-2507"
     GEMMA_3_12B_IT = "gemma-3-12b-it"
     GPT_OSS_20B = "gpt-oss-20b"
 
@@ -56,19 +63,29 @@ class GGUFRepoSpec:
 GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
     GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
         repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",
+        filename_pattern="gpt-oss-20b-{quant}.gguf",
         available_quantizations=pydash.without(
             list(GGUFModelQuantizationLevel.__members__.values()), GGUFModelQuantizationLevel.Q5_K_XL
         ),
     ),
     GGUFModelName.QWEN3_14B: GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
-        filename_pattern="Qwen3-14B-UD-{quant}.gguf",
+        filename_pattern="Qwen3-14B-{quant}.gguf",
         # Temporarily test only Q5_K_XL due to sequential loading conflicts
+    ),
+    GGUFModelName.QWEN3_30B: GGUFRepoSpec(
+        repo="unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+        filename_pattern="Qwen3-30B-A3B-Instruct-2507-UD-{quant}.gguf",
+        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
+    ),
+    GGUFModelName.QWEN3_30B_Thinking: GGUFRepoSpec(
+        repo="unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF",
+        filename_pattern="Qwen3-30B-A3B-Thinking-2507-UD-{quant}.gguf",
+        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
     ),
     GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
         repo="unsloth/gemma-3-12b-it-GGUF",
-        filename_pattern="gemma-3-12b-it-UD-{quant}.gguf",
+        filename_pattern="gemma-3-12b-it-{quant}.gguf",
     ),
 }
 
@@ -85,9 +102,9 @@ class GGUFModelLoadConfig:
     Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
     """
 
-    model_name: GGUFModelName = GGUFModelName.GEMMA_3_12B_IT
-    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q4_K_XL
-    n_ctx: int = 4096  # Context window size
+    model_name: GGUFModelName = GGUFModelName.QWEN3_30B_Thinking
+    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_XL
+    n_ctx: int = 4096 * 18  # Context window size
     n_batch: int = 512  # Batch size for prompt processing
     n_gpu_layers: int = -1  # Use all available GPU layers
     n_threads: int = 8  # CPU threads for inference
@@ -118,8 +135,8 @@ def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
     if "gemma" in model_name.value.lower():
         return f"<start_of_turn>user\n{user_content}<end_of_turn>\n<start_of_turn>model\n"
     if "qwen" in model_name.value.lower():
-        # Include empty think tags to disable thinking mode (per Qwen3 documentation)
-        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n"
+        # Don't include empty think tags - let the model think if it wants to
+        return f"<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n"
     if "gpt-oss" in model_name.value.lower():
         # gpt-oss uses a more complex format with system/developer messages
         # For simplicity, using basic user/assistant format here
@@ -130,23 +147,10 @@ def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
 
 
 def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
-    """Get the appropriate stop tokens for a model.
-
-    Different models use different stop tokens:
-    - Gemma: ["<end_of_turn>", "\n"]
-    - Qwen3: ["<|im_end|>", "\n"]
-    - gpt-oss: ["<|end|>", "\n"]
-
-    Args:
-        model_name: The model being used
-
-    Returns:
-        List of stop token strings
-    """
     # Dict-driven configuration for stop tokens
     stop_tokens_config = {
         "gemma": ["<end_of_turn>", "\n"],
-        "qwen": ["<|im_end|>", "\n"],
+        "qwen": ["<|im_end|>"],  # Don't stop on newline for thinking model
         "gpt-oss": ["<|end|>", "\n"],
     }
 
@@ -169,18 +173,12 @@ def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
 def get_model_path(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:
     """Get the local path for a GGUF model file.
 
-    All XL quantizations from Unsloth use "UD-" prefix in their filenames.
+    All XL quantizations from Unsloth use "UD-" prefix in their download URLs,
+    but we store them locally WITHOUT the "UD-" prefix for consistency.
     This stands for "Unsloth Dynamic" (Unsloth's Dynamic 2.0 quantization).
     """
-    # Try without UD- prefix first (for existing local files)
-    path_without_ud = Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
-    if path_without_ud.exists():
-        return path_without_ud
-
-    # XL quantizations need UD- prefix for downloads
-    if "_XL" in quantization.value:
-        return Path(f"models/gguf/{model_name.value}-UD-{quantization.value}.gguf")
-    return path_without_ud
+    # Always use the same local path format (without UD- prefix)
+    return Path(f"models/gguf/{model_name.value}-{quantization.value}.gguf")
 
 
 def download_model(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> Path:
