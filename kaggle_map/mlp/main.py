@@ -357,10 +357,152 @@ def load(filepath: Path) -> QuestionSpecificMLP:
     return model
 
 
+def handle_fit(args: "argparse.Namespace") -> None:
+    """Handle the fit command to train a model."""
+    from pathlib import Path
+
+    # Configure logging level
+    if args.verbose:
+        logger.info("Starting model training with parameters:")
+        logger.info(f"  Training data: {args.train_data}")
+        logger.info(f"  Epochs: {args.epochs}")
+        logger.info(f"  Batch size: {args.batch_size}")
+        logger.info(f"  Learning rate: {args.learning_rate}")
+        logger.info(f"  Train split: {args.train_split}")
+        logger.info(f"  Model path: {args.model_path}")
+
+    # Create TrainingConfig from arguments
+    config = TrainingConfig(
+        train_csv_path=Path(args.train_data),
+        train_split=args.train_split,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+    )
+
+    # Train the model
+    logger.info("Loading training data...")
+    model = fit(config)
+
+    # Save the model
+    output_path = Path(args.model_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save(model, output_path)
+    logger.success(f"Model saved to {output_path}")
+
+
+def handle_eval(args: "argparse.Namespace") -> None:
+    """Handle the eval command to evaluate a model."""
+    import sys
+    from pathlib import Path
+
+    # Configure logging level
+    if args.verbose:
+        logger.info("Starting model evaluation with parameters:")
+        logger.info(f"  Model path: {args.model_path}")
+        logger.info(f"  Training data: {args.train_data}")
+        logger.info(f"  Train split: {args.train_split}")
+
+    # Load the model
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        logger.error(f"Model file not found: {model_path}")
+        sys.exit(1)
+
+    logger.info(f"Loading model from {model_path}...")
+    model = load(model_path)
+
+    # Load training data for evaluation
+    train_data_path = Path(args.train_data)
+    if not train_data_path.exists():
+        logger.error(f"Training data not found: {train_data_path}")
+        sys.exit(1)
+
+    # Evaluate the model
+    logger.info("Evaluating model performance...")
+    training_data = load_training_data(train_data_path)
+    map_score = evaluate(model, training_data, train_split=args.train_split)
+
+    logger.success(f"MAP@3 Score: {map_score:.4f}")
+    if args.verbose:
+        logger.info(f"Evaluation complete. Model achieved MAP@3 score of {map_score:.4f}")
+
+
+def handle_predict(args: "argparse.Namespace") -> None:
+    """Handle the predict command to generate predictions."""
+    import sys
+    from pathlib import Path
+
+    import pandas as pd
+
+    # Configure logging level
+    if args.verbose:
+        logger.info("Starting prediction generation with parameters:")
+        logger.info(f"  Model path: {args.model_path}")
+        logger.info(f"  Input file: {args.input_file}")
+        logger.info(f"  Output file: {args.output_file}")
+
+    # Load the model
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        logger.error(f"Model file not found: {model_path}")
+        sys.exit(1)
+
+    logger.info(f"Loading model from {model_path}...")
+    model = load(model_path)
+
+    # Load input data
+    input_path = Path(args.input_file)
+    if not input_path.exists():
+        logger.error(f"Input file not found: {input_path}")
+        sys.exit(1)
+
+    logger.info(f"Loading input data from {input_path}...")
+    # Read the CSV to get evaluation rows
+    df = pd.read_csv(input_path)
+
+    # Convert to EvaluationRow objects
+    eval_rows = []
+    for _, row in df.iterrows():
+        eval_row = EvaluationRow(
+            row_id=row["id"],
+            question_id=QuestionId(row["QuestionId"]),
+            construct_name=row["ConstructName"],
+            subject_name=row["SubjectName"],
+            correct_answer=row["CorrectAnswer"],
+            wrong_answer=row["WrongAnswer"],
+            mc_answer=row.get("MCAnswer", None),
+        )
+        eval_rows.append(eval_row)
+
+    # Generate predictions
+    logger.info(f"Generating predictions for {len(eval_rows)} rows...")
+    predictions = predict(model, eval_rows)
+
+    # Convert predictions to submission format
+    submission_rows = []
+    for pred in predictions:
+        submission_rows.append({
+            "id": pred.row_id,
+            "prediction": " ".join(pred.predictions[:3]),  # Take top 3 predictions
+        })
+
+    # Save predictions
+    output_path = Path(args.output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    submission_df = pd.DataFrame(submission_rows)
+    submission_df.to_csv(output_path, index=False)
+    logger.success(f"Predictions saved to {output_path}")
+
+    if args.verbose:
+        logger.info(f"Generated predictions for {len(submission_rows)} samples")
+
+
 if __name__ == "__main__":
     import argparse
     import sys
-    
+
     parser = argparse.ArgumentParser(
         description="MLP model for student misconception prediction",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -368,21 +510,21 @@ if __name__ == "__main__":
 Examples:
   # Train a model with default settings
   python -m kaggle_map.mlp fit
-  
+
   # Train with custom parameters
   python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001
-  
+
   # Evaluate a trained model
   python -m kaggle_map.mlp eval --model-path models/mlp.pkl
-  
+
   # Generate predictions for submission
   python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv
         """,
     )
-    
+
     # Add subparsers for different commands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
+
     # Fit command
     fit_parser = subparsers.add_parser("fit", help="Train the MLP model")
     fit_parser.add_argument(
@@ -426,7 +568,7 @@ Examples:
         action="store_true",
         help="Show detailed training progress",
     )
-    
+
     # Eval command
     eval_parser = subparsers.add_parser("eval", help="Evaluate the MLP model")
     eval_parser.add_argument(
@@ -452,7 +594,7 @@ Examples:
         action="store_true",
         help="Show detailed evaluation metrics",
     )
-    
+
     # Predict command
     predict_parser = subparsers.add_parser("predict", help="Generate predictions")
     predict_parser.add_argument(
@@ -478,15 +620,31 @@ Examples:
         action="store_true",
         help="Show prediction progress",
     )
-    
+
     # Parse arguments
     args = parser.parse_args()
-    
+
     # Show help if no command specified
     if args.command is None:
         parser.print_help()
         sys.exit(1)
-    
-    # Dispatch to appropriate handler (will be implemented in Task 5)
-    logger.error(f"Command '{args.command}' not yet implemented")
-    sys.exit(1)
+
+    # Dispatch to appropriate handler
+    try:
+        if args.command == "fit":
+            handle_fit(args)
+        elif args.command == "eval":
+            handle_eval(args)
+        elif args.command == "predict":
+            handle_predict(args)
+        else:
+            logger.error(f"Unknown command: {args.command}")
+            sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error during {args.command}: {e}")
+        if args.verbose if hasattr(args, "verbose") else False:
+            logger.exception("Full traceback:")
+        sys.exit(1)

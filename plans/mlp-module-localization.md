@@ -136,23 +136,23 @@ kaggle_map/mlp/
 ### Task 5: Implement Command Handlers
 **Goal**: Create handler functions for each CLI command
 
-- [ ] Implement `handle_fit()` function:
+- [x] Implement `handle_fit()` function:
   - Parse TrainingConfig from arguments
   - Call fit() with config
   - Save model to specified path
   - Display training metrics
-- [ ] Implement `handle_eval()` function:
+- [x] Implement `handle_eval()` function:
   - Load model from path
   - Load and split data
   - Call evaluate()
   - Display MAP@3 score
-- [ ] Implement `handle_predict()` function:
+- [x] Implement `handle_predict()` function:
   - Load model from path
   - Read input CSV
   - Generate predictions
   - Write output CSV
-- [ ] Add proper logging with loguru
-- [ ] Include progress indicators for long operations
+- [x] Add proper logging with loguru
+- [x] Include progress indicators for long operations
 
 ### Task 6: Update Documentation
 **Goal**: Update README and docstrings for new execution pattern
