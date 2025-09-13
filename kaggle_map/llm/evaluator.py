@@ -20,6 +20,7 @@ from kaggle_map.utils.gguf_model import (
     get_stop_tokens,
     load_llm_model,
     parse_llm_response,
+    suggest_ctx_length,
 )
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -211,6 +212,33 @@ def _sample_dataframe(
     return sampled_df
 
 
+def _get_optimal_context(model_name: GGUFModelName, quantization: GGUFModelQuantizationLevel) -> int:
+    """Calculate optimal context size for model/quantization."""
+    optimal_ctx = suggest_ctx_length(
+        vram_gb=16.0,  # RTX 2000 Ada has 16GB VRAM
+        model_name=model_name,
+        quantization=quantization,
+        desktop_overhead_gb=0.7,
+        safety_margin_gb=1.0,
+    )
+
+    # Handle models that barely fit or don't fit
+    min_context = 2048  # Absolute minimum for basic operation
+    standard_context = 4096  # Standard context size
+    if optimal_ctx <= 0:
+        logger.warning(
+            f"Model {model_name.value} {quantization.value} "
+            f"may not fit in 16GB VRAM. Using minimum context of {min_context}"
+        )
+        return min_context
+    if optimal_ctx < standard_context:
+        logger.warning(
+            f"Limited context of {optimal_ctx} tokens for "
+            f"{model_name.value} {quantization.value}"
+        )
+    return optimal_ctx
+
+
 def evaluate_with_llm(config: EvaluationConfig) -> float:
     logger.info(f"Loading validation data from {config.data_path}")
     validation_pairs = load_validation_data(config.data_path)
@@ -219,11 +247,16 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
     df = _prepare_dataframe(validation_pairs)
     sampled_df = _sample_dataframe(df, config.row_ids, config.sample_ratio)
 
+    # Get optimal context size for this model/quantization
+    optimal_ctx = _get_optimal_context(config.model_name, config.quantization)
+
     model_config = GGUFModelLoadConfig(
         model_name=config.model_name,
         quantization=config.quantization,
+        n_ctx=optimal_ctx,
     )
     logger.info(f"Loading {config.model_name.value} with {config.quantization.value} quantization")
+    logger.info(f"Using dynamic context size: {optimal_ctx} tokens")
     logger.info(f"GPU layers: {model_config.n_gpu_layers} (-1 means use all available)")
     llm = load_llm_model(model_config)
 
@@ -365,10 +398,10 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            # model_name=GGUFModelName.GEMMA_3_27B_IT,
-            # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
-            model_name=GGUFModelName.GPT_OSS_20B,
-            quantization=GGUFModelQuantizationLevel.Q5_K_M,
+            model_name=GGUFModelName.GEMMA_3_27B_IT,
+            quantization=GGUFModelQuantizationLevel.Q3_K_XL,
+            # model_name=GGUFModelName.GPT_OSS_20B,
+            # quantization=GGUFModelQuantizationLevel.Q5_K_M,
         )
         avg_map_score = evaluate_with_llm(config)
 
