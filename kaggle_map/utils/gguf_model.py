@@ -37,8 +37,11 @@ class GGUFModelQuantizationLevel(str, Enum):
     """
 
     Q2_K_XL = "Q2_K_XL"
+    Q3_K_M = "Q3_K_M"
     Q3_K_XL = "Q3_K_XL"
+    Q4_K_M = "Q4_K_M"
     Q4_K_XL = "Q4_K_XL"
+    Q5_K_M = "Q5_K_M"
     Q5_K_XL = "Q5_K_XL"
     Q6_K_XL = "Q6_K_XL"
 
@@ -61,16 +64,6 @@ class GGUFRepoSpec:
 
 # Model configurations with their HuggingFace patterns
 GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
-    GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
-        repo="unsloth/gpt-oss-20b-GGUF",
-        filename_pattern="gpt-oss-20b-UD-{quant}.gguf",  # Updated with UD- prefix for Unsloth Dynamic 2.0
-        # For 16GB VRAM, Q4_K_XL fits comfortably (~14GB requirement)
-        available_quantizations=[
-            GGUFModelQuantizationLevel.Q2_K_XL,
-            GGUFModelQuantizationLevel.Q3_K_XL,
-            GGUFModelQuantizationLevel.Q4_K_XL,
-        ],
-    ),
     GGUFModelName.QWEN3_14B: GGUFRepoSpec(
         repo="unsloth/Qwen3-14B-GGUF",
         filename_pattern="Qwen3-14B-{quant}.gguf",
@@ -86,15 +79,23 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
         filename_pattern="Qwen3-30B-A3B-Thinking-2507-UD-{quant}.gguf",
         available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL],
     ),
-    GGUFModelName.GEMMA_3_12B_IT: GGUFRepoSpec(
-        repo="unsloth/gemma-3-12b-it-GGUF",
-        filename_pattern="gemma-3-12b-it-{quant}.gguf",
-    ),
     GGUFModelName.GEMMA_3_27B_IT: GGUFRepoSpec(
         repo="unsloth/gemma-3-27b-it-GGUF",
         filename_pattern="gemma-3-27b-it-UD-{quant}.gguf",
-        # For 16GB VRAM, only Q2_K and Q3_K_S quantizations fit comfortably
-        available_quantizations=[GGUFModelQuantizationLevel.Q2_K_XL, GGUFModelQuantizationLevel.Q3_K_XL],
+        available_quantizations=[
+            GGUFModelQuantizationLevel.Q2_K_XL,
+            GGUFModelQuantizationLevel.Q3_K_XL,
+        ],
+    ),
+    GGUFModelName.GPT_OSS_20B: GGUFRepoSpec(
+        repo="unsloth/gpt-oss-20b-GGUF",
+        filename_pattern="gpt-oss-20b-{quant}.gguf",
+        available_quantizations=[
+            GGUFModelQuantizationLevel.Q2_K_XL,
+            GGUFModelQuantizationLevel.Q3_K_M,
+            GGUFModelQuantizationLevel.Q4_K_M,
+            GGUFModelQuantizationLevel.Q5_K_M,
+        ],
     ),
 }
 
@@ -160,7 +161,7 @@ def get_stop_tokens(model_name: GGUFModelName) -> list[str]:
     stop_tokens_config = {
         "gemma": ["<end_of_turn>", "\n"],
         "qwen": ["<|im_end|>"],  # Don't stop on newline for thinking model
-        "gpt-oss": ["<|end|>", "\n"],
+        "gpt-oss": ["<|end|>"],  # GPT-OSS uses Harmony format, don't stop on \n
     }
 
     model_name_lower = model_name.value.lower()
