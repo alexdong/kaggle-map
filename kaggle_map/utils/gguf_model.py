@@ -1,4 +1,9 @@
-"""Utilities for managing GGUF quantized LLM models with llama-cpp-python."""
+"""Utilities for managing GGUF quantized LLM models with llama-cpp-python.
+
+https://huggingface.co/unsloth/gemma-3-27b-it-GGUF
+https://huggingface.co/unsloth/gpt-oss-20b-GGUF
+https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking
+"""
 
 import re
 from collections.abc import Callable
@@ -105,6 +110,7 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
             GGUFModelQuantizationLevel.Q2_K_L,
             GGUFModelQuantizationLevel.Q3_K_M,
             GGUFModelQuantizationLevel.Q4_K_M,
+            GGUFModelQuantizationLevel.Q4_K_XL,
             GGUFModelQuantizationLevel.Q5_K_M,
         ],
     ),
@@ -203,15 +209,12 @@ def suggest_ctx_length(
         (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q3_K_M): 13.5,
         (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q4_K_M): 15.0,
         (GGUFModelName.GPT_OSS_20B, GGUFModelQuantizationLevel.Q5_K_M): 17.0,
-
         # 27B parameter models (Gemma)
         (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q2_K_XL): 14.5,
         (GGUFModelName.GEMMA_3_27B_IT, GGUFModelQuantizationLevel.Q3_K_XL): 16.5,
-
         # 30B parameter models (Qwen)
         (GGUFModelName.QWEN3_30B, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
         (GGUFModelName.QWEN3_30B_Thinking, GGUFModelQuantizationLevel.Q2_K_XL): 15.0,
-
         # 14B parameter models
         (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q4_K_XL): 9.5,
         (GGUFModelName.QWEN3_14B, GGUFModelQuantizationLevel.Q6_K_XL): 11.5,
