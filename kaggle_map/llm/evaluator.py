@@ -57,19 +57,45 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str
     )
 
 
-def parse_predictions_enhanced(response: str) -> ParseResult:
-    """Parse LLM response to extract predictions and thinking trace.
-
-    Extracts content within <think>...</think> tags and returns both
-    predictions and thinking trace for debugging.
+def _parse_harmony_format(response: str) -> tuple[str | None, str]:
+    """Parse GPT-OSS Harmony format response.
 
     Args:
-        response: Raw LLM response containing predictions and possibly thinking tags
+        response: Raw response with Harmony format tags
 
     Returns:
-        ParseResult with predictions and optional thinking trace
+        Tuple of (thinking_trace, clean_response_for_predictions)
     """
-    # Extract thinking trace if present
+    thinking_trace = None
+    clean_response = response
+
+    # Extract analysis channel content as thinking trace
+    analysis_pattern = r"<\|channel\|>analysis<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
+    analysis_match = re.search(analysis_pattern, response, re.DOTALL)
+    if analysis_match:
+        thinking_trace = analysis_match.group(1).strip()
+
+    # Extract final channel content for predictions
+    final_pattern = r"<\|channel\|>final<\|message\|>(.*?)(?=<\|channel\|>|<\|end\|>|$)"
+    final_match = re.search(final_pattern, response, re.DOTALL)
+    if final_match:
+        clean_response = final_match.group(1).strip()
+    else:
+        # If no final channel, try to parse the entire response after removing analysis
+        clean_response = re.sub(analysis_pattern, "", response, flags=re.DOTALL).strip()
+
+    return thinking_trace, clean_response
+
+
+def _parse_think_tags(response: str) -> tuple[str | None, str]:
+    """Parse standard <think>...</think> format response.
+
+    Args:
+        response: Raw response with think tags
+
+    Returns:
+        Tuple of (thinking_trace, clean_response_for_predictions)
+    """
     thinking_pattern = r"<think>(.*?)</think>"
     thinking_match = re.search(thinking_pattern, response, re.DOTALL)
 
@@ -80,80 +106,55 @@ def parse_predictions_enhanced(response: str) -> ParseResult:
     # Remove thinking tags from response for prediction parsing
     clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
 
+    return thinking_trace, clean_response
+
+
+def parse_predictions_enhanced(response: str) -> ParseResult:
+    """Parse LLM response to extract predictions and thinking trace.
+
+    Handles both standard <think>...</think> tags and GPT-OSS Harmony format
+    with <|channel|>analysis<|message|> and <|channel|>final<|message|> tags.
+
+    Args:
+        response: Raw LLM response containing predictions and possibly thinking tags
+
+    Returns:
+        ParseResult with predictions and optional thinking trace
+    """
+    # Check for GPT-OSS Harmony format first
+    if "<|channel|>" in response:
+        thinking_trace, clean_response = _parse_harmony_format(response)
+    else:
+        # Standard <think>...</think> format
+        thinking_trace, clean_response = _parse_think_tags(response)
+
     # Parse predictions from cleaned response
     predictions = parse_predictions(clean_response)
 
     return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
 
 
-def parse_predictions(response: str) -> list[Prediction]:  # noqa: C901
-    """Parse LLM response to extract predictions.
-
-    The LLM returns three predictions on ONE line separated by spaces.
-    Format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
-    Example: "True_Correct:NA True_Neither:NA True_Misconception:Division"
-
-    Also supports categories without colons (assumes NA misconception):
-    Example: "True_Correct True_Misconception:Division True_Neither"
-
-    Args:
-        response: Raw LLM response containing predictions
-
-    Returns:
-        List of up to 3 Prediction objects
-    """
+def parse_predictions(response: str) -> list[Prediction]:
     predictions = []
-
-    # The response should be a single line with three space-separated predictions
     response_clean = response.strip()
-
-    # Handle case where LLM might return multiple lines - take the first non-empty line
-    # Look for lines that contain category names
-    for line in response_clean.split("\n"):
-        line_stripped = line.strip()
-        if line_stripped and any(cat.value in line_stripped for cat in Category):
-            response_clean = line_stripped
-            break
-
-    # Split by spaces to get individual predictions
-    prediction_parts = response_clean.split()
+    response = " ".join([s.strip() for s in response_clean.split("\n") if s.strip()])
+    prediction_parts = response.split()
 
     for part in prediction_parts:
-        try:
-            if ":" in part:
-                # Standard format: Category:Misconception
-                prediction = Prediction.from_string(part)
-            else:
-                # Check if it's a valid category without a colon
-                # Try to match against Category enum values
-                category = None
-                for cat in Category:
-                    if part == cat.value:
-                        category = cat
-                        break
+        if ":" in part:
+            # Standard format: Category:Misconception
+            prediction = Prediction.from_string(part)
+        else:
+            # Check if it's a valid category without a colon
+            category = next((cat for cat in Category if part == cat.value), None)
+            if category is None:
+                logger.debug(f"Skipping invalid prediction part: '{part}'")
+                continue
+            # Create prediction with NA misconception for categories without colons
+            prediction = Prediction(category=category, misconception="NA")
 
-                if category is None:
-                    logger.debug(f"Skipping invalid prediction part: '{part}'")
-                    continue
-
-                # Create prediction with NA misconception for categories without colons
-                prediction = Prediction(category=category, misconception="NA")
-
-            predictions.append(prediction)
-
-            max_predictions = 3
-            if len(predictions) >= max_predictions:
-                break
-        except Exception as e:
-            logger.debug(f"Failed to parse prediction '{part}': {e}")
-            continue
-
-    # Pad with default predictions if needed
-    max_predictions = 3
-    while len(predictions) < max_predictions:
-        predictions.append(Prediction(category=Category.TRUE_CORRECT, misconception="NA"))
-
-    return predictions[:max_predictions]
+        predictions.append(prediction)
+    return predictions[:3]
 
 
 def save_evaluation_results_to_csv(
@@ -326,16 +327,10 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
     df = _prepare_dataframe(validation_pairs)
     sampled_df = _sample_dataframe(df, config.row_ids, config.sample_ratio)
 
-    # Load the model
     model_config = GGUFModelLoadConfig(
         model_name=config.model_name,
         quantization=config.quantization,
-        n_ctx=4096,
-        n_batch=512,
-        n_gpu_layers=-1,  # Use all GPU layers
-        verbose=False,
     )
-
     logger.info(f"Loading {config.model_name.value} with {config.quantization.value} quantization")
     logger.info(f"GPU layers: {model_config.n_gpu_layers} (-1 means use all available)")
     llm = load_llm_model(model_config)
@@ -440,7 +435,7 @@ if __name__ == "__main__":
     @click.option(
         "--sample-ratio",
         type=click.FloatRange(0.0, 1.0),
-        default=0.2,
+        default=1.0,
         help="Ratio of validation data to sample (0.0-1.0). Ignored if --row-ids is provided.",
     )
     @click.option(
@@ -452,7 +447,7 @@ if __name__ == "__main__":
     @click.option(
         "--data-path",
         type=click.Path(exists=True, path_type=Path),
-        default=Path("datasets/33474_train.csv"),
+        default=Path("datasets/33474_focus_group.csv"),
         help="Path to CSV file",
     )
     @click.option(
@@ -478,8 +473,10 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
-            model_name=GGUFModelName.GEMMA_3_27B_IT,
-            quantization=GGUFModelQuantizationLevel.Q3_K_XL,
+            # model_name=GGUFModelName.GEMMA_3_27B_IT,
+            # quantization=GGUFModelQuantizationLevel.Q3_K_XL,
+            model_name=GGUFModelName.GPT_OSS_20B,
+            quantization=GGUFModelQuantizationLevel.Q5_K_M,
         )
         avg_map_score = evaluate_with_llm(config)
 

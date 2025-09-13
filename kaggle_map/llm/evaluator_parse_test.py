@@ -1,58 +1,21 @@
 """Test cases for parse_predictions function with thinking tags."""
 
-import re
-from dataclasses import dataclass
-
 import pytest
 
-from kaggle_map.core.models import Category, Prediction
-from kaggle_map.llm.evaluator import parse_predictions
-
-
-@dataclass
-class ParseResult:
-    """Result from parsing LLM response."""
-
-    predictions: list[Prediction]
-    thinking_trace: str | None = None
-
-
-def parse_predictions_enhanced(response: str) -> ParseResult:
-    """Enhanced parse_predictions that extracts and returns thinking traces.
-
-    This is the proposed implementation that:
-    1. Extracts content within <think>...</think> tags
-    2. Cleans the response for prediction parsing
-    3. Returns both predictions and thinking trace
-    """
-    # Extract thinking trace if present
-    thinking_pattern = r"<think>(.*?)</think>"
-    thinking_match = re.search(thinking_pattern, response, re.DOTALL)
-
-    thinking_trace = None
-    if thinking_match:
-        thinking_trace = thinking_match.group(1).strip()
-
-    # Remove thinking tags from response for prediction parsing
-    clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
-
-    # Parse predictions from cleaned response
-    predictions = parse_predictions(clean_response)
-
-    return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
+from kaggle_map.core.models import Category
+from kaggle_map.llm.evaluator import parse_predictions_enhanced
 
 
 def test_parse_predictions_with_thinking_text():
     """Test parsing when LLM produces thinking text before predictions."""
-    # Real response from the LLM
+    # Response with plain text but no valid predictions
     response = "Let me carefully analyze the student's answer and explanation."
 
-    predictions = parse_predictions(response)
+    result = parse_predictions_enhanced(response)
 
-    # Should return 3 default predictions when no valid predictions found
-    assert len(predictions) == 3
-    assert all(p.category == Category.TRUE_CORRECT for p in predictions)
-    assert all(p.misconception == "NA" for p in predictions)
+    # Should return empty predictions when no valid predictions found
+    assert len(result.predictions) == 0
+    assert result.thinking_trace is None
 
 
 def test_parse_predictions_with_think_tags():
@@ -66,16 +29,19 @@ They may be mixing up the operation.
 
 True_Neither:NA True_Misconception:Subtraction True_Correct:NA"""
 
-    predictions = parse_predictions(response)
+    result = parse_predictions_enhanced(response)
 
     # Should parse the predictions after the thinking tags
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_NEITHER
-    assert predictions[0].misconception == "NA"
-    assert predictions[1].category == Category.TRUE_MISCONCEPTION
-    assert predictions[1].misconception == "Subtraction"
-    assert predictions[2].category == Category.TRUE_CORRECT
-    assert predictions[2].misconception == "NA"
+    assert len(result.predictions) == 3
+    assert result.predictions[0].category == Category.TRUE_NEITHER
+    assert result.predictions[0].misconception == "NA"
+    assert result.predictions[1].category == Category.TRUE_MISCONCEPTION
+    assert result.predictions[1].misconception == "Subtraction"
+    assert result.predictions[2].category == Category.TRUE_CORRECT
+    assert result.predictions[2].misconception == "NA"
+    # Check thinking trace was extracted
+    assert result.thinking_trace is not None
+    assert "mixing up the operation" in result.thinking_trace
 
 
 def test_parse_predictions_multiline_with_labels():
@@ -86,133 +52,46 @@ The student got the right answer but the explanation is unclear.
 
 True_Neither:NA True_Correct:NA True_Misconception:Division"""
 
-    predictions = parse_predictions(response)
+    result = parse_predictions_enhanced(response)
 
     # Should find the line with valid categories
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_NEITHER
-    assert predictions[1].category == Category.TRUE_CORRECT
-    assert predictions[2].category == Category.TRUE_MISCONCEPTION
-    assert predictions[2].misconception == "Division"
+    assert len(result.predictions) == 3
+    assert result.predictions[0].category == Category.TRUE_NEITHER
+    assert result.predictions[1].category == Category.TRUE_CORRECT
+    assert result.predictions[2].category == Category.TRUE_MISCONCEPTION
+    assert result.predictions[2].misconception == "Division"
+    assert result.thinking_trace is None
 
 
 def test_parse_predictions_mixed_valid_invalid():
     """Test parsing with mix of valid and invalid tokens."""
     response = "Some random text True_Correct:NA more text True_Neither:NA final text True_Misconception:Fractions"
 
-    predictions = parse_predictions(response)
+    result = parse_predictions_enhanced(response)
 
     # Should extract only the valid predictions
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_CORRECT
-    assert predictions[1].category == Category.TRUE_NEITHER
-    assert predictions[2].category == Category.TRUE_MISCONCEPTION
-    assert predictions[2].misconception == "Fractions"
+    assert len(result.predictions) == 3
+    assert result.predictions[0].category == Category.TRUE_CORRECT
+    assert result.predictions[1].category == Category.TRUE_NEITHER
+    assert result.predictions[2].category == Category.TRUE_MISCONCEPTION
+    assert result.predictions[2].misconception == "Fractions"
+    assert result.thinking_trace is None
 
 
 def test_parse_predictions_categories_without_colons():
     """Test parsing categories without colons (assumes NA misconception)."""
     response = "True_Correct True_Misconception:Division True_Neither"
 
-    predictions = parse_predictions(response)
-
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_CORRECT
-    assert predictions[0].misconception == "NA"
-    assert predictions[1].category == Category.TRUE_MISCONCEPTION
-    assert predictions[1].misconception == "Division"
-    assert predictions[2].category == Category.TRUE_NEITHER
-    assert predictions[2].misconception == "NA"
-
-
-def test_thinking_trace_extraction():
-    """Test that we can extract thinking traces for logging."""
-    response_with_tags = """<think>
-The student's explanation shows confusion about the operation.
-They mention subtraction which is incorrect.
-</think>
-
-True_Misconception:Subtraction True_Neither:NA True_Correct:NA"""
-
-    # Extract thinking trace (this is what we want to add)
-    import re
-
-    thinking_pattern = r"<think>(.*?)</think>"
-    thinking_match = re.search(thinking_pattern, response_with_tags, re.DOTALL)
-
-    if thinking_match:
-        thinking_trace = thinking_match.group(1).strip()
-        assert "confusion about the operation" in thinking_trace
-        assert "subtraction which is incorrect" in thinking_trace
-
-    # Clean response for prediction parsing
-    clean_response = re.sub(thinking_pattern, "", response_with_tags, flags=re.DOTALL)
-    predictions = parse_predictions(clean_response)
-
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_MISCONCEPTION
-    assert predictions[0].misconception == "Subtraction"
-
-
-def test_enhanced_parse_predictions_with_thinking():
-    """Test the enhanced parse_predictions that returns thinking trace."""
-    response = """<think>
-The student selected the correct answer (1/3) * (2/3).
-However, their explanation "it is 1 / 3 of 2 - 3 = 1 1/3" is confusing.
-They seem to be doing subtraction (2-3) instead of multiplication.
-This indicates a misconception about the operation.
-</think>
-
-True_Misconception:Subtraction True_Neither:NA True_Correct:NA"""
-
-    # This is what we want the enhanced function to do:
-    # predictions, thinking_trace = parse_predictions_with_thinking(response)
-
-    # For now, let's simulate what we want:
-    import re
-
-    thinking_pattern = r"<think>(.*?)</think>"
-    thinking_match = re.search(thinking_pattern, response, re.DOTALL)
-
-    thinking_trace = None
-    if thinking_match:
-        thinking_trace = thinking_match.group(1).strip()
-
-    clean_response = re.sub(thinking_pattern, "", response, flags=re.DOTALL)
-    predictions = parse_predictions(clean_response)
-
-    # Check results
-    assert thinking_trace is not None
-    assert "doing subtraction (2-3) instead of multiplication" in thinking_trace
-    assert len(predictions) == 3
-    assert predictions[0].category == Category.TRUE_MISCONCEPTION
-    assert predictions[0].misconception == "Subtraction"
-
-
-def test_response_with_thinking_tags():
-    """Test parsing response with thinking tags."""
-    response = """<think>
-The student selected the correct answer (1/3) * (2/3).
-However, their explanation "it is 1 / 3 of 2 - 3 = 1 1/3" is confusing.
-They seem to be doing subtraction (2-3) instead of multiplication.
-This indicates a misconception about the operation.
-</think>
-
-True_Misconception:Subtraction True_Neither:NA True_Correct:NA"""
-
     result = parse_predictions_enhanced(response)
 
-    # Check thinking trace was extracted
-    assert result.thinking_trace is not None
-    assert "doing subtraction (2-3) instead of multiplication" in result.thinking_trace
-    assert "misconception about the operation" in result.thinking_trace
-
-    # Check predictions were parsed correctly
     assert len(result.predictions) == 3
-    assert result.predictions[0].category == Category.TRUE_MISCONCEPTION
-    assert result.predictions[0].misconception == "Subtraction"
-    assert result.predictions[1].category == Category.TRUE_NEITHER
-    assert result.predictions[2].category == Category.TRUE_CORRECT
+    assert result.predictions[0].category == Category.TRUE_CORRECT
+    assert result.predictions[0].misconception == "NA"
+    assert result.predictions[1].category == Category.TRUE_MISCONCEPTION
+    assert result.predictions[1].misconception == "Division"
+    assert result.predictions[2].category == Category.TRUE_NEITHER
+    assert result.predictions[2].misconception == "NA"
+    assert result.thinking_trace is None
 
 
 def test_response_without_thinking_tags():
@@ -293,37 +172,82 @@ True_Correct:NA True_Neither:NA True_Misconception:NA"""
     assert len(result.predictions) == 3
 
 
-def test_logging_with_thinking_trace():
-    """Test that thinking traces can be logged appropriately."""
-    import io
-
-    from loguru import logger
-
-    # Capture log output
-    log_capture = io.StringIO()
-    handler_id = logger.add(log_capture, format="{message}", level="DEBUG")
-
-    response = """<think>
-The student's approach shows a fundamental misunderstanding.
-They are confusing multiplication with subtraction.
-</think>
-
-True_Misconception:Subtraction True_Neither:NA True_Correct:NA"""
+def test_parse_gpt_oss_harmony_format_with_analysis():
+    """Test parsing GPT-OSS Harmony format with analysis channel."""
+    response = """<|channel|>analysis<|message|>
+Let me analyze the student's explanation.
+The student says "1/3 plus 2/3 is obviously not the answer."
+They are rejecting addition.
+<|channel|>final<|message|>
+True_Neither:NA True_Misconception:Subtraction True_Correct:NA"""
 
     result = parse_predictions_enhanced(response)
 
-    # Log the thinking trace
-    if result.thinking_trace:
-        logger.info(f"LLM Thinking Trace:\n{result.thinking_trace}")
+    # Should extract predictions from final channel
+    assert len(result.predictions) == 3
+    assert result.predictions[0].category == Category.TRUE_NEITHER
+    assert result.predictions[0].misconception == "NA"
+    assert result.predictions[1].category == Category.TRUE_MISCONCEPTION
+    assert result.predictions[1].misconception == "Subtraction"
 
-    # Check log output
-    log_output = log_capture.getvalue()
-    assert "LLM Thinking Trace:" in log_output
-    assert "fundamental misunderstanding" in log_output
-    assert "confusing multiplication with subtraction" in log_output
+    # Should extract thinking trace from analysis channel
+    assert result.thinking_trace is not None
+    assert "analyze the student's explanation" in result.thinking_trace
+    assert "rejecting addition" in result.thinking_trace
 
-    # Clean up logger
-    logger.remove(handler_id)
+
+def test_parse_gpt_oss_harmony_format_without_final_channel():
+    """Test parsing when GPT-OSS only outputs analysis channel with predictions embedded."""
+    response = """<|channel|>analysis<|message|>
+The student's reasoning is incorrect.
+They should multiply the fractions.
+<|end|>
+True_Correct:NA True_Neither:NA True_Misconception:Division"""
+
+    result = parse_predictions_enhanced(response)
+
+    # Should parse predictions that appear after the analysis channel
+    assert len(result.predictions) == 3
+    assert result.predictions[0].category == Category.TRUE_CORRECT
+    assert result.predictions[2].misconception == "Division"
+
+    # Should extract thinking trace
+    assert result.thinking_trace is not None
+    assert "reasoning is incorrect" in result.thinking_trace
+
+
+def test_parse_gpt_oss_harmony_format_with_end_tags():
+    """Test parsing GPT-OSS format with <|end|> tags."""
+    response = """<|channel|>analysis<|message|>Analyzing the response<|end|>
+<|channel|>final<|message|>True_Neither:NA True_Correct:NA<|end|>"""
+
+    result = parse_predictions_enhanced(response)
+
+    # Should parse predictions correctly
+    assert len(result.predictions) == 2
+    assert result.predictions[0].category == Category.TRUE_NEITHER
+    assert result.predictions[1].category == Category.TRUE_CORRECT
+
+    # Should extract thinking trace without end tag
+    assert result.thinking_trace == "Analyzing the response"
+
+
+def test_parse_mixed_harmony_and_regular_content():
+    """Test parsing when response has Harmony format mixed with regular text."""
+    response = """Some initial text
+<|channel|>analysis<|message|>This is the analysis
+<|channel|>final<|message|>
+True_Misconception:Fractions True_Neither:NA True_Correct:NA
+Some trailing text"""
+
+    result = parse_predictions_enhanced(response)
+
+    # Should extract predictions from final channel only
+    assert len(result.predictions) == 3
+    assert result.predictions[0].misconception == "Fractions"
+
+    # Should extract analysis as thinking trace
+    assert result.thinking_trace == "This is the analysis"
 
 
 if __name__ == "__main__":
