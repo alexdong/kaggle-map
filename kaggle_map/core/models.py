@@ -114,14 +114,6 @@ class Prediction(BaseModel):
 
     @classmethod
     def parse(cls, response: str) -> list["Prediction"]:
-        """Parse predictions from LLM response text.
-
-        Args:
-            response: Raw response text containing predictions
-
-        Returns:
-            List of up to 3 Prediction objects
-        """
         predictions = []
         response_clean = response.strip()
         response = " ".join([s.strip() for s in response_clean.split("\n") if s.strip()])
