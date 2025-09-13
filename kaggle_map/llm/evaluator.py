@@ -222,17 +222,27 @@ def _get_optimal_context(model_name: GGUFModelName, quantization: GGUFModelQuant
         safety_margin_gb=1.0,
     )
 
-    # Handle models that barely fit or don't fit
-    min_context = 2048  # Absolute minimum for basic operation
-    standard_context = 4096  # Standard context size
+    # Model-specific minimum context requirements
+    is_gpt_oss = model_name == GGUFModelName.GPT_OSS_20B
+    min_context = 16384 if is_gpt_oss else 2048  # OpenAI recommends 16k for GPT-OSS
+    standard_context = 16384 if is_gpt_oss else 4096
+
     if optimal_ctx <= 0:
         logger.warning(
             f"Model {model_name.value} {quantization.value} "
             f"may not fit in 16GB VRAM. Using minimum context of {min_context}"
         )
         return min_context
+
     if optimal_ctx < standard_context:
-        logger.warning(f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}")
+        if is_gpt_oss:
+            logger.warning(
+                f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}. "
+                f"OpenAI recommends minimum {standard_context}"
+            )
+        else:
+            logger.warning(f"Limited context of {optimal_ctx} tokens for {model_name.value} {quantization.value}")
+
     return optimal_ctx
 
 
@@ -252,9 +262,15 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         quantization=config.quantization,
         n_ctx=optimal_ctx,
     )
+    # Log model configuration
+    is_gpt_oss = config.model_name == GGUFModelName.GPT_OSS_20B
     logger.info(f"Loading {config.model_name.value} with {config.quantization.value} quantization")
     logger.info(f"Using dynamic context size: {optimal_ctx} tokens")
     logger.info(f"GPU layers: {model_config.n_gpu_layers} (-1 means use all available)")
+    if is_gpt_oss:
+        logger.info("Using OpenAI recommended parameters: temperature=1.0, top_p=1.0")
+    else:
+        logger.info("Using standard parameters: temperature=0.1, top_p=0.95")
     llm = load_llm_model(model_config)
 
     # Evaluate each sample
@@ -285,12 +301,19 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
         full_prompt = format_chat_prompt(config.model_name, user_prompt)
 
-        # Generate predictions with configurable token limit
+        # Model-specific inference parameters
+        # OpenAI recommends temp=1.0, top_p=1.0 for GPT-OSS
+        # Lower temperature for more consistent predictions with other models
+        is_gpt_oss = config.model_name == GGUFModelName.GPT_OSS_20B
+        temperature = 1.0 if is_gpt_oss else 0.1
+        top_p = 1.0 if is_gpt_oss else 0.95
+
+        # Generate predictions
         response = llm(
             full_prompt,
             max_tokens=MAX_RESPONSE_TOKENS,
-            temperature=0.1,
-            top_p=0.95,
+            temperature=temperature,
+            top_p=top_p,
             stop=stop_tokens,
             echo=False,
         )
