@@ -9,7 +9,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from kaggle_map.core.models import OptimizerType, SchedulerType, TrainingConfig
-from kaggle_map.mlp.dataset import TrainingSample
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 from kaggle_map.utils.logger_config import configure_logger
 
@@ -68,7 +67,7 @@ class TrainingSetup:
 
 def process_batch(  # noqa: C901
     model: QuestionSpecificMLP,
-    batch: TrainingSample,
+    batch: dict[str, torch.Tensor],
     loss_fn: nn.Module,
     device: torch.device,
     *,
@@ -78,7 +77,7 @@ def process_batch(  # noqa: C901
 
     Args:
         model: The MLP model
-        batch: TrainingSample with batched tensors
+        batch: Dictionary with batched tensors from DataLoader with custom collate
         loss_fn: Loss function
         device: Device to run on
         training: Whether in training mode (affects gradient tracking)
@@ -86,10 +85,11 @@ def process_batch(  # noqa: C901
     Returns:
         BatchResult containing loss and sample count
     """
-    embeddings = batch.embedding
-    question_ids = batch.question_id
-    labels = batch.label
-    is_correct = batch.is_correct
+    # Extract tensors from the batched dictionary
+    embeddings = batch["embedding"]
+    question_ids = batch["question_id"]
+    labels = batch["label"]
+    is_correct = batch["is_correct"]
     embeddings = embeddings.to(device)
     question_ids = question_ids.to(device)
     labels = labels.to(device)

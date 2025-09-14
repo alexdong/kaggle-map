@@ -37,8 +37,6 @@ dependencies = [
     "textual>=6.1.0",
 ]
 
-[project.scripts]
-kaggle-map = "kaggle_map.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["kaggle_map*"]

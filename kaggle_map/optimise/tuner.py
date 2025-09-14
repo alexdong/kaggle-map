@@ -5,7 +5,7 @@ from pydash import partial
 
 from kaggle_map.core.dataset import load_training_data
 from kaggle_map.core.models import TrainingConfig
-from kaggle_map.mlp.predictor import _get_split_indices, evaluate, fit
+from kaggle_map.mlp.main import _get_split_indices, evaluate, fit
 from kaggle_map.optimise.hyperparameters import TunableParameters, sample_hyperparameters
 from kaggle_map.optimise.studies import (
     create as create_study,

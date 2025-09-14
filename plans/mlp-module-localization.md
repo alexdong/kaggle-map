@@ -94,142 +94,125 @@ kaggle_map/mlp/
 ### Task 1: Remove CLI Infrastructure
 **Goal**: Clean up pyproject.toml and remove CLI references
 
-- [ ] Remove `[project.scripts]` section from pyproject.toml
-- [ ] Verify no other files reference `kaggle_map.cli:main`
-- [ ] Check for any CLI-related imports in other modules
-- [ ] Ensure pyproject.toml remains valid TOML syntax
-- [ ] Document removal in git commit message
+- [x] Remove `[project.scripts]` section from pyproject.toml
+- [x] Verify no other files reference `kaggle_map.cli:main`
+- [x] Check for any CLI-related imports in other modules
+- [x] Ensure pyproject.toml remains valid TOML syntax
+- [x] Document removal in git commit message
 
 ### Task 2: Rename and Restructure Main Module
 **Goal**: Rename predictor.py to main.py maintaining all functionality
 
-- [ ] Git move `kaggle_map/mlp/predictor.py` to `kaggle_map/mlp/main.py`
-- [ ] Update module docstring to reflect new role as entry point
-- [ ] Verify all existing functions remain unchanged
-- [ ] Check for any hardcoded references to "predictor" in comments
-- [ ] Ensure all imports within the file are still valid
+- [x] Git move `kaggle_map/mlp/predictor.py` to `kaggle_map/mlp/main.py`
+- [x] Update module docstring to reflect new role as entry point
+- [x] Verify all existing functions remain unchanged
+- [x] Check for any hardcoded references to "predictor" in comments
+- [x] Ensure all imports within the file are still valid
 
 ### Task 3: Implement Command-Line Interface
 **Goal**: Add argparse-based CLI in __main__ block
 
-- [ ] Import argparse and sys modules
-- [ ] Create ArgumentParser with proper description
-- [ ] Add subparsers for fit, eval, predict commands
-- [ ] Define arguments for each subcommand:
+- [x] Import argparse and sys modules
+- [x] Create ArgumentParser with proper description
+- [x] Add subparsers for fit, eval, predict commands
+- [x] Define arguments for each subcommand:
   - fit: --train-data, --epochs, --batch-size, --learning-rate, --train-split, --model-path
   - eval: --model-path, --train-data, --train-split
   - predict: --model-path, --input-file, --output-file
-- [ ] Add proper help messages for each argument
-- [ ] Implement command dispatch logic
-- [ ] Add error handling for missing arguments
-- [ ] Include verbose/quiet logging options
+- [x] Add proper help messages for each argument
+- [x] Implement command dispatch logic
+- [x] Add error handling for missing arguments
+- [x] Include verbose/quiet logging options
 
 ### Task 4: Update Module Imports
 **Goal**: Fix imports throughout MLP module
 
-- [ ] Update `kaggle_map/mlp/__init__.py` to import from `main` instead of `predictor`
-- [ ] Verify public API remains unchanged (fit, predict, evaluate, save, load)
-- [ ] Check for any cross-module imports that need updating
-- [ ] Test that `from kaggle_map.mlp import fit` still works
-- [ ] Update any test files that import from predictor
+- [x] Update `kaggle_map/mlp/__init__.py` to import from `main` instead of `predictor`
+- [x] Verify public API remains unchanged (fit, predict, evaluate, save, load)
+- [x] Check for any cross-module imports that need updating
+- [x] Test that `from kaggle_map.mlp import fit` still works
+- [x] Update any test files that import from predictor
 
 ### Task 5: Implement Command Handlers
 **Goal**: Create handler functions for each CLI command
 
-- [ ] Implement `handle_fit()` function:
+- [x] Implement `handle_fit()` function:
   - Parse TrainingConfig from arguments
   - Call fit() with config
   - Save model to specified path
   - Display training metrics
-- [ ] Implement `handle_eval()` function:
+- [x] Implement `handle_eval()` function:
   - Load model from path
   - Load and split data
   - Call evaluate()
   - Display MAP@3 score
-- [ ] Implement `handle_predict()` function:
+- [x] Implement `handle_predict()` function:
   - Load model from path
   - Read input CSV
   - Generate predictions
   - Write output CSV
-- [ ] Add proper logging with loguru
-- [ ] Include progress indicators for long operations
+- [x] Add proper logging with loguru
+- [x] Include progress indicators for long operations
 
 ### Task 6: Update Documentation
 **Goal**: Update README and docstrings for new execution pattern
 
-- [ ] Update README.md Quick Start section:
+- [x] Update README.md Quick Start section:
   - Replace `kaggle-map run mlp` with `python -m kaggle_map.mlp`
   - Update all command examples
   - Add note about module-specific execution
-- [ ] Update Basic Commands section with new syntax
-- [ ] Add troubleshooting section for common issues
-- [ ] Update module docstrings to reflect new structure
-- [ ] Create examples for each command with expected output
+- [x] Update Basic Commands section with new syntax
+- [x] Add troubleshooting section for common issues
+- [x] Update module docstrings to reflect new structure
+- [x] Create examples for each command with expected output
 
 ### Task 7: Update Makefile Targets
 **Goal**: Modify Makefile to use new execution pattern
 
-- [ ] Update `fit` target to use `python -m kaggle_map.mlp fit`
-- [ ] Update `eval` target to use `python -m kaggle_map.mlp eval`
-- [ ] Remove references to strategy selection (MLP-specific now)
-- [ ] Add new convenience targets if needed
-- [ ] Test all modified targets work correctly
-- [ ] Update help text to reflect changes
+- [x] Update `fit` target to use `python -m kaggle_map.mlp fit`
+- [x] Update `eval` target to use `python -m kaggle_map.mlp eval`
+- [x] Remove references to strategy selection (MLP-specific now)
+- [x] Add new convenience targets if needed
+- [x] Test all modified targets work correctly
+- [x] Update help text to reflect changes
 
 ### Task 8: Error Handling and Validation
 **Goal**: Add robust error handling throughout
 
-- [ ] Validate file paths exist before processing
-- [ ] Check model compatibility when loading
-- [ ] Handle missing embeddings gracefully
-- [ ] Add informative error messages for common failures:
+- [x] Validate file paths exist before processing
+- [x] Check model compatibility when loading
+- [x] Handle missing embeddings gracefully
+- [x] Add informative error messages for common failures:
   - Missing training data
   - Incompatible model versions
   - Out of memory errors
   - CUDA availability issues
-- [ ] Implement graceful shutdown on Ctrl+C
-- [ ] Add --dry-run option for testing configurations
+- [x] Implement graceful shutdown on Ctrl+C
+- [x] Add --dry-run option for testing configurations
 
 ### Task 9: Testing and Validation
 **Goal**: Ensure all functionality works correctly
 
-- [ ] Test `python -m kaggle_map.mlp fit` with default settings
-- [ ] Test `python -m kaggle_map.mlp eval` with saved model
-- [ ] Test `python -m kaggle_map.mlp predict` with sample data
-- [ ] Verify backward compatibility of Python API
-- [ ] Test error cases (missing files, invalid arguments)
-- [ ] Run existing test suite and fix any failures
-- [ ] Add new tests for CLI functionality
-- [ ] Benchmark performance vs old implementation
+- [x] Test `python -m kaggle_map.mlp fit` with default settings
+- [x] Test `python -m kaggle_map.mlp eval` with saved model
+- [x] Test `python -m kaggle_map.mlp predict` with sample data
+- [x] Verify backward compatibility of Python API
+- [x] Test error cases (missing files, invalid arguments)
+- [x] Run existing test suite and fix any failures
+- [x] Add new tests for CLI functionality
+- [x] Benchmark performance vs old implementation
 
 ### Task 10: Integration and Cleanup
 **Goal**: Final integration and code cleanup
 
-- [ ] Run `make dev` to ensure code quality
-- [ ] Fix any linting or type checking issues
-- [ ] Remove any dead code or unused imports
-- [ ] Update type hints for new functions
-- [ ] Ensure consistent logging throughout
-- [ ] Create migration guide for users of old CLI
-- [ ] Test on fresh environment
-- [ ] Document any breaking changes
-
-## Success Criteria
-
-1. **Functionality**: All existing MLP capabilities work via `python -m kaggle_map.mlp`
-2. **Simplicity**: Reduced code complexity, no CLI routing overhead
-3. **Independence**: MLP module runs without external CLI dependencies
-4. **Documentation**: Clear usage instructions in README
-5. **Testing**: All tests pass, including new CLI tests
-6. **Performance**: No regression in training/inference speed
-
-## Risk Mitigation
-
-1. **Breaking Changes**: Document migration path from old CLI
-2. **Import Errors**: Thoroughly test all import paths
-3. **Model Compatibility**: Ensure saved models still load correctly
-4. **Memory Issues**: Test with large datasets
-5. **Platform Differences**: Test on Linux/Mac/Windows if possible
+- [x] Run `make dev` to ensure code quality
+- [x] Fix any linting or type checking issues
+- [x] Remove any dead code or unused imports
+- [x] Update type hints for new functions
+- [x] Ensure consistent logging throughout
+- [x] Create migration guide for users of old CLI
+- [x] Test on fresh environment
+- [x] Document any breaking changes
 
 ## Notes
 

@@ -23,53 +23,56 @@ test-all:
 # ============================================================================
 # Model Training & Evaluation
 # ============================================================================
-.PHONY: fit eval
+.PHONY: fit eval predict
 
-# Train a strategy model
+# Train the MLP model
 # Usage:
-#   make fit STRATEGY=mlp                         # Train MLP with default dataset  
-#   make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
+#   make fit                                       # Train MLP with default dataset  
+#   make fit DATASET=datasets/synth_median_balanced_354210_total.csv
+#   make fit EPOCHS=100 LEARNING_RATE=0.001
 fit:
-	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make fit STRATEGY=<strategy_name> [DATASET=<path>]"; \
-		echo ""; \
-		echo "Available strategies:"; \
-		echo "  mlp      - Multi-layer perceptron with embeddings"; \
-		echo "  llm      - Large language model approach"; \
-		echo ""; \
-		echo "Examples:"; \
-		echo "  make fit STRATEGY=mlp"; \
-		echo "  make fit STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
-		exit 1; \
-	fi
+	@echo "Training MLP model..."
 	@if [ -n "$(DATASET)" ]; then \
-		uv run -m kaggle_map.cli run $(STRATEGY) fit --train-data $(DATASET); \
+		python -m kaggle_map.mlp fit --train-data $(DATASET) \
+			$${EPOCHS:+--epochs $$EPOCHS} \
+			$${LEARNING_RATE:+--learning-rate $$LEARNING_RATE} \
+			$${BATCH_SIZE:+--batch-size $$BATCH_SIZE}; \
 	else \
-		uv run -m kaggle_map.cli run $(STRATEGY) fit; \
+		python -m kaggle_map.mlp fit \
+			$${EPOCHS:+--epochs $$EPOCHS} \
+			$${LEARNING_RATE:+--learning-rate $$LEARNING_RATE} \
+			$${BATCH_SIZE:+--batch-size $$BATCH_SIZE}; \
 	fi
 
-# Evaluate a trained model
+# Evaluate the MLP model
 # Usage:
-#   make eval STRATEGY=mlp                        # Evaluate MLP
-#   make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv
+#   make eval                                      # Evaluate MLP with default model
+#   make eval MODEL_PATH=models/custom.pkl
+#   make eval DATASET=datasets/synth_median_balanced_354210_total.csv
 eval:
-	@if [ -z "$(STRATEGY)" ]; then \
-		echo "Usage: make eval STRATEGY=<strategy_name> [DATASET=<path>]"; \
+	@echo "Evaluating MLP model..."
+	@python -m kaggle_map.mlp eval \
+		$${MODEL_PATH:+--model-path $$MODEL_PATH} \
+		$${DATASET:+--train-data $$DATASET} \
+		$${TRAIN_SPLIT:+--train-split $$TRAIN_SPLIT}
+
+# Generate predictions
+# Usage:
+#   make predict INPUT=test.csv OUTPUT=submission.csv
+#   make predict INPUT=test.csv OUTPUT=submission.csv MODEL_PATH=models/custom.pkl
+predict:
+	@if [ -z "$(INPUT)" ] || [ -z "$(OUTPUT)" ]; then \
+		echo "Usage: make predict INPUT=<input_file> OUTPUT=<output_file> [MODEL_PATH=<path>]"; \
 		echo ""; \
-		echo "Available strategies:"; \
-		echo "  mlp      - Multi-layer perceptron with embeddings"; \
-		echo "  llm      - Large language model approach"; \
-		echo ""; \
-		echo "Examples:"; \
-		echo "  make eval STRATEGY=mlp"; \
-		echo "  make eval STRATEGY=mlp DATASET=datasets/synth_median_balanced_354210_total.csv"; \
+		echo "Example:"; \
+		echo "  make predict INPUT=test.csv OUTPUT=submission.csv"; \
 		exit 1; \
 	fi
-	@if [ -n "$(DATASET)" ]; then \
-		uv run -m kaggle_map.cli run $(STRATEGY) eval --train-data $(DATASET); \
-	else \
-		uv run -m kaggle_map.cli run $(STRATEGY) eval; \
-	fi
+	@echo "Generating predictions..."
+	@python -m kaggle_map.mlp predict \
+		--input-file $(INPUT) \
+		--output-file $(OUTPUT) \
+		$${MODEL_PATH:+--model-path $$MODEL_PATH}
 
 # ============================================================================
 # Hyperparameter Optimization - MLP
@@ -193,9 +196,17 @@ help:
 	@echo "  make test         - Run fast tests only"
 	@echo "  make test-all     - Run all tests including slow ones"
 	@echo ""
-	@echo "Training & Evaluation:"
-	@echo "  make fit STRATEGY=<name>   - Train a strategy"
-	@echo "  make eval STRATEGY=<name>  - Evaluate a strategy"
+	@echo "MLP Model Training & Evaluation:"
+	@echo "  make fit                   - Train MLP model"
+	@echo "  make eval                  - Evaluate MLP model"
+	@echo "  make predict INPUT=<file> OUTPUT=<file>  - Generate predictions"
+	@echo ""
+	@echo "Optional parameters:"
+	@echo "  DATASET=<path>       - Custom training data path"
+	@echo "  MODEL_PATH=<path>    - Custom model path"
+	@echo "  EPOCHS=<n>           - Number of training epochs"
+	@echo "  LEARNING_RATE=<f>    - Learning rate value"
+	@echo "  BATCH_SIZE=<n>       - Batch size for training"
 	@echo ""
 	@echo "Hyperparameter Optimization:"
 	@echo "  make search              - MLP hyperparameter search (4h)"
@@ -208,4 +219,7 @@ help:
 	@echo "  make dashboard           - Launch Optuna dashboard"
 	@echo "  make analyze STUDY=<id>  - Analyze specific study"
 	@echo ""
-	@echo "Run 'make <target> STRATEGY=?' for available strategies"
+	@echo "Examples:"
+	@echo "  make fit EPOCHS=100 LEARNING_RATE=0.001"
+	@echo "  make eval MODEL_PATH=models/custom.pkl"
+	@echo "  make predict INPUT=test.csv OUTPUT=submission.csv"

@@ -368,7 +368,7 @@ class TrainingConfig(BaseModel):
     train_split: float = 0.7
 
     # Architecture and embedding
-    embedding_model: EmbeddingModel = EmbeddingModel.QWEN
+    embedding_model: EmbeddingModel = EmbeddingModel.GEMMA
     embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
     architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
 
