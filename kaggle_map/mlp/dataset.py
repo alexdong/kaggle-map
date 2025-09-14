@@ -67,15 +67,17 @@ class MLPDataset(Dataset):
     def __len__(self) -> int:
         return len(self.embeddings)
 
-    def __getitem__(self, idx: int) -> TrainingSample:
+    def __getitem__(self, idx: int) -> dict:
         """Get a single training sample.
 
         Returns:
-            TrainingSample with all necessary tensors
+            Dict with all necessary tensors for training
         """
-        return TrainingSample(
-            embedding=self.embeddings[idx],
-            question_id=self.question_ids[idx],
-            label=self.labels[idx],
-            is_correct=self.is_correct[idx],
-        )
+        return {
+            "embedding": self.embeddings[idx],
+            "question_id": self.question_ids[idx],
+            "label": self.labels[idx],
+            "is_correct": self.is_correct[idx],
+        }
+
+

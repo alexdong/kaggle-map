@@ -68,8 +68,29 @@ class QwenEmbeddingModel:
         )
         return Path(model_path)
 
-    def encode(self, text: str) -> torch.Tensor:
-        return torch.Tensor(self.model.embed(text))
+    def encode(self, text: str | list[str], batch_size: int = 32) -> torch.Tensor:
+        """Encode text(s) into embeddings.
+
+        Args:
+            text: Single text string or list of texts to encode
+            batch_size: Batch size for encoding multiple texts (default: 32)
+
+        Returns:
+            torch.Tensor:
+                - If text is str: 1D tensor of shape (embedding_dim,)
+                - If text is list: 2D tensor of shape (num_texts, embedding_dim)
+        """
+        if isinstance(text, str):
+            return torch.Tensor(self.model.embed(text))
+
+        # Batch encoding for list of texts
+        embeddings = []
+        for i in range(0, len(text), batch_size):
+            batch = text[i : i + batch_size]
+            batch_embeddings = [self.model.embed(t) for t in batch]
+            embeddings.extend(batch_embeddings)
+
+        return torch.stack([torch.Tensor(emb) for emb in embeddings])
 
 
 if __name__ == "__main__":

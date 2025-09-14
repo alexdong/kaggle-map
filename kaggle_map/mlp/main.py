@@ -121,8 +121,9 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
 
     logger.info("Computing embeddings...")
 
-    # Process all rows to extract embeddings and metadata
-    processed_rows = []
+    # First pass: Create all EvaluationRows and collect metadata
+    eval_rows = []
+    metadata = []
     for row in training_data:
         eval_row = EvaluationRow(
             row_id=row.row_id,
@@ -132,14 +133,16 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
             student_explanation=row.student_explanation,
             correct_answer=correct_answers.get(row.question_id, ""),
         )
-        embedding = encode(eval_row, strategy, config.embedding_model)
-        processed_rows.append((embedding.numpy(), row.question_id, str(row.prediction), row.mc_answer))
+        eval_rows.append(eval_row)
+        metadata.append((row.question_id, str(row.prediction), row.mc_answer))
 
-    # Unpack into arrays using zip
-    embeddings_list, question_ids_list, predictions_list, mc_answers_list = map(
-        list, zip(*processed_rows, strict=False)
-    )
-    embeddings = np.array(embeddings_list)
+    # Second pass: Batch encode all rows at once
+    logger.info(f"Batch encoding {len(eval_rows)} rows...")
+    embeddings_tensor = encode(eval_rows, strategy, config.embedding_model)
+    embeddings = embeddings_tensor.cpu().numpy()
+
+    # Unpack metadata
+    question_ids_list, predictions_list, mc_answers_list = zip(*metadata, strict=False)
     question_ids = np.array(question_ids_list)
     predictions = np.array(predictions_list)
     mc_answers = np.array(mc_answers_list)

@@ -1,6 +1,6 @@
 """Kaggle MAP - Charting Student Math Misunderstandings."""
 
-import better_exceptions
+# import better_exceptions
 
 from kaggle_map.core.models import (
     Category,
@@ -9,7 +9,7 @@ from kaggle_map.core.models import (
     TrainingRow,
 )
 
-better_exceptions.MAX_LENGTH = None  # type: ignore[assignment]
+# better_exceptions.MAX_LENGTH = None  # type: ignore[assignment]
 
 __all__ = [
     "Category",
