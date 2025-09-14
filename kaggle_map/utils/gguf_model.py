@@ -144,7 +144,6 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
 
 @dataclass
 class GGUFModelLoadConfig:
-    model_name: GGUFModelName
     quantization: GGUFModelQuantizationLevel
     n_ctx: int  # Context window (total conversation memory)
     n_batch: int  # Batch size for prompt processing
@@ -156,34 +155,36 @@ class GGUFModelLoadConfig:
         """Get the GGUF filename for this configuration."""
         return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
-
-# Class variable configurations
-GGUFModelLoadConfig.QWEN_30B = GGUFModelLoadConfig(
-    model_name=GGUFModelName.QWEN3_30B,
-    quantization=GGUFModelQuantizationLevel.Q4_K_XL,
-    n_ctx=32768,
-    n_batch=512,
-    n_gpu_layers=-1,
-    n_threads=8,
-)
-
-GGUFModelLoadConfig.GPT_OSS_20B = GGUFModelLoadConfig(
-    model_name=GGUFModelName.GPT_OSS_20B,
-    quantization=GGUFModelQuantizationLevel.Q2_K_L,
-    n_ctx=32768,
-    n_batch=512,
-    n_gpu_layers=-1,
-    n_threads=8,
-)
-
-GGUFModelLoadConfig.GEMMA_3_27B_IT = GGUFModelLoadConfig(
-    model_name=GGUFModelName.GEMMA_3_27B_IT,
-    quantization=GGUFModelQuantizationLevel.Q2_K_L,
-    n_ctx=8192,
-    n_batch=512,
-    n_gpu_layers=-1,
-    n_threads=8,
-)
+    @classmethod
+    def get_default_config(cls, model_name: GGUFModelName) -> "GGUFModelLoadConfig":
+        match model_name:
+            case GGUFModelName.QWEN3_30B:
+                return GGUFModelLoadConfig(
+                    quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+                    n_ctx=32768,
+                    n_batch=512,
+                    n_gpu_layers=-1,
+                    n_threads=8,
+                )
+            case GGUFModelName.GPT_OSS_20B:
+                return GGUFModelLoadConfig(
+                    quantization=GGUFModelQuantizationLevel.Q2_K_L,
+                    n_ctx=32768,
+                    n_batch=512,
+                    n_gpu_layers=-1,
+                    n_threads=8,
+                )
+            case GGUFModelName.GEMMA_3_27B_IT:
+                return GGUFModelLoadConfig(
+                    quantization=GGUFModelQuantizationLevel.Q2_K_L,
+                    n_ctx=8192,
+                    n_batch=512,
+                    n_gpu_layers=-1,
+                    n_threads=8,
+                )
+            case _:
+                msg = f"Unknown model name for default config: {model_name}"
+                raise ValueError(msg)
 
 
 @dataclass
@@ -194,31 +195,36 @@ class GGUFModelInferenceConfig:
     max_tokens: int  # Maximum new tokens to generate
     repeat_penalty: float  # Penalize repetition (1.0 = no penalty)
 
-
-# Class variable configurations for inference
-GGUFModelInferenceConfig.QWEN_30B = GGUFModelInferenceConfig(
-    temperature=0.1,  # Lower temperature for deterministic predictions
-    top_p=0.95,  # Standard top_p for balanced diversity
-    stop_words=["<|im_end|>"],  # Qwen format stop token (no newline for thinking model)
-    max_tokens=16384,  # High limit for complete reasoning chains
-    repeat_penalty=1.2,  # Prevent circular reasoning
-)
-
-GGUFModelInferenceConfig.GPT_OSS_20B = GGUFModelInferenceConfig(
-    temperature=1.0,  # OpenAI recommended temperature for reasoning models
-    top_p=1.0,  # OpenAI recommended top_p for full diversity
-    stop_words=["<|end|>"],  # Harmony format stop token
-    max_tokens=16384,  # Maximum space for extensive reasoning
-    repeat_penalty=1.2,  # Prevent repetitive thinking loops
-)
-
-GGUFModelInferenceConfig.GEMMA_3_27B_IT = GGUFModelInferenceConfig(
-    temperature=0.1,  # Lower temperature for deterministic predictions
-    top_p=0.95,  # Standard top_p for balanced diversity
-    stop_words=["<end_of_turn>", "\n"],  # Gemma format stop tokens
-    max_tokens=8192,  # Moderate limit for direct answers
-    repeat_penalty=1.2,  # Light repetition penalty
-)
+    @classmethod
+    def get_default_config(cls, model_name: GGUFModelName) -> "GGUFModelInferenceConfig":
+        match model_name:
+            case GGUFModelName.QWEN3_30B | GGUFModelName.QWEN3_30B_Thinking:
+                return GGUFModelInferenceConfig(
+                    temperature=0.1,
+                    top_p=0.95,
+                    stop_words=["<|im_end|>"],
+                    max_tokens=16384,
+                    repeat_penalty=1.2,
+                )
+            case GGUFModelName.GPT_OSS_20B:
+                return GGUFModelInferenceConfig(
+                    temperature=1.0,
+                    top_p=1.0,
+                    stop_words=["<|end|>"],
+                    max_tokens=16384,
+                    repeat_penalty=1.2,
+                )
+            case GGUFModelName.GEMMA_3_27B_IT:
+                return GGUFModelInferenceConfig(
+                    temperature=0.1,
+                    top_p=0.95,
+                    stop_words=["<end_of_turn>", "\n"],
+                    max_tokens=8192,
+                    repeat_penalty=1.2,
+                )
+            case _:
+                msg = f"Unknown model name for inference config: {model_name}"
+                raise ValueError(msg)
 
 
 def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
