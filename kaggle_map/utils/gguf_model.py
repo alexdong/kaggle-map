@@ -144,16 +144,6 @@ GGUF_MODELS: dict[GGUFModelName, GGUFRepoSpec] = {
 
 @dataclass
 class GGUFModelLoadConfig:
-    """Configuration for loading GGUF models into memory.
-
-    gpt-oss-20b: doesn't follow instruction tuning well.
-    Qwen3-14B: Q4: 0.6005; Q6: 0.6021
-    gemma-3-12b-it: Q4: 0.6185; Q6: 0.6193
-
-    The Q4 is slightly worse but much much faster, so it's a good trade-off.
-    Further, gemma-3 is smaller but slightly better than Qwen3, so it's a good choice
-    """
-
     model_name: GGUFModelName
     quantization: GGUFModelQuantizationLevel
     n_ctx: int  # Context window (total conversation memory)
@@ -166,41 +156,69 @@ class GGUFModelLoadConfig:
         """Get the GGUF filename for this configuration."""
         return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
-    @classmethod
-    @property
-    def QWEN_30B(cls) -> "GGUFModelLoadConfig":
-        return cls(
-            model_name=GGUFModelName.QWEN3_30B,
-            quantization=GGUFModelQuantizationLevel.Q4_K_XL,
-            n_ctx=20480,
-            n_batch=512,
-            n_gpu_layers=-1,
-            n_threads=8,
-        )
 
-    @classmethod
-    @property
-    def GPT_OSS_20B(cls) -> "GGUFModelLoadConfig":
-        return cls(
-            model_name=GGUFModelName.GPT_OSS_20B,
-            quantization=GGUFModelQuantizationLevel.Q2_K_L,
-            n_ctx=20480,
-            n_batch=512,
-            n_gpu_layers=-1,
-            n_threads=8,
-        )
+# Class variable configurations
+GGUFModelLoadConfig.QWEN_30B = GGUFModelLoadConfig(
+    model_name=GGUFModelName.QWEN3_30B,
+    quantization=GGUFModelQuantizationLevel.Q4_K_XL,
+    n_ctx=32768,
+    n_batch=512,
+    n_gpu_layers=-1,
+    n_threads=8,
+)
 
-    @classmethod
-    @property
-    def GEMMA_3_27B_IT(cls) -> "GGUFModelLoadConfig":
-        return cls(
-            model_name=GGUFModelName.GEMMA_3_27B_IT,
-            quantization=GGUFModelQuantizationLevel.Q2_K_L,
-            n_ctx=8192,
-            n_batch=512,
-            n_gpu_layers=-1,
-            n_threads=8,
-        )
+GGUFModelLoadConfig.GPT_OSS_20B = GGUFModelLoadConfig(
+    model_name=GGUFModelName.GPT_OSS_20B,
+    quantization=GGUFModelQuantizationLevel.Q2_K_L,
+    n_ctx=32768,
+    n_batch=512,
+    n_gpu_layers=-1,
+    n_threads=8,
+)
+
+GGUFModelLoadConfig.GEMMA_3_27B_IT = GGUFModelLoadConfig(
+    model_name=GGUFModelName.GEMMA_3_27B_IT,
+    quantization=GGUFModelQuantizationLevel.Q2_K_L,
+    n_ctx=8192,
+    n_batch=512,
+    n_gpu_layers=-1,
+    n_threads=8,
+)
+
+
+@dataclass
+class GGUFModelInferenceConfig:
+    temperature: float
+    top_p: float
+    stop_words: list[str]  # Stop tokens to end generation early
+    max_tokens: int  # Maximum new tokens to generate
+    repeat_penalty: float  # Penalize repetition (1.0 = no penalty)
+
+
+# Class variable configurations for inference
+GGUFModelInferenceConfig.QWEN_30B = GGUFModelInferenceConfig(
+    temperature=0.1,  # Lower temperature for deterministic predictions
+    top_p=0.95,  # Standard top_p for balanced diversity
+    stop_words=["<|im_end|>"],  # Qwen format stop token (no newline for thinking model)
+    max_tokens=16384,  # High limit for complete reasoning chains
+    repeat_penalty=1.2,  # Prevent circular reasoning
+)
+
+GGUFModelInferenceConfig.GPT_OSS_20B = GGUFModelInferenceConfig(
+    temperature=1.0,  # OpenAI recommended temperature for reasoning models
+    top_p=1.0,  # OpenAI recommended top_p for full diversity
+    stop_words=["<|end|>"],  # Harmony format stop token
+    max_tokens=16384,  # Maximum space for extensive reasoning
+    repeat_penalty=1.2,  # Prevent repetitive thinking loops
+)
+
+GGUFModelInferenceConfig.GEMMA_3_27B_IT = GGUFModelInferenceConfig(
+    temperature=0.1,  # Lower temperature for deterministic predictions
+    top_p=0.95,  # Standard top_p for balanced diversity
+    stop_words=["<end_of_turn>", "\n"],  # Gemma format stop tokens
+    max_tokens=8192,  # Moderate limit for direct answers
+    repeat_penalty=1.2,  # Light repetition penalty
+)
 
 
 def format_chat_prompt(model_name: GGUFModelName, user_content: str) -> str:
