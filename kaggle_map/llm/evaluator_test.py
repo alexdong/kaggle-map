@@ -4,35 +4,53 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from kaggle_map.llm.evaluator import EvaluationConfig
-from kaggle_map.utils.gguf_model import GGUFModelLoadConfig, GGUFModelName, GGUFModelQuantizationLevel
+from kaggle_map.utils.gguf_model import (
+    GGUFModelInferenceConfig,
+    GGUFModelLoadConfig,
+    GGUFModelName,
+    GGUFModelQuantizationLevel,
+)
 
 
 def test_model_has_appropriate_default_context():
     """Test that models have appropriate default context sizes."""
     # Test GPT-OSS default
-    assert GGUFModelLoadConfig.GPT_OSS_20B.n_ctx == 20480, "GPT-OSS should have 20k context"
-    assert GGUFModelLoadConfig.GPT_OSS_20B.model_name == GGUFModelName.GPT_OSS_20B
+    gpt_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GPT_OSS_20B)
+    assert gpt_config.n_ctx == 32768, "GPT-OSS should have 32k context"
+    assert gpt_config.quantization == GGUFModelQuantizationLevel.Q2_K_L
 
     # Test GEMMA default
-    assert GGUFModelLoadConfig.GEMMA_3_27B_IT.n_ctx == 8192, "GEMMA should have 8k context"
-    assert GGUFModelLoadConfig.GEMMA_3_27B_IT.model_name == GGUFModelName.GEMMA_3_27B_IT
+    gemma_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GEMMA_3_27B_IT)
+    assert gemma_config.n_ctx == 8192, "GEMMA should have 8k context"
+    assert gemma_config.quantization == GGUFModelQuantizationLevel.Q2_K_L
 
-    # Test QWEN3-30B-Thinking default (should get substantial context)
-    assert GGUFModelLoadConfig.QWEN_30B.n_ctx == 20480, "Thinking models should have 20k context"
-    assert GGUFModelLoadConfig.QWEN_30B.model_name == GGUFModelName.QWEN3_30B
+    # Test QWEN3-30B default (should get substantial context)
+    qwen_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.QWEN3_30B)
+    assert qwen_config.n_ctx == 32768, "QWEN should have 32k context"
+    assert qwen_config.quantization == GGUFModelQuantizationLevel.Q4_K_XL
 
 
 def test_default_model_configs_exist():
-    """Test that default model configurations exist as class attributes."""
-    # Check that static configs exist
-    assert hasattr(GGUFModelLoadConfig, "GPT_OSS_20B")
-    assert hasattr(GGUFModelLoadConfig, "GEMMA_3_27B_IT")
-    assert hasattr(GGUFModelLoadConfig, "QWEN_30B")
+    """Test that default model configurations can be retrieved."""
+    # Check that get_default_config works for all models
+    gpt_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GPT_OSS_20B)
+    assert isinstance(gpt_config, GGUFModelLoadConfig)
 
-    # Check they are of correct type
-    assert isinstance(GGUFModelLoadConfig.GPT_OSS_20B, GGUFModelLoadConfig)
-    assert isinstance(GGUFModelLoadConfig.GEMMA_3_27B_IT, GGUFModelLoadConfig)
-    assert isinstance(GGUFModelLoadConfig.QWEN_30B, GGUFModelLoadConfig)
+    gemma_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GEMMA_3_27B_IT)
+    assert isinstance(gemma_config, GGUFModelLoadConfig)
+
+    qwen_config = GGUFModelLoadConfig.get_default_config(GGUFModelName.QWEN3_30B)
+    assert isinstance(qwen_config, GGUFModelLoadConfig)
+
+    # Check inference configs too
+    gpt_inf = GGUFModelInferenceConfig.get_default_config(GGUFModelName.GPT_OSS_20B)
+    assert isinstance(gpt_inf, GGUFModelInferenceConfig)
+
+    gemma_inf = GGUFModelInferenceConfig.get_default_config(GGUFModelName.GEMMA_3_27B_IT)
+    assert isinstance(gemma_inf, GGUFModelInferenceConfig)
+
+    qwen_inf = GGUFModelInferenceConfig.get_default_config(GGUFModelName.QWEN3_30B)
+    assert isinstance(qwen_inf, GGUFModelInferenceConfig)
 
 
 @patch("kaggle_map.llm.evaluator.load_llm_model")
@@ -107,6 +125,7 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
     # Assert: Verify that llm was called with OpenAI recommended parameters
     mock_llm.assert_called()
     call_args = mock_llm.call_args[1]
+    # GPT-OSS should use OpenAI recommended parameters from get_default_config
     assert call_args["temperature"] == 1.0, "GPT-OSS should use OpenAI recommended temperature of 1.0"
     assert call_args["top_p"] == 1.0, "GPT-OSS should use OpenAI recommended top_p of 1.0"
 
@@ -183,6 +202,7 @@ def test_gemma_uses_standard_parameters(  # noqa: PLR0913
     # Assert: Verify that llm was called with standard (non-OpenAI) parameters
     mock_llm.assert_called()
     call_args = mock_llm.call_args[1]
+    # GEMMA should use lower temperature from get_default_config
     assert call_args["temperature"] == 0.1, (
         "GEMMA should use lower temperature (0.1) for more deterministic predictions"
     )

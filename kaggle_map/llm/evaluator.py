@@ -17,13 +17,12 @@ from kaggle_map.core.models import EvaluationRow, Prediction
 from kaggle_map.dataloader import load_validation_data, stratified_sample
 from kaggle_map.llm.utils import build_prediction_prompt
 from kaggle_map.utils.gguf_model import (
-    GGUFModelLoadConfig,
+    GGUFModelInferenceConfig,
     GGUFModelName,
     GGUFModelQuantizationLevel,
     format_chat_prompt,
-    get_stop_tokens,
+    get_llm_predictions,
     load_llm_model,
-    parse_llm_response,
 )
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
@@ -36,38 +35,28 @@ MAX_RESPONSE_TOKENS = -1  # Unlimited generation within context window
 
 @dataclass
 class EvaluationConfig:
-    template_path: Path
     data_path: Path
     sample_ratio: float
     row_ids: list[int] | None
+    template_path: Path
+    model_name: GGUFModelName = GGUFModelName.GPT_OSS_20B
+    quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_L
 
 
 def save_evaluation_results_to_csv(
     evaluation_results: list[dict],
     output_dir: Path = Path("logs"),
 ) -> Path:
-    """Save evaluation results to CSV file.
-
-    Args:
-        evaluation_results: List of evaluation result dictionaries
-        output_dir: Directory to save the CSV file
-
-    Returns:
-        Path to the saved CSV file
-    """
     assert evaluation_results, "Cannot save empty evaluation results to CSV"
 
-    # Create logs directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = output_dir / f"llm_evaluation_{timestamp}.csv"
 
-    # Convert results to DataFrame
     df_data = []
     for result in evaluation_results:
-        # Convert predictions to string format
         predictions_str = " | ".join([str(pred) for pred in result["predictions"]])
 
         df_data.append(
@@ -92,20 +81,13 @@ def save_evaluation_results_to_csv(
 def display_evaluation_details(
     evaluation_results: list[dict],
 ) -> None:
-    """Display detailed evaluation results for each row.
-
-    Args:
-        evaluation_results: List of evaluation result dictionaries
-    """
     assert evaluation_results, "Cannot display empty evaluation results"
 
     console = Console()
 
-    # Configuration
     max_explanation_length = 80
     max_llm_labels_length = 100
 
-    # Create rich table
     table = Table(
         title="\n📊 Detailed Evaluation Results",
         show_header=True,
@@ -114,7 +96,6 @@ def display_evaluation_details(
         width=None,
     )
 
-    # Add columns
     table.add_column("Row ID", style="cyan", no_wrap=True)
     table.add_column("MC Answer", style="yellow", overflow="fold")
     table.add_column("Explanation", style="white", overflow="fold", max_width=max_explanation_length)
@@ -122,25 +103,19 @@ def display_evaluation_details(
     table.add_column("LLM Labels", style="dim", overflow="fold", max_width=max_llm_labels_length)
     table.add_column("MAP@3", style="red bold", justify="center")
 
-    # Add each row
     for result in evaluation_results:
-        # Truncate explanation if needed
         explanation = result["explanation"]
         if len(explanation) > max_explanation_length:
             explanation = explanation[: max_explanation_length - 3] + "..."
 
-        # Format LLM predictions
         llm_labels = " | ".join([str(pred) for pred in result["predictions"]])
         if len(llm_labels) > max_llm_labels_length:
             llm_labels = llm_labels[: max_llm_labels_length - 3] + "..."
 
-        # Format MAP@3 score
         score_str = f"{result['score']:.2f}"
 
-        # Combine category and misconception
         category_misconception = f"{result['category']}:{result['misconception']}"
 
-        # Add row
         table.add_row(
             str(result["row_id"]),
             result["mc_answer"],
@@ -150,7 +125,6 @@ def display_evaluation_details(
             score_str,
         )
 
-    # Display the table
     console.print(table)
     console.print(f"\nTotal rows evaluated: {len(evaluation_results)}")
     avg_score = sum(r["score"] for r in evaluation_results) / len(evaluation_results) if evaluation_results else 0
@@ -158,7 +132,6 @@ def display_evaluation_details(
 
 
 def _prepare_dataframe(validation_pairs: list) -> pd.DataFrame:
-    """Convert validation pairs to DataFrame."""
     data_rows = []
     for eval_row, ground_truth in validation_pairs:
         data_rows.append(
@@ -180,7 +153,6 @@ def _sample_dataframe(
     row_ids: list[int] | None,
     sample_ratio: float,
 ) -> pd.DataFrame:
-    """Sample DataFrame by row_ids or stratified sampling."""
     if row_ids:
         logger.info(f"Filtering data to specified row IDs: {row_ids}")
         sampled_df = df[df["row_id"].isin(row_ids)]
@@ -191,7 +163,6 @@ def _sample_dataframe(
         logger.info(f"Selected {len(sampled_df)} samples for evaluation")
         return pd.DataFrame(sampled_df)
 
-    # Perform stratified sampling
     logger.info(f"Sampling {sample_ratio:.1%} of data with stratification")
     sampled_df = stratified_sample(
         df,
@@ -204,10 +175,11 @@ def _sample_dataframe(
     return sampled_df
 
 
-def _evaluate_single_sample(
-    row: pd.Series, config: EvaluationConfig, llm: Llama, stop_tokens: list[str]
+def _evaluate(
+    row: pd.Series,
+    config: EvaluationConfig,
+    llm: Llama,
 ) -> tuple[float, dict[str, Any]]:
-    """Evaluate a single sample and return score and result dictionary."""
     eval_row = EvaluationRow(
         row_id=int(row["row_id"]),
         question_id=int(row["QuestionId"]),
@@ -222,34 +194,15 @@ def _evaluate_single_sample(
     )
 
     user_prompt = build_prediction_prompt(eval_row, config.template_path)
-    logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
     full_prompt = format_chat_prompt(config.model_name, user_prompt)
+    logger.info(f"Prompt for row {eval_row.row_id}:\n{user_prompt}\n")
 
-    is_gpt_oss = config.model_name == GGUFModelName.GPT_OSS_20B
-    temperature = 1.0 if is_gpt_oss else 0.1
-    top_p = 1.0 if is_gpt_oss else 0.95
-
-    llm_kwargs: dict[str, Any] = {
-        "temperature": temperature,
-        "top_p": top_p,
-        "stop": stop_tokens,
-    }
-
-    response = llm(full_prompt, **llm_kwargs)
-    response_text = response["choices"][0]["text"]  # type: ignore[index]
-    logger.debug(f"LLM response for row {eval_row.row_id}:\n{response_text}\n")
-
-    result = parse_llm_response(response_text, Prediction.parse)
-    predictions = result.predictions
-
-    if result.thinking_trace:
-        logger.info(f"LLM Thinking Trace for row {eval_row.row_id}:\n{result.thinking_trace}")
-
+    predictions = get_llm_predictions(llm, full_prompt, config.model_name)
     logger.debug(f"Predictions for row {eval_row.row_id}: {predictions}")
 
     score = calculate_map_at_3(ground_truth, predictions)
 
-    result_dict = {
+    return score, {
         "row_id": eval_row.row_id,
         "mc_answer": eval_row.mc_answer,
         "explanation": eval_row.student_explanation,
@@ -259,11 +212,8 @@ def _evaluate_single_sample(
         "score": score,
     }
 
-    return score, result_dict
-
 
 def _finalize_results(scores: list[float], evaluation_results: list[dict[str, Any]], start_time: float) -> float:
-    """Calculate final metrics and display results."""
     avg_score = sum(scores) / len(scores) if scores else 0.0
     elapsed_time = time.time() - start_time
 
@@ -300,19 +250,17 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
     df = _prepare_dataframe(validation_pairs)
     sampled_df = _sample_dataframe(df, config.row_ids, config.sample_ratio)
 
-    # Setup model using config
-    model_config = GGUFModelLoadConfig.GPT_OSS_20B
-    llm = load_llm_model(model_config)
+    logger.info(f"Loading model: {config.model_name}")
+    llm = load_llm_model(config.model_name)
 
-    # Evaluate each sample
+    inference_config = GGUFModelInferenceConfig.get_default_config(config.model_name)
+    logger.info(f"Max tokens: {inference_config.max_tokens}, Temperature: {inference_config.temperature}")
+
     scores = []
-    stop_tokens = get_stop_tokens(config.model_name)
     evaluation_results = []
 
-    # Track timing
     start_time = time.time()
 
-    # Create progress bar
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -331,11 +279,10 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
         )
 
         for _row_number, (_, row) in enumerate(sampled_df.iterrows()):
-            score, result_dict = _evaluate_single_sample(row, config, llm, stop_tokens)
+            score, result_dict = _evaluate(row, config, llm)
             scores.append(score)
             evaluation_results.append(result_dict)
 
-            # Update progress bar with latest metrics
             avg_score = sum(scores) / len(scores) if scores else 0.0
             progress.update(
                 task,
@@ -348,8 +295,6 @@ def evaluate_with_llm(config: EvaluationConfig) -> float:
 
 
 if __name__ == "__main__":
-    """Run evaluation with default settings."""
-
     import click
 
     @click.command()
@@ -378,17 +323,13 @@ if __name__ == "__main__":
         help="Custom prompt template path",
     )
     def main(sample_ratio: float, row_ids: str | None, data_path: Path, template_path: Path) -> None:
-        """Evaluate LLM predictions on validation data."""
-        # Configure logging with DEBUG level to see LLM responses
         configure_logger(__name__, console_level="DEBUG")
 
-        # Parse row_ids if provided
         row_ids_list = None
         if row_ids:
             row_ids_list = [int(rid.strip()) for rid in row_ids.split(",")]
             logger.info(f"Will evaluate specific row IDs: {row_ids_list}")
 
-        # Run evaluation
         config = EvaluationConfig(
             template_path=template_path,
             data_path=data_path,

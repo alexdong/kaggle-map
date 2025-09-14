@@ -1,5 +1,18 @@
 """Utilities for managing GGUF quantized LLM models with llama-cpp-python.
 
+  Prompt
+      ↓
+  GGUFModelName (Identity)
+      ↓
+      ├→ GGUFModelLoadConfig.get_default_config(name) → Load Parameters
+      ├→ GGUFModelInferenceConfig.get_default_config(name) → Inference Parameters
+      └→ download_model(name, quantization) → Physical File
+             ↓
+         load_llm_model(name) → Llama Instance
+             ↓
+         inference(llm, inference_config) → Results
+
+
 https://huggingface.co/unsloth/gemma-3-27b-it-GGUF
 https://huggingface.co/unsloth/gpt-oss-20b-GGUF
 https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking
@@ -40,6 +53,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
+from kaggle_map.core.models import Prediction
 from kaggle_map.utils.logger_config import configure_logger
 
 # Configure module-specific logging
@@ -149,11 +163,6 @@ class GGUFModelLoadConfig:
     n_batch: int  # Batch size for prompt processing
     n_gpu_layers: int  # GPU layers (-1 for all)
     n_threads: int  # CPU threads for inference
-
-    @property
-    def model_filename(self) -> str:
-        """Get the GGUF filename for this configuration."""
-        return f"{self.model_name.value}-{self.quantization.value}.gguf"
 
     @classmethod
     def get_default_config(cls, model_name: GGUFModelName) -> "GGUFModelLoadConfig":
@@ -341,10 +350,11 @@ def download_model(model_name: GGUFModelName, quantization: GGUFModelQuantizatio
     return model_path
 
 
-def load_llm_model(config: GGUFModelLoadConfig) -> Llama:
-    """Load a GGUF model with automatic cleanup via context manager."""
-    model_path = download_model(config.model_name, config.quantization)
-    logger.info(f"Loading GGUF model from {model_path}")
+def load_llm_model(model_name: GGUFModelName) -> Llama:
+    config = GGUFModelLoadConfig.get_default_config(model_name)
+    model_path = download_model(model_name, config.quantization)
+    logger.info(f"Loading GGUF model {model_name.value} from {model_path}")
+    logger.info(f"Using config: n_ctx={config.n_ctx}, quantization={config.quantization.value}")
     assert model_path.exists(), f"Model file not found after download: {model_path}"
 
     return Llama(
@@ -380,14 +390,6 @@ def _extract_ranking_from_analysis(thinking_trace: str) -> str | None:
 
 
 def _parse_harmony_format(response: str) -> tuple[str | None, str]:
-    """Parse GPT-OSS Harmony format response.
-
-    Args:
-        response: Raw response with Harmony format tags
-
-    Returns:
-        Tuple of (thinking_trace, clean_response_for_predictions)
-    """
     thinking_trace = None
     clean_response = response
 
@@ -424,14 +426,6 @@ def _parse_harmony_format(response: str) -> tuple[str | None, str]:
 
 
 def _parse_think_tags(response: str) -> tuple[str | None, str]:
-    """Parse standard <think>...</think> format response.
-
-    Args:
-        response: Raw response with think tags
-
-    Returns:
-        Tuple of (thinking_trace, clean_response_for_predictions)
-    """
     thinking_pattern = r"<think>(.*?)</think>"
     thinking_match = re.search(thinking_pattern, response, re.DOTALL)
 
@@ -446,19 +440,6 @@ def _parse_think_tags(response: str) -> tuple[str | None, str]:
 
 
 def parse_llm_response(response: str, parse_predictions_fn: Callable[[str], list] | None = None) -> ParseResult:
-    """Parse LLM response to extract predictions and thinking trace.
-
-    Handles both standard <think>...</think> tags and GPT-OSS Harmony format
-    with <|channel|>analysis<|message|> and <|channel|>final<|message|> tags.
-
-    Args:
-        response: Raw LLM response containing predictions and possibly thinking tags
-        parse_predictions_fn: Function to parse predictions from cleaned response.
-                             If None, returns empty list.
-
-    Returns:
-        ParseResult with predictions and optional thinking trace
-    """
     # Check for GPT-OSS Harmony format first
     if "<|channel|>" in response:
         thinking_trace, clean_response = _parse_harmony_format(response)
@@ -470,3 +451,26 @@ def parse_llm_response(response: str, parse_predictions_fn: Callable[[str], list
     predictions = parse_predictions_fn(clean_response) if parse_predictions_fn else []
 
     return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
+
+
+def get_llm_predictions(llm: Llama, prompt: str, model_name: GGUFModelName) -> list[Prediction]:
+    inference_config = GGUFModelInferenceConfig.get_default_config(model_name)
+
+    response = llm(
+        prompt,
+        temperature=inference_config.temperature,
+        top_p=inference_config.top_p,
+        max_tokens=inference_config.max_tokens,
+        repeat_penalty=inference_config.repeat_penalty,
+        stop=inference_config.stop_words,
+    )
+
+    response_text = response["choices"][0]["text"]  # type: ignore[index]
+    logger.debug(f"LLM response:\n{response_text}\n")
+
+    result = parse_llm_response(response_text, Prediction.parse)
+
+    if result.thinking_trace:
+        logger.info(f"LLM Thinking Trace:\n{result.thinking_trace}")
+
+    return result.predictions

@@ -13,7 +13,7 @@ from llama_cpp import Llama
 from loguru import logger
 
 from kaggle_map.core.models import EvaluationRow, Prediction
-from kaggle_map.utils.gguf_model import LLMResponse, PromptTemplate
+from kaggle_map.utils.gguf_model import GGUFModelInferenceConfig, LLMResponse, PromptTemplate
 from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
@@ -130,17 +130,21 @@ if __name__ == "__main__":
     from kaggle_map.core.dataset import extract_correct_answers
     from kaggle_map.core.models import Category, EvaluationRow, Prediction
     from kaggle_map.utils.gguf_model import (
-        GGUFModelLoadConfig,
+        GGUFModelName,
+        format_chat_prompt,
         load_llm_model,
     )
 
     logger.info("Testing rerank_predictions function")
 
-    # Use specific model configuration for testing
-    load_config = GGUFModelLoadConfig.GPT_OSS_20B
+    # Use specific model for testing
+    model_name = GGUFModelName.GPT_OSS_20B
+    inference_config = GGUFModelInferenceConfig.get_default_config(model_name)
 
-    logger.info(f"Loading model: {load_config.model_name} with {load_config.quantization} quantization")
-    llm = load_llm_model(load_config)
+    logger.info(
+        f"Inference settings: temperature={inference_config.temperature}, max_tokens={inference_config.max_tokens}"
+    )
+    llm = load_llm_model(model_name)
     logger.success("Model loaded successfully")
 
     # Load real data from train.csv
@@ -202,19 +206,18 @@ if __name__ == "__main__":
 
     # Perform reranking
     logger.info("\nPerforming reranking...")
-    from kaggle_map.utils.gguf_model import format_chat_prompt
 
     # Build prompt and wrap with chat format (like in benchmark.py)
     base_prompt = build_reranking_prompt(request)
-    full_prompt = format_chat_prompt(load_config.model_name, base_prompt)
+    full_prompt = format_chat_prompt(model_name, base_prompt)
 
-    # Call LLM directly to see what response we get
     response = llm(
         full_prompt,
-        max_tokens=50,
-        temperature=0.01,
-        stop=["\n", ".", ";"],
-        echo=False,
+        temperature=inference_config.temperature,
+        top_p=inference_config.top_p,
+        max_tokens=inference_config.max_tokens,
+        repeat_penalty=inference_config.repeat_penalty,
+        stop=inference_config.stop_words,
     )
     response_text = response["choices"][0]["text"].strip()  # type: ignore
     logger.info(f"Raw LLM response: {response_text!r}")
