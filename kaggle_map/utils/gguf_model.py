@@ -178,7 +178,7 @@ class GGUFModelLoadConfig:
             case GGUFModelName.GPT_OSS_20B:
                 return GGUFModelLoadConfig(
                     quantization=GGUFModelQuantizationLevel.Q2_K_L,
-                    n_ctx=32768,
+                    n_ctx=16384,
                     n_batch=512,
                     n_gpu_layers=-1,
                     n_threads=8,
@@ -206,29 +206,66 @@ class GGUFModelInferenceConfig:
 
     @classmethod
     def get_default_config(cls, model_name: GGUFModelName) -> "GGUFModelInferenceConfig":
+        """
+        Get default inference configuration for a model.
+
+        IMPORTANT: max_tokens vs n_ctx relationship
+        ============================================
+        - n_ctx (in GGUFModelLoadConfig): Total context window size (input + output)
+        - max_tokens (here): Maximum NEW tokens to generate
+
+        The relationship must satisfy: len(input_prompt) + max_tokens <= n_ctx
+
+        Typical prompt sizes for Kaggle MAP competition:
+        - System prompt: ~500-1000 tokens
+        - Question + choices: ~200-500 tokens
+        - Few-shot examples: ~2000-4000 tokens per example
+        - Total input: ~3000-8000 tokens (depending on few-shot count)
+
+        Therefore, max_tokens should leave sufficient room for input:
+        - Conservative: max_tokens = n_ctx * 0.5 (50% for input, 50% for output)
+        - Balanced: max_tokens = n_ctx * 0.6 (40% for input, 60% for output)
+        - Aggressive: max_tokens = n_ctx * 0.75 (25% for input, 75% for output)
+
+        Current settings:
+        - QWEN3_30B: n_ctx=32768, max_tokens=16384 (50% - good for long prompts)
+        - GPT_OSS_20B: n_ctx=16384, max_tokens=10240 (62.5% - balanced)
+        - GEMMA_3_27B_IT: n_ctx=8192, max_tokens=4096 (50% - conservative)
+        """
         match model_name:
             case GGUFModelName.QWEN3_30B | GGUFModelName.QWEN3_30B_Thinking:
+                # n_ctx = 32768 (from GGUFModelLoadConfig)
+                # max_tokens = 16384 (50% of context)
+                # Leaves 16384 tokens for input prompt (good for many few-shot examples)
                 return GGUFModelInferenceConfig(
                     temperature=0.1,
                     top_p=0.95,
                     stop_words=["<|im_end|>"],
-                    max_tokens=16384,
+                    max_tokens=16384,  # 32768 * 0.5 = 16384
                     repeat_penalty=1.2,
                 )
             case GGUFModelName.GPT_OSS_20B:
+                # n_ctx = 16384 (from GGUFModelLoadConfig, optimized for RTX 2000 Ada)
+                # Previous max_tokens = 16384 (100% - NO ROOM FOR INPUT!)
+                # New max_tokens = 10240 (62.5% of context)
+                # Leaves ~6144 tokens for input prompt (enough for 1-2 few-shot examples)
                 return GGUFModelInferenceConfig(
                     temperature=1.0,
                     top_p=1.0,
                     stop_words=["<|end|>"],
-                    max_tokens=16384,
+                    max_tokens=10240,  # 16384 * 0.625 = 10240
                     repeat_penalty=1.2,
                 )
             case GGUFModelName.GEMMA_3_27B_IT:
+                # n_ctx = 8192 (from GGUFModelLoadConfig)
+                # Previous max_tokens = 8192 (100% - NO ROOM FOR INPUT!)
+                # New max_tokens = 4096 (50% of context)
+                # Leaves 4096 tokens for input prompt (minimal few-shot capability)
                 return GGUFModelInferenceConfig(
                     temperature=0.1,
                     top_p=0.95,
                     stop_words=["<end_of_turn>", "\n"],
-                    max_tokens=8192,
+                    max_tokens=4096,  # 8192 * 0.5 = 4096
                     repeat_penalty=1.2,
                 )
             case _:
