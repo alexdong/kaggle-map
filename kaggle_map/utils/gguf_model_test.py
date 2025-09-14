@@ -429,28 +429,25 @@ True_Correct:NA"""
     assert result.predictions == []
 
 
-def test_static_configs_exist() -> None:
-    """Test that static configs exist for common models."""
-    # Test GPT-OSS static config
-    config = GGUFModelLoadConfig.GPT_OSS_20B
-    assert config.model_name == GGUFModelName.GPT_OSS_20B
+def test_default_configs_via_get_method() -> None:
+    """Test that default configs are retrieved correctly via get_default_config."""
+    # Test GPT-OSS default config
+    config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GPT_OSS_20B)
     assert config.quantization == GGUFModelQuantizationLevel.Q2_K_L
-    assert config.n_ctx == 20480
+    assert config.n_ctx == 32768
     assert config.n_batch == 512
     assert config.n_gpu_layers == -1
     assert config.n_threads == 8
 
-    # Test GEMMA static config
-    config = GGUFModelLoadConfig.GEMMA_3_27B_IT
-    assert config.model_name == GGUFModelName.GEMMA_3_27B_IT
+    # Test GEMMA default config
+    config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GEMMA_3_27B_IT)
     assert config.quantization == GGUFModelQuantizationLevel.Q2_K_L
     assert config.n_ctx == 8192
 
-    # Test Thinking model static config
-    config = GGUFModelLoadConfig.QWEN_30B
-    assert config.model_name == GGUFModelName.QWEN3_30B
+    # Test QWEN default config
+    config = GGUFModelLoadConfig.get_default_config(GGUFModelName.QWEN3_30B)
     assert config.quantization == GGUFModelQuantizationLevel.Q4_K_XL
-    assert config.n_ctx == 20480
+    assert config.n_ctx == 32768
 
 
 if __name__ == "__main__":
