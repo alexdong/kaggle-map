@@ -7,6 +7,9 @@ from kaggle_map.core.models import Category, Prediction
 
 def levenshtein_distance(s1: str, s2: str) -> int:
     """Calculate Levenshtein distance between two strings."""
+    assert isinstance(s1, str), f"s1 must be string, got {type(s1)}"
+    assert isinstance(s2, str), f"s2 must be string, got {type(s2)}"
+
     if len(s1) < len(s2):
         return levenshtein_distance(s2, s1)
 
@@ -29,9 +32,19 @@ def levenshtein_distance(s1: str, s2: str) -> int:
 
 def similarity_ratio(s1: str, s2: str) -> float:
     """Calculate similarity ratio between two strings (0.0 to 1.0)."""
+    assert isinstance(s1, str), f"s1 must be string, got {type(s1)}"
+    assert isinstance(s2, str), f"s2 must be string, got {type(s2)}"
+
     distance = levenshtein_distance(s1.lower(), s2.lower())
     max_len = max(len(s1), len(s2))
-    return 1.0 - (distance / max_len) if max_len > 0 else 1.0
+
+    # Both strings empty - they're identical
+    if max_len == 0:
+        return 1.0
+
+    ratio = 1.0 - (distance / max_len)
+    assert 0.0 <= ratio <= 1.0, f"Similarity ratio {ratio} out of valid range [0.0, 1.0]"
+    return ratio
 
 
 def find_best_category_match(text: str, threshold: float = 0.7) -> Category | None:
@@ -44,6 +57,9 @@ def find_best_category_match(text: str, threshold: float = 0.7) -> Category | No
     Returns:
         Best matching Category or None if no good match found
     """
+    assert isinstance(text, str), f"text must be string, got {type(text)}"
+    assert 0.0 <= threshold <= 1.0, f"threshold must be between 0.0 and 1.0, got {threshold}"
+    assert text.strip(), "text cannot be empty or whitespace-only"
     best_category = None
     best_score = 0.0
 
@@ -68,6 +84,12 @@ def parse_single_prediction_robust(token: str) -> Prediction | None:
     Returns:
         Parsed Prediction or None if unparseable
     """
+    assert isinstance(token, str), f"token must be string, got {type(token)}"
+
+    token = token.strip()
+    if not token:
+        logger.debug("Cannot parse empty token")
+        return None
     # Split on colon if present
     if ":" in token:
         category_part, misconception_part = token.split(":", 1)
@@ -92,7 +114,32 @@ def parse_single_prediction_robust(token: str) -> Prediction | None:
     return None
 
 
-def parse_predictions_robust(response: str, max_predictions: int = 3) -> list[Prediction]:
+def extract_tokens_from_response(response: str) -> list[str]:
+    """Extract prediction tokens from LLM response, handling various formats."""
+    prediction_line = response.strip()
+    lines = prediction_line.split("\n")
+
+    # Newline-separated format (3 lines with categories)
+    if len(lines) >= 3 and all(":" in line or any(cat.value in line for cat in Category) for line in lines[:3]):
+        return [line.strip() for line in lines if line.strip()]
+
+    # Space-separated format
+    if " " in prediction_line and ":" in prediction_line:
+        return prediction_line.split()
+
+    # Comma-separated format
+    if "," in prediction_line:
+        return [t.strip() for t in prediction_line.split(",")]
+
+    # Tab-separated format
+    if "\t" in prediction_line:
+        return prediction_line.split("\t")
+
+    # Default: split on whitespace
+    return prediction_line.split()
+
+
+def parse_predictions_with_fuzzy_matching(response: str, max_predictions: int = 3) -> list[Prediction]:
     """Parse LLM response to extract predictions with typo tolerance.
 
     Expected format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
@@ -110,33 +157,12 @@ def parse_predictions_robust(response: str, max_predictions: int = 3) -> list[Pr
     Returns:
         List of exactly max_predictions Prediction objects (padded with defaults)
     """
+    assert isinstance(response, str), f"response must be string, got {type(response)}"
+    assert max_predictions > 0, f"max_predictions must be positive, got {max_predictions}"
+    assert max_predictions <= 10, f"max_predictions seems unreasonable: {max_predictions}"
     default_prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
+    tokens = extract_tokens_from_response(response)
 
-    # Extract the main prediction line (first non-empty line with content)
-    prediction_line = response.strip()
-    if "\n" in prediction_line:
-        # If multiple lines, take the first one that looks like predictions
-        for line in prediction_line.split("\n"):
-            if line.strip() and any(cat.value.split("_")[0].lower() in line.lower() for cat in Category):
-                prediction_line = line.strip()
-                break
-
-    # Try multiple separators
-    tokens = []
-    if " " in prediction_line and ":" in prediction_line:
-        # Standard space-separated format
-        tokens = prediction_line.split()
-    elif "," in prediction_line:
-        # Comma-separated format
-        tokens = [t.strip() for t in prediction_line.split(",")]
-    elif "\t" in prediction_line:
-        # Tab-separated format
-        tokens = prediction_line.split("\t")
-    else:
-        # Last resort - just split on whitespace
-        tokens = prediction_line.split()
-
-    # Parse tokens into predictions
     predictions = []
     for token in tokens:
         if len(predictions) >= max_predictions:
@@ -150,4 +176,8 @@ def parse_predictions_robust(response: str, max_predictions: int = 3) -> list[Pr
     while len(predictions) < max_predictions:
         predictions.append(default_prediction)
 
-    return predictions[:max_predictions]
+    result = predictions[:max_predictions]
+    assert len(result) == max_predictions, f"Expected {max_predictions} predictions, got {len(result)}"
+    assert all(isinstance(p, Prediction) for p in result), "All results must be Prediction objects"
+
+    return result
