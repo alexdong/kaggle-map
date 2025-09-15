@@ -178,7 +178,7 @@ class GGUFModelLoadConfig:
             case GGUFModelName.GPT_OSS_20B:
                 return GGUFModelLoadConfig(
                     quantization=GGUFModelQuantizationLevel.Q2_K_L,
-                    n_ctx=16384,
+                    n_ctx=1024 * 20,
                     n_batch=512,
                     n_gpu_layers=-1,
                     n_threads=8,
@@ -234,9 +234,6 @@ class GGUFModelInferenceConfig:
         """
         match model_name:
             case GGUFModelName.QWEN3_30B | GGUFModelName.QWEN3_30B_Thinking:
-                # n_ctx = 32768 (from GGUFModelLoadConfig)
-                # max_tokens = 16384 (50% of context)
-                # Leaves 16384 tokens for input prompt (good for many few-shot examples)
                 return GGUFModelInferenceConfig(
                     temperature=0.1,
                     top_p=0.95,
@@ -245,22 +242,14 @@ class GGUFModelInferenceConfig:
                     repeat_penalty=1.2,
                 )
             case GGUFModelName.GPT_OSS_20B:
-                # n_ctx = 16384 (from GGUFModelLoadConfig, optimized for RTX 2000 Ada)
-                # Previous max_tokens = 16384 (100% - NO ROOM FOR INPUT!)
-                # New max_tokens = 10240 (62.5% of context)
-                # Leaves ~6144 tokens for input prompt (enough for 1-2 few-shot examples)
                 return GGUFModelInferenceConfig(
                     temperature=1.0,
                     top_p=1.0,
                     stop_words=["<|end|>"],
-                    max_tokens=10240,  # 16384 * 0.625 = 10240
+                    max_tokens=1024 * 16,
                     repeat_penalty=1.2,
                 )
             case GGUFModelName.GEMMA_3_27B_IT:
-                # n_ctx = 8192 (from GGUFModelLoadConfig)
-                # Previous max_tokens = 8192 (100% - NO ROOM FOR INPUT!)
-                # New max_tokens = 4096 (50% of context)
-                # Leaves 4096 tokens for input prompt (minimal few-shot capability)
                 return GGUFModelInferenceConfig(
                     temperature=0.1,
                     top_p=0.95,
