@@ -88,7 +88,7 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
         ),
         TunableParameters.EMBEDDING_STRATEGY: lambda t: EmbeddingStrategy(
             t.suggest_categorical(
-                "embedding_strategy", [EmbeddingStrategy.DOUBLE_BLIND.value, EmbeddingStrategy.SEMANTIC.value]
+                "embedding_strategy", [EmbeddingStrategy.GOAL_DRIVEN.value]
             )
         ),
     }

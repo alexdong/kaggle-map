@@ -243,7 +243,7 @@ class GGUFModelInferenceConfig:
                 )
             case GGUFModelName.GPT_OSS_20B:
                 return GGUFModelInferenceConfig(
-                    temperature=1.0,
+                    temperature=0.1,
                     top_p=1.0,
                     stop_words=["<|end|>"],
                     max_tokens=1024 * 16,

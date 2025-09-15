@@ -294,19 +294,18 @@ class EmbeddingModel(Enum):
 class EmbeddingStrategy(Enum):
     """Strategies for computing embeddings from evaluation rows."""
 
-    DOUBLE_BLIND = "double_blind"
-    SEMANTIC = "semantic"
+    GOAL_DRIVEN = "goal_driven"
 
     @property
     def dimension(self) -> int:
         """Return the output dimension for this embedding strategy."""
-        return 8192 if self == EmbeddingStrategy.DOUBLE_BLIND else 4096
+        return 8192  # GOAL_DRIVEN uses single embedding (QWEN dimension)
 
     @classmethod
     def from_string(cls, value: str | None) -> "EmbeddingStrategy":
-        """Convert string to enum, with default to DOUBLE_BLIND."""
+        """Convert string to enum, with default to GOAL_DRIVEN."""
         if value is None:
-            return cls.DOUBLE_BLIND
+            return cls.GOAL_DRIVEN
         return cls(value)
 
 
@@ -368,8 +367,8 @@ class TrainingConfig(BaseModel):
     train_split: float = 0.7
 
     # Architecture and embedding
-    embedding_model: EmbeddingModel = EmbeddingModel.GEMMA
-    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
+    embedding_model: EmbeddingModel = EmbeddingModel.QWEN
+    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.GOAL_DRIVEN
     architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
 
     # File paths

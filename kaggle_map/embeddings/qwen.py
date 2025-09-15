@@ -27,7 +27,11 @@ Note: SentenceTransformer could technically be used but would be suboptimal for 
 large model due to memory constraints and inconsistency with project architecture.
 """
 
+import os
 from pathlib import Path
+
+# Suppress verbose output from llama-cpp
+os.environ["LLAMA_CPP_LOG_LEVEL"] = "ERROR"
 
 import torch
 from huggingface_hub import hf_hub_download

@@ -3,18 +3,11 @@
 This module provides functions to compute embeddings using the Qwen3-8B model
 with Q8_0 quantization for efficient processing.
 
-  1. Double Blind Embedding Strategy (compute_double_blind_strategy_embeddings)
-
-  - Creates two separate embeddings:
-    - Embedding 1: (question, correct_answer) - 4096 dims
-    - Embedding 2: (mc_answer, student_explanation) - 4096 dims
-  - Returns concatenated 8192-dimensional torch.Tensor
-
-  2. Semantic Injection Embedding Strategy (compute_semantic_strategy_embeddings)
+  1. Goal-Driven Embedding Strategy (compute_goal_driven_strategy_embeddings)
 
   - Creates one unified embedding containing all components:
     - (question, correct_answer, mc_answer, student_explanation)
-  - Returns 4096-dimensional torch.Tensor
+  - Returns 8192-dimensional torch.Tensor for QWEN, 768-dimensional for GEMMA
 """
 
 import torch
@@ -25,8 +18,9 @@ from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
 
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
-    base_dimension = 8192 if model == EmbeddingModel.QWEN else 768
-    return base_dimension * 2 if strategy == EmbeddingStrategy.DOUBLE_BLIND else base_dimension
+    # Both GOAL_DRIVEN and SEMANTIC use single embedding
+    _ = strategy  # Currently all strategies use single embedding dimension
+    return 8192 if model == EmbeddingModel.QWEN else 768
 
 
 def get_model(model: EmbeddingModel) -> "QwenEmbeddingModel | GemmaEmbeddingModel":
@@ -41,7 +35,8 @@ def _encode_single(
     """Encode a single evaluation row."""
     assert row.correct_answer is not None, "Correct answer is required for embeddings"
 
-    if strategy == EmbeddingStrategy.SEMANTIC:
+    # GOAL_DRIVEN uses unified approach
+    if strategy == EmbeddingStrategy.GOAL_DRIVEN:
         unified_text = (
             f"Question: {row.question_text}\n"
             f"Correct Answer: {row.correct_answer}\n"
@@ -50,12 +45,8 @@ def _encode_single(
         )
         return model_instance.encode(unified_text)
 
-    # DOUBLE_BLIND
-    question_correct_text = f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}"
-    answer_explanation_text = f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}"
-    question_correct_embedding = model_instance.encode(question_correct_text)
-    answer_explanation_embedding = model_instance.encode(answer_explanation_text)
-    return torch.cat([question_correct_embedding, answer_explanation_embedding])
+    msg = f"Unsupported strategy: {strategy}"
+    raise ValueError(msg)
 
 
 def _encode_batch(
@@ -63,16 +54,16 @@ def _encode_batch(
 ) -> torch.Tensor:
     """Encode a batch of evaluation rows."""
     if not rows:
-        # Use GEMMA as default for empty batches to match test expectations
-        expected_dim = get_input_embeddings_dimension(strategy, EmbeddingModel.GEMMA)
+        # Use QWEN as default for empty batches
+        expected_dim = get_input_embeddings_dimension(strategy, EmbeddingModel.QWEN)
         return torch.zeros(0, expected_dim)
 
-    # Validate all rows have correct_answer for DOUBLE_BLIND
-    if strategy == EmbeddingStrategy.DOUBLE_BLIND:
-        for row in rows:
-            assert row.correct_answer is not None, "Correct answer is required for double blind embeddings"
+    # Validate all rows have correct_answer
+    for row in rows:
+        assert row.correct_answer is not None, "Correct answer is required for embeddings"
 
-    if strategy == EmbeddingStrategy.SEMANTIC:
+    # GOAL_DRIVEN uses unified approach
+    if strategy == EmbeddingStrategy.GOAL_DRIVEN:
         texts = [
             f"Question: {row.question_text}\n"
             f"Correct Answer: {row.correct_answer}\n"
@@ -82,14 +73,8 @@ def _encode_batch(
         ]
         return model_instance.encode(texts)
 
-    # DOUBLE_BLIND
-    question_texts = [f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}" for row in rows]
-    answer_texts = [f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}" for row in rows]
-
-    question_embeddings = model_instance.encode(question_texts)
-    answer_embeddings = model_instance.encode(answer_texts)
-
-    return torch.cat([question_embeddings, answer_embeddings], dim=1)
+    msg = f"Unsupported strategy: {strategy}"
+    raise ValueError(msg)
 
 
 def encode(
