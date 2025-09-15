@@ -234,6 +234,7 @@ def test_evaluate_with_compatible_model(mock_embedder, sample_training_csv):
     ("embedding_model", "embedding_strategy", "expected_input_dim"),
     [
         (EmbeddingModel.QWEN, EmbeddingStrategy.GOAL_DRIVEN, 8224),  # 8192 + 32
+        (EmbeddingModel.QWEN, EmbeddingStrategy.DOUBLE_BLIND, 16416),  # 16384 + 32
     ],
 )
 def test_model_adapts_to_embedding_dimensions(

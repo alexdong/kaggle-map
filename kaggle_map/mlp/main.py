@@ -114,7 +114,7 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
     Returns:
         Trained QuestionSpecificMLP model
     """
-    strategy = config.embedding_strategy
+    strategy = config.embedding_strategy if config else EmbeddingStrategy.GOAL_DRIVEN
 
     device = get_device()
     logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
@@ -213,9 +213,7 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
 
 
 def predict(
-    model: QuestionSpecificMLP,
-    evaluation_row: EvaluationRow,
-    config: TrainingConfig | None = None
+    model: QuestionSpecificMLP, evaluation_row: EvaluationRow, config: TrainingConfig | None = None
 ) -> SubmissionRow:
     """Single-row prediction interface delegating to efficient batch processing.
 
@@ -305,7 +303,9 @@ def _process_single_prediction(
     predictions.extend([default] * (MAX_PREDICTIONS - len(predictions)))
 
     # Postconditions - verify output contract
-    assert len(predictions) >= MAX_PREDICTIONS, f"Expected at least {MAX_PREDICTIONS} predictions, got {len(predictions)}"
+    assert len(predictions) >= MAX_PREDICTIONS, (
+        f"Expected at least {MAX_PREDICTIONS} predictions, got {len(predictions)}"
+    )
     assert all(pred is not None for pred in predictions), "Found None predictions in result"
 
     result = SubmissionRow(row_id=eval_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
@@ -315,9 +315,7 @@ def _process_single_prediction(
 
 
 def predict_batch(
-    model: QuestionSpecificMLP,
-    evaluation_rows: list[EvaluationRow],
-    config: TrainingConfig | None = None
+    model: QuestionSpecificMLP, evaluation_rows: list[EvaluationRow], config: TrainingConfig | None = None
 ) -> list[SubmissionRow]:
     """Batch prediction optimizing expensive embedding computation.
 
@@ -370,7 +368,9 @@ def predict_batch(
 
     # Validate embeddings integrity
     assert embeddings is not None, "Encoding returned None embeddings"
-    assert embeddings.size(0) == len(eval_rows_with_answers), f"Embedding count mismatch: got {embeddings.size(0)}, expected {len(eval_rows_with_answers)}"
+    assert embeddings.size(0) == len(eval_rows_with_answers), (
+        f"Embedding count mismatch: got {embeddings.size(0)}, expected {len(eval_rows_with_answers)}"
+    )
     assert embeddings.dim() == 2, f"Expected 2D embeddings, got {embeddings.dim()}D"
 
     # Ensure embeddings are on CPU for numpy conversion if needed
@@ -385,9 +385,7 @@ def predict_batch(
     with torch.no_grad():
         for i, eval_row in enumerate(evaluation_rows):
             embedding_tensor = embeddings[i].unsqueeze(0).to(device)
-            submission_row = _process_single_prediction(
-                model, eval_row, embedding_tensor, correct_answers, device
-            )
+            submission_row = _process_single_prediction(model, eval_row, embedding_tensor, correct_answers, device)
             submission_rows.append(submission_row)
 
     predict_time = time.time() - predict_start
@@ -400,9 +398,7 @@ def predict_batch(
 
 
 def evaluate(
-    model: QuestionSpecificMLP,
-    test_data: list[TrainingRow],
-    config: TrainingConfig | None = None
+    model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig | None = None
 ) -> dict[str, float]:
     """Calculate MAP@3 score by comparing predictions to ground truth.
 
@@ -499,9 +495,9 @@ def save(model: QuestionSpecificMLP, filepath: Path, config: TrainingConfig | No
             "dropout": config.dropout if config else 0.3,
             "activation": config.activation.value if config else ActivationType.GELU.value,
             "embedding_model": config.embedding_model.value if config else EmbeddingModel.QWEN.value,
-            "embedding_strategy": config.embedding_strategy.value if config else EmbeddingStrategy.GOAL_DRIVEN.value,
+            "embedding_strategy": config.embedding_strategy.value if config and hasattr(config, 'embedding_strategy') else "goal_driven",
         },
-        "question_predictions": question_predictions
+        "question_predictions": question_predictions,
     }
     torch.save(save_dict, filepath)
 
@@ -587,10 +583,11 @@ def load(filepath: Path) -> tuple[QuestionSpecificMLP, TrainingConfig | None]:
             dropout=config_dict.get("dropout", 0.3),
             activation=ActivationType(config_dict.get("activation", "gelu")),
             embedding_model=EmbeddingModel(config_dict.get("embedding_model", "qwen")),
-            # Handle backward compatibility: double_blind -> goal_driven
+            # Handle backward compatibility: semantic -> goal_driven
             embedding_strategy=EmbeddingStrategy(
-                "goal_driven" if config_dict.get("embedding_strategy") == "double_blind"
-                else config_dict.get("embedding_strategy", "goal_driven")
+                "goal_driven"
+                if config_dict.get("embedding_strategy") == "semantic"
+                else config_dict.get("embedding_strategy", "double_blind")
             ),
         )
 
@@ -695,15 +692,19 @@ def handle_predict(args: argparse.Namespace) -> None:
     df = pd.read_csv(input_path)
 
     # Convert to EvaluationRow objects using comprehension
+    # Handle both test.csv format (row_id) and expected format (id)
     eval_rows = [
         EvaluationRow(
-            row_id=row["id"],
+            row_id=row.get("row_id", row.get("id")),
             question_id=QuestionId(row["QuestionId"]),
-            construct_name=row["ConstructName"],
-            subject_name=row["SubjectName"],
-            correct_answer=row["CorrectAnswer"],
-            wrong_answer=row["WrongAnswer"],
-            mc_answer=row.get("MCAnswer", None),
+            question_text=row.get("QuestionText", ""),
+            mc_answer=row.get("MC_Answer", row.get("MCAnswer", "")),
+            student_explanation=row.get("StudentExplanation", ""),
+            # These fields may not exist in test.csv, use empty strings as defaults
+            construct_name=row.get("ConstructName", ""),
+            subject_name=row.get("SubjectName", ""),
+            correct_answer=row.get("CorrectAnswer", row.get("MC_Answer", "")),  # Use MC_Answer as correct answer if CorrectAnswer not present
+            wrong_answer=row.get("WrongAnswer", ""),
         )
         for _, row in df.iterrows()
     ]
@@ -715,10 +716,8 @@ def handle_predict(args: argparse.Namespace) -> None:
     # Convert predictions to submission format using comprehension
     submission_rows = [
         {
-            "id": pred.row_id,
-            "prediction": " ".join(
-                str(p) for p in pred.predicted_categories[:MAX_PREDICTIONS]
-            ),
+            "row_id": pred.row_id,  # Use row_id to match test.csv format
+            "prediction": " ".join(str(p) for p in pred.predicted_categories[:MAX_PREDICTIONS]),
         }
         for pred in predictions
     ]
@@ -798,7 +797,8 @@ Examples:
         help="Path to save the trained model (default: models/mlp.pkl)",
     )
     fit_parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed training progress",
     )
@@ -824,7 +824,8 @@ Examples:
         help="Fraction of data used for training (default: 0.7)",
     )
     eval_parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed evaluation metrics",
     )
@@ -850,7 +851,8 @@ Examples:
         help="Path to output CSV file for predictions",
     )
     predict_parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show prediction progress",
     )
