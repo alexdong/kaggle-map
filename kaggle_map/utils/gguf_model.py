@@ -389,6 +389,7 @@ def load_llm_model(model_name: GGUFModelName) -> Llama:
         n_batch=config.n_batch,
         n_gpu_layers=config.n_gpu_layers,
         n_threads=config.n_threads,
+        verbose=False,
     )
 
 
@@ -489,7 +490,6 @@ def get_llm_predictions(llm: Llama, prompt: str, model_name: GGUFModelName) -> l
         max_tokens=inference_config.max_tokens,
         repeat_penalty=inference_config.repeat_penalty,
         stop=inference_config.stop_words,
-        verbose=False,
     )
 
     response_text = response["choices"][0]["text"]  # type: ignore[index]
