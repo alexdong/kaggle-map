@@ -20,6 +20,8 @@ from torch.utils.data import DataLoader
 from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import (
     RANDOM_SEED,
+    ActivationType,
+    ArchitectureSize,
     Category,
     EmbeddingModel,
     EmbeddingStrategy,
@@ -101,7 +103,7 @@ def _get_split_indices(n_samples: int, train_ratio: float = 0.7) -> DataSplit:
     )
 
 
-def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificMLP:
+def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpecificMLP, TrainingConfig]:
     """Train an MLP model for misconception prediction.
 
     Args:
@@ -204,15 +206,17 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> QuestionSpecificML
 
     logger.info(f"Training complete. Best val loss: {result.history.get('best_val_loss', 'N/A')}")
 
-    return result.model
+    # Return both model and config for saving
+    return result.model, config
 
 
-def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> SubmissionRow:
+def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow, config: TrainingConfig | None = None) -> SubmissionRow:
     """Predict misconceptions for a single evaluation row.
 
     Args:
         model: Trained MLP model
         evaluation_row: Input data for prediction
+        config: Optional training config with embedding settings
 
     Returns:
         Submission row with top 3 predictions
@@ -221,7 +225,14 @@ def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> Submis
     training_data = load_training_data(TrainingConfig().train_csv_path)
     correct_answers = extract_correct_answers(training_data)
     device = get_device()
-    embedding_strategy = EmbeddingStrategy.DOUBLE_BLIND  # Default, could be made configurable
+
+    # Use config if provided, otherwise use defaults
+    if config:
+        embedding_strategy = config.embedding_strategy
+        embedding_model = config.embedding_model
+    else:
+        embedding_strategy = EmbeddingStrategy.DOUBLE_BLIND
+        embedding_model = EmbeddingModel.GEMMA  # Default to GEMMA
 
     eval_row_with_answer = EvaluationRow(
         row_id=evaluation_row.row_id,
@@ -231,13 +242,13 @@ def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> Submis
         student_explanation=evaluation_row.student_explanation,
         correct_answer=correct_answers.get(evaluation_row.question_id, ""),
     )
-
-    # Use default embedding model (QWEN) - could be made configurable
-    embedding_model = EmbeddingModel.QWEN
     embedding = encode(eval_row_with_answer, embedding_strategy, embedding_model)
-    embedding = embedding.numpy()
-    logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding)}")
-    embedding_tensor = torch.FloatTensor(embedding).unsqueeze(0).to(device)
+    # Ensure embedding is on CPU for numpy conversion
+    if embedding.is_cuda:
+        embedding = embedding.cpu()
+    embedding_np = embedding.numpy()
+    logger.debug(f"Computing embedding for question {evaluation_row.question_id}, embedding_dim={len(embedding_np)}")
+    embedding_tensor = torch.FloatTensor(embedding_np).unsqueeze(0).to(device)
 
     is_correct = evaluation_row.mc_answer == correct_answers.get(evaluation_row.question_id, "")
     logger.debug(
@@ -286,12 +297,13 @@ def predict(model: QuestionSpecificMLP, evaluation_row: EvaluationRow) -> Submis
     return SubmissionRow(row_id=evaluation_row.row_id, predicted_categories=predictions[:MAX_PREDICTIONS])
 
 
-def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow]) -> dict[str, float]:
+def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig | None = None) -> dict[str, float]:
     """Evaluate model on test data.
 
     Args:
         model: Trained MLP model
         test_data: Test data rows
+        config: Optional training config with embedding settings
 
     Returns:
         Dictionary with evaluation metrics
@@ -305,7 +317,7 @@ def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow]) -> dict[s
             mc_answer=row.mc_answer,
             student_explanation=row.student_explanation,
         )
-        prediction = predict(model, eval_row)
+        prediction = predict(model, eval_row, config)
         score = calculate_map_at_3(row.prediction, prediction.predicted_categories)
         map_scores.append(score)
 
@@ -318,20 +330,51 @@ def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow]) -> dict[s
     }
 
 
-def save(model: QuestionSpecificMLP, filepath: Path) -> None:
-    """Save model to disk.
+def save(model: QuestionSpecificMLP, filepath: Path, config: TrainingConfig | None = None) -> None:
+    """Save model to disk with configuration.
 
     Args:
         model: Model to save
         filepath: Path to save the model
+        config: Optional training config to save with model
     """
     logger.info(f"Saving model to {filepath}")
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), filepath)
+
+    # Save both model state and configuration
+    # Extract architecture info from the model
+    first_layer = model.trunk[0]
+    total_input_dim = first_layer.in_features
+    embedding_dim = total_input_dim - 32  # Subtract correctness embedding dimension
+
+    # Reconstruct question_predictions from the model's encoders
+    question_predictions = {}
+    for qid, encoder in model.true_label_encoders.items():
+        if qid not in question_predictions:
+            question_predictions[qid] = []
+        question_predictions[qid].extend(encoder.classes_.tolist())
+    for qid, encoder in model.false_label_encoders.items():
+        if qid not in question_predictions:
+            question_predictions[qid] = []
+        question_predictions[qid].extend(encoder.classes_.tolist())
+
+    save_dict = {
+        "state_dict": model.state_dict(),
+        "config": {
+            "embedding_dim": embedding_dim,
+            "architecture_size": config.architecture_size.value if config else ArchitectureSize.XLARGE.value,
+            "dropout": config.dropout if config else 0.3,
+            "activation": config.activation.value if config else ActivationType.GELU.value,
+            "embedding_model": config.embedding_model.value if config else EmbeddingModel.GEMMA.value,
+            "embedding_strategy": config.embedding_strategy.value if config else EmbeddingStrategy.DOUBLE_BLIND.value,
+        },
+        "question_predictions": question_predictions
+    }
+    torch.save(save_dict, filepath)
 
 
-def load(filepath: Path) -> QuestionSpecificMLP:
-    """Load model from disk.
+def load(filepath: Path) -> tuple[QuestionSpecificMLP, TrainingConfig | None]:
+    """Load model from disk with configuration.
 
     Args:
         filepath: Path to the saved model
@@ -342,25 +385,79 @@ def load(filepath: Path) -> QuestionSpecificMLP:
     logger.info(f"Loading model from {filepath}")
     assert filepath.exists(), f"Model file not found: {filepath}"
 
-    # Need to reconstruct the model architecture
-    # This requires knowing the question predictions, which we get from training data
-    training_data = load_training_data(TrainingConfig().train_csv_path)
-    question_predictions = _extract_question_predictions(training_data)
+    checkpoint = torch.load(filepath, weights_only=False)
 
-    # Use default config for architecture (could be saved with model for better reconstruction)
-    config = TrainingConfig()
-    embedding_dim = 8192 if config.embedding_strategy == EmbeddingStrategy.DOUBLE_BLIND else 4096
+    # Handle both old (state_dict only) and new (with config) formats
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        # New format with configuration
+        state_dict = checkpoint["state_dict"]
+        config = checkpoint.get("config", {})
+        embedding_dim = config.get("embedding_dim")
+        question_predictions = checkpoint.get("question_predictions")
+
+        # If question_predictions not in checkpoint, load from training data
+        if question_predictions is None:
+            training_data = load_training_data(TrainingConfig().train_csv_path)
+            question_predictions = _extract_question_predictions(training_data)
+    else:
+        # Old format - just state_dict
+        state_dict = checkpoint
+
+        # Try to infer embedding dimension from the first layer
+        # trunk.0.weight shape is [hidden_dim, input_dim]
+        if "trunk.0.weight" in state_dict:
+            total_input_dim = state_dict["trunk.0.weight"].shape[1]
+            embedding_dim = total_input_dim - 32  # Subtract correctness embedding
+        else:
+            # Fallback to old hardcoded logic
+            config = TrainingConfig()
+            embedding_dim = 8192 if config.embedding_strategy == EmbeddingStrategy.DOUBLE_BLIND else 4096
+
+        # Load question predictions from training data
+        training_data = load_training_data(TrainingConfig().train_csv_path)
+        question_predictions = _extract_question_predictions(training_data)
+
+    # Create model with detected/loaded dimensions and config
+    if isinstance(checkpoint, dict) and "config" in checkpoint:
+        config = checkpoint["config"]
+        architecture_size = ArchitectureSize(config.get("architecture_size", "xlarge"))
+        dropout = config.get("dropout", 0.3)
+        activation = ActivationType(config.get("activation", "gelu"))
+    else:
+        # Use defaults for old format
+        architecture_size = ArchitectureSize.XLARGE
+        dropout = 0.3
+        activation = ActivationType.GELU
 
     model = QuestionSpecificMLP(
         question_predictions,
         embedding_dim=embedding_dim,
-        architecture_size=config.architecture_size,
-        dropout=config.dropout,
-        activation=config.activation,
+        architecture_size=architecture_size,
+        dropout=dropout,
+        activation=activation,
     )
 
-    model.load_state_dict(torch.load(filepath))
-    return model
+    model.load_state_dict(state_dict)
+
+    # Move model to appropriate device
+    device = get_device()
+    model = model.to(device)
+    logger.debug(f"Model loaded and moved to device: {device}")
+
+    # Reconstruct config if available
+    loaded_config = None
+    if isinstance(checkpoint, dict) and "config" in checkpoint:
+        config_dict = checkpoint["config"]
+        loaded_config = TrainingConfig(
+            embedding_dim=embedding_dim,
+            architecture_size=ArchitectureSize(config_dict.get("architecture_size", "xlarge")),
+            dropout=config_dict.get("dropout", 0.3),
+            activation=ActivationType(config_dict.get("activation", "gelu")),
+            embedding_model=EmbeddingModel(config_dict.get("embedding_model", "gemma")),
+            embedding_strategy=EmbeddingStrategy(config_dict.get("embedding_strategy", "double_blind")),
+        )
+
+    return model, loaded_config
 
 
 def handle_fit(args: argparse.Namespace) -> None:
@@ -387,12 +484,12 @@ def handle_fit(args: argparse.Namespace) -> None:
 
     # Train the model
     logger.info("Loading training data...")
-    model = fit(config)
+    model, train_config = fit(config)
 
-    # Save the model
+    # Save the model with its config
     output_path = Path(args.model_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    save(model, output_path)
+    save(model, output_path, train_config)
     logger.success(f"Model saved to {output_path}")
 
 
@@ -413,7 +510,7 @@ def handle_eval(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     logger.info(f"Loading model from {model_path}...")
-    model = load(model_path)
+    model, config = load(model_path)
 
     # Load training data for evaluation
     train_data_path = Path(args.train_data)
@@ -424,11 +521,11 @@ def handle_eval(args: argparse.Namespace) -> None:
     # Evaluate the model
     logger.info("Evaluating model performance...")
     training_data = load_training_data(train_data_path)
-    map_score = evaluate(model, training_data, train_split=args.train_split)
+    metrics = evaluate(model, training_data, config)
 
-    logger.success(f"MAP@3 Score: {map_score:.4f}")
+    logger.success(f"MAP@3 Score: {metrics['validation_map@3']:.4f}")
     if args.verbose:
-        logger.info(f"Evaluation complete. Model achieved MAP@3 score of {map_score:.4f}")
+        logger.info(f"Evaluation complete. Model achieved MAP@3 score of {metrics['validation_map@3']:.4f}")
 
 
 def handle_predict(args: argparse.Namespace) -> None:
@@ -448,7 +545,7 @@ def handle_predict(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     logger.info(f"Loading model from {model_path}...")
-    model = load(model_path)
+    model, config = load(model_path)
 
     # Load input data
     input_path = Path(args.input_file)
@@ -476,7 +573,7 @@ def handle_predict(args: argparse.Namespace) -> None:
 
     # Generate predictions
     logger.info(f"Generating predictions for {len(eval_rows)} rows...")
-    predictions = predict(model, eval_rows)
+    predictions = [predict(model, row, config) for row in eval_rows]
 
     # Convert predictions to submission format
     submission_rows = [
