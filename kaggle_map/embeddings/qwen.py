@@ -48,9 +48,10 @@ class QwenEmbeddingModel:
         logger.info(f"Loading Qwen3-Embedding-8B Q8_0 from {model_path}")
 
         self.model = Llama(
-            n_gpu_layers=-1 if get_device().type == "cuda" else 0,
+            n_gpu_layers=-1,
             model_path=str(model_path),
             embedding=True,
+            verbose=False,
         )
 
     @classmethod
