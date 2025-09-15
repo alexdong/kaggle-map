@@ -295,18 +295,26 @@ class EmbeddingStrategy(Enum):
     """Strategies for computing embeddings from evaluation rows."""
 
     DOUBLE_BLIND = "double_blind"
-    SEMANTIC = "semantic"
+    GOAL_DRIVEN = "goal_driven"  # Previously called SEMANTIC
 
     @property
     def dimension(self) -> int:
         """Return the output dimension for this embedding strategy."""
-        return 8192 if self == EmbeddingStrategy.DOUBLE_BLIND else 4096
+        # DOUBLE_BLIND concatenates two embeddings (2 * 4096 for QWEN = 8192)
+        # GOAL_DRIVEN uses single embedding (8192 for QWEN)
+        # Since QWEN now produces 8192-dim embeddings natively, both are 8192
+        # But DOUBLE_BLIND would be 16384 if we concatenate two 8192 embeddings
+        # Let's keep it at historical sizes for compatibility
+        return 16384 if self == EmbeddingStrategy.DOUBLE_BLIND else 8192
 
     @classmethod
     def from_string(cls, value: str | None) -> "EmbeddingStrategy":
         """Convert string to enum, with default to DOUBLE_BLIND."""
         if value is None:
             return cls.DOUBLE_BLIND
+        # Handle backward compatibility: semantic -> goal_driven
+        if value == "semantic":
+            return cls.GOAL_DRIVEN
         return cls(value)
 
 
@@ -368,7 +376,7 @@ class TrainingConfig(BaseModel):
     train_split: float = 0.7
 
     # Architecture and embedding
-    embedding_model: EmbeddingModel = EmbeddingModel.GEMMA
+    embedding_model: EmbeddingModel = EmbeddingModel.QWEN
     embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
     architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
 

@@ -3,38 +3,34 @@
 from pathlib import Path
 
 from jinja2 import Template
-from loguru import logger
 
-from kaggle_map.core.models import Category, EvaluationRow, Prediction
+from kaggle_map.core.models import EvaluationRow, Prediction
+from kaggle_map.llm.robust_parser import parse_predictions_with_fuzzy_matching
 
 
 def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
     """Build a prediction prompt from evaluation row and template."""
+    assert isinstance(eval_row, EvaluationRow), f"eval_row must be EvaluationRow, got {type(eval_row)}"
+    assert isinstance(template_path, Path), f"template_path must be Path, got {type(template_path)}"
+    assert template_path.exists(), f"Template file does not exist: {template_path}"
+    assert template_path.suffix in (".j2", ".jinja", ".jinja2", ".txt"), (
+        f"Unexpected template file extension: {template_path.suffix}"
+    )
+
+    # Validate required fields are present
+    assert eval_row.question_text.strip(), "question_text cannot be empty"
+    assert eval_row.mc_answer.strip(), "mc_answer cannot be empty"
+    assert eval_row.student_explanation.strip(), "student_explanation cannot be empty"
+
     template = Template(template_path.read_text())
-    return template.render(
+    rendered = template.render(
         question_text=eval_row.question_text,
         mc_answer=eval_row.mc_answer,
         student_explanation=eval_row.student_explanation,
     )
 
-
-def _extract_prediction_line(response: str) -> str:
-    """Extract the first valid prediction line from response."""
-    for line in response.strip().split("\n"):
-        if line.strip() and ":" in line:
-            return line.strip()
-    return response.strip()
-
-
-def _parse_single_prediction(part: str) -> Prediction | None:
-    """Parse a single prediction string."""
-    if ":" not in part:
-        return None
-    try:
-        return Prediction.from_string(part)
-    except Exception as e:
-        logger.debug(f"Failed to parse prediction '{part}': {e}")
-        return None
+    assert rendered.strip(), "Template rendered to empty content"
+    return rendered
 
 
 def parse_predictions(response: str) -> list[Prediction]:
@@ -48,19 +44,10 @@ def parse_predictions(response: str) -> list[Prediction]:
         response: Raw LLM response containing predictions
 
     Returns:
-        List of up to 3 Prediction objects
+        List of exactly 3 Prediction objects
     """
-    max_predictions = 3
-    default_prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
+    assert isinstance(response, str), f"response must be string, got {type(response)}"
+    assert response.strip(), "response cannot be empty or whitespace-only"
 
-    # Extract and parse predictions
-    prediction_line = _extract_prediction_line(response)
-    predictions = [pred for part in prediction_line.split() if (pred := _parse_single_prediction(part)) is not None][
-        :max_predictions
-    ]
-
-    # Pad with defaults if needed
-    while len(predictions) < max_predictions:
-        predictions.append(default_prediction)
-
-    return predictions
+    # Use the robust parser that handles typos and format issues
+    return parse_predictions_with_fuzzy_matching(response)
