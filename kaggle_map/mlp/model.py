@@ -37,33 +37,35 @@ class Architecture:
     activation: ActivationType = ActivationType.GELU
 
 
-# Simplified architectures for 4096+ dim embeddings only
-ARCHITECTURES = {
-    # For 4096-dim embeddings (semantic strategy)
-    "medium_4096": Architecture(ArchitectureSize.MEDIUM, [4128, 2048, 1024]),
-    "large_4096": Architecture(ArchitectureSize.LARGE, [4128, 2048, 1024, 512]),
-    "xlarge_4096": Architecture(ArchitectureSize.XLARGE, [4128, 2048, 1024, 512, 256]),
-    # For 8192-dim embeddings (double-blind strategy)
-    "medium_8192": Architecture(ArchitectureSize.MEDIUM, [8224, 4096, 2048]),
-    "large_8192": Architecture(ArchitectureSize.LARGE, [8224, 4096, 2048, 1024]),
-    "xlarge_8192": Architecture(ArchitectureSize.XLARGE, [8224, 4096, 2048, 1024, 512]),
-}
+def get_architecture(size: ArchitectureSize, total_input_dim: int) -> Architecture:
+    """Get architecture config for given size and total input dimension.
 
+    Args:
+        size: Architecture size (MEDIUM, LARGE, XLARGE)
+        total_input_dim: Total input dimension including embeddings and correctness
+    """
+    # Create architecture layers based on input dimension
+    # The hidden layers progressively reduce dimensionality
+    if size == ArchitectureSize.MEDIUM:
+        # Medium: 2 hidden layers
+        hidden_1 = min(2048, total_input_dim // 2)
+        hidden_2 = hidden_1 // 2
+        layers = [total_input_dim, hidden_1, hidden_2]
+    elif size == ArchitectureSize.LARGE:
+        # Large: 3 hidden layers
+        hidden_1 = min(2048, total_input_dim // 2)
+        hidden_2 = hidden_1 // 2
+        hidden_3 = hidden_2 // 2
+        layers = [total_input_dim, hidden_1, hidden_2, hidden_3]
+    else:  # XLARGE
+        # XLarge: 4 hidden layers
+        hidden_1 = min(2048, total_input_dim // 2)
+        hidden_2 = hidden_1 // 2
+        hidden_3 = hidden_2 // 2
+        hidden_4 = hidden_3 // 2
+        layers = [total_input_dim, hidden_1, hidden_2, hidden_3, hidden_4]
 
-# Threshold for architecture selection based on embedding dimensionality
-# Embedding dimensions <= 6000 use 4096-based architectures (e.g., semantic embeddings)
-# Embedding dimensions > 6000 use 8192-based architectures (e.g., double-blind strategy with concatenated features)
-# This threshold balances model capacity with computational efficiency for different embedding types
-EMBEDDING_DIM_THRESHOLD = 6000
-
-
-def get_architecture(size: ArchitectureSize, embedding_dim: int) -> Architecture:
-    """Get architecture config for given size and embedding dimension."""
-    dim_key = "4096" if embedding_dim <= EMBEDDING_DIM_THRESHOLD else "8192"
-
-    key = f"{size.value}_{dim_key}"
-    assert key in ARCHITECTURES, f"Architecture {key} not found"
-    return ARCHITECTURES[key]
+    return Architecture(size, layers)
 
 
 def get_activation(activation_type: ActivationType) -> nn.Module:
@@ -93,7 +95,10 @@ class QuestionSpecificMLP(nn.Module):
         correctness_embedding_dim = 32
         self.correctness_embedding = nn.Embedding(2, correctness_embedding_dim)
 
-        arch = get_architecture(architecture_size, embedding_dim)
+        # Total input dimension is embedding + correctness embedding
+        total_input_dim = embedding_dim + correctness_embedding_dim
+
+        arch = get_architecture(architecture_size, total_input_dim)
         activation_fn = get_activation(activation)
 
         layers = []
