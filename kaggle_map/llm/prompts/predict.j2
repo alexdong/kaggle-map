@@ -73,4 +73,4 @@ Only provide the ranked labels as a single line of text, with no additional comm
 
 CRITICAL - Check one last time that you use ONLY the exact labels provided above. Do not create variations, abbreviations, or modified versions.  Example Output: 
 
-False_Correct:NA False_Misconception:Subtraction False_Neither:NA False_Misconception:Division
+{% if mc_answer == "(1/3) * (2/3)" %}True_Correct:NA True_Neither:NA True_Misconception:Subtraction True_Misconception.Division{% else %}False_Correct:NA False_Misconception:Subtraction False_Neither:NA False_Misconception:Division{% endif %}
