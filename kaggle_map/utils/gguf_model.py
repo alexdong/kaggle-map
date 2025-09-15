@@ -489,6 +489,7 @@ def get_llm_predictions(llm: Llama, prompt: str, model_name: GGUFModelName) -> l
         max_tokens=inference_config.max_tokens,
         repeat_penalty=inference_config.repeat_penalty,
         stop=inference_config.stop_words,
+        verbose=False,
     )
 
     response_text = response["choices"][0]["text"]  # type: ignore[index]
