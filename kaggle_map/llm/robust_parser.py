@@ -139,7 +139,9 @@ def extract_tokens_from_response(response: str) -> list[str]:
     return prediction_line.split()
 
 
-def parse_predictions_with_fuzzy_matching(response: str, max_predictions: int = 3) -> list[Prediction]:
+def parse_predictions_with_fuzzy_matching(
+    response: str, max_predictions: int = 3, pad_to_max: bool = True
+) -> list[Prediction]:
     """Parse LLM response to extract predictions with typo tolerance.
 
     Expected format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
@@ -153,9 +155,10 @@ def parse_predictions_with_fuzzy_matching(response: str, max_predictions: int = 
     Args:
         response: Raw LLM response
         max_predictions: Maximum number of predictions to return
+        pad_to_max: If True, pad with defaults to ensure exactly max_predictions returned
 
     Returns:
-        List of exactly max_predictions Prediction objects (padded with defaults)
+        List of Prediction objects (up to max_predictions, padded if pad_to_max=True)
     """
     assert isinstance(response, str), f"response must be string, got {type(response)}"
     assert max_predictions > 0, f"max_predictions must be positive, got {max_predictions}"
@@ -172,12 +175,17 @@ def parse_predictions_with_fuzzy_matching(response: str, max_predictions: int = 
         if pred:
             predictions.append(pred)
 
-    # Pad with defaults to ensure exactly max_predictions
-    while len(predictions) < max_predictions:
-        predictions.append(default_prediction)
+    # Pad with defaults if requested
+    if pad_to_max:
+        while len(predictions) < max_predictions:
+            predictions.append(default_prediction)
 
     result = predictions[:max_predictions]
-    assert len(result) == max_predictions, f"Expected {max_predictions} predictions, got {len(result)}"
+
+    # Only enforce exact count if padding is enabled
+    if pad_to_max:
+        assert len(result) == max_predictions, f"Expected {max_predictions} predictions, got {len(result)}"
+
     assert all(isinstance(p, Prediction) for p in result), "All results must be Prediction objects"
 
     return result

@@ -1,7 +1,5 @@
 """Unit tests for robust prediction parser."""
 
-from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -214,7 +212,7 @@ class TestParsePredictionsRobust:
 
     def test_standard_format(self):
         response = "True_Correct:NA True_Neither:NA True_Misconception:Division"
-        predictions = parse_predictions_with_fuzzy_matching(response)
+        predictions = parse_predictions_with_fuzzy_matching(response, pad_to_max=True)
 
         assert len(predictions) == 3
         assert predictions[0].category == Category.TRUE_CORRECT
@@ -226,7 +224,7 @@ class TestParsePredictionsRobust:
 
     def test_with_typos(self):
         response = "True_Correct:NA True_NNeither:NA True_Misconception:Subtraction"
-        predictions = parse_predictions_with_fuzzy_matching(response)
+        predictions = parse_predictions_with_fuzzy_matching(response, pad_to_max=True)
 
         assert len(predictions) == 3
         assert predictions[0].category == Category.TRUE_CORRECT
@@ -277,7 +275,7 @@ True_Misconception:Division"""
     def test_partial_predictions(self):
         # Only 2 predictions provided
         response = "True_Correct:NA False_Neither:Test"
-        predictions = parse_predictions_with_fuzzy_matching(response)
+        predictions = parse_predictions_with_fuzzy_matching(response, pad_to_max=True)
 
         assert len(predictions) == 3  # Should pad to 3
         assert predictions[0].category == Category.TRUE_CORRECT
@@ -287,7 +285,7 @@ True_Misconception:Division"""
 
     def test_no_valid_predictions(self):
         response = "garbage text with no valid categories"
-        predictions = parse_predictions_with_fuzzy_matching(response)
+        predictions = parse_predictions_with_fuzzy_matching(response, pad_to_max=True)
 
         assert len(predictions) == 3  # All defaults
         assert all(p.category == Category.TRUE_CORRECT for p in predictions)
@@ -357,7 +355,7 @@ These represent the student's understanding."""
 
     def test_edge_case_empty_response(self):
         # Test completely empty response
-        predictions = parse_predictions_with_fuzzy_matching("")
+        predictions = parse_predictions_with_fuzzy_matching("", pad_to_max=True)
 
         assert len(predictions) == 3
         assert all(p.category == Category.TRUE_CORRECT for p in predictions)
@@ -365,7 +363,7 @@ These represent the student's understanding."""
 
     def test_whitespace_only_response(self):
         # Test response with only whitespace
-        predictions = parse_predictions_with_fuzzy_matching("   \n   \t   ")
+        predictions = parse_predictions_with_fuzzy_matching("   \n   \t   ", pad_to_max=True)
 
         assert len(predictions) == 3
         assert all(p.category == Category.TRUE_CORRECT for p in predictions)

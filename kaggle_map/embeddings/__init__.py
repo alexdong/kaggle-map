@@ -45,7 +45,7 @@ def _encode_single(
 
         return torch.cat([question_correct_embedding, answer_explanation_embedding])
 
-    elif strategy == EmbeddingStrategy.GOAL_DRIVEN:
+    if strategy == EmbeddingStrategy.GOAL_DRIVEN:
         # GOAL_DRIVEN uses unified approach
         unified_text = (
             f"Question: {row.question_text}\n"
@@ -88,7 +88,7 @@ def _encode_batch(
 
         return torch.cat([question_correct_embeddings, answer_explanation_embeddings], dim=1)
 
-    elif strategy == EmbeddingStrategy.GOAL_DRIVEN:
+    if strategy == EmbeddingStrategy.GOAL_DRIVEN:
         # GOAL_DRIVEN uses unified approach
         texts = [
             f"Question: {row.question_text}\n"

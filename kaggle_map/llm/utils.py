@@ -50,4 +50,5 @@ def parse_predictions(response: str) -> list[Prediction]:
     assert response.strip(), "response cannot be empty or whitespace-only"
 
     # Use the robust parser that handles typos and format issues
-    return parse_predictions_with_fuzzy_matching(response)
+    # Always return exactly 3 predictions (padded with defaults)
+    return parse_predictions_with_fuzzy_matching(response, max_predictions=3, pad_to_max=True)

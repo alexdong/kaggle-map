@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-import numpy as np
 import pandas as pd
-from loguru import logger
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
+
+if TYPE_CHECKING:
+    import numpy as np
 
 # ============================================================================
 # Constants
@@ -55,7 +56,7 @@ class Category(Enum):
         return self.value.startswith("True_")
 
     @classmethod
-    def from_csv_string(cls, csv_value: str) -> "Category":
+    def from_csv_string(cls, csv_value: str) -> Category:
         """Convert CSV format category string to Category enum.
 
         CSV files use ALL_CAPS format (e.g., 'TRUE_MISCONCEPTION') while
@@ -82,7 +83,7 @@ class Category(Enum):
         return cls(formatted_value)
 
     @classmethod
-    def by_truth_value(cls, *, is_true: bool) -> list["Category"]:
+    def by_truth_value(cls, *, is_true: bool) -> list[Category]:
         prefix = "True_" if is_true else "False_"
         return [category for category in cls if category.value.startswith(prefix)]
 
@@ -92,7 +93,7 @@ class Prediction(BaseModel):
     misconception: Misconception = "NA"
 
     @classmethod
-    def from_ground_truth_row(cls, row: pd.Series) -> "Prediction":
+    def from_ground_truth_row(cls, row: pd.Series) -> Prediction:
         """Create a Prediction from a ground truth CSV row."""
         category = Category.from_csv_string(str(row["Category"]))
         # Handle NaN misconceptions (pandas converts "NA" to NaN)
@@ -100,29 +101,15 @@ class Prediction(BaseModel):
         return cls(category=category, misconception=misconception)
 
     @classmethod
-    def from_string(cls, prediction_str: str) -> "Prediction":
-        pred_str = prediction_str.strip()
+    def from_string(cls, prediction_str: str) -> Prediction:
+        # Use the robust parser for single predictions too
+        from kaggle_map.llm.robust_parser import parse_single_prediction_robust
 
-        assert ":" in pred_str, "Invalid prediction string format"
-        category_part, misconception_part = pred_str.split(":", 1)
-        category_str = category_part.strip()
-
-        # Fix common typos in category names
-        typo_corrections = {
-            "False_NEither": "False_Neither",
-            "False_neither": "False_Neither",
-            "True_NEither": "True_Neither",
-            "True_neither": "True_Neither",
-            "False_Misconcpetion": "False_Misconception",
-            "True_Misconcpetion": "True_Misconception",
-            "False_Miscon": "False_Misconception",
-            "True_Miscon": "True_Misconception",
-        }
-        category_str = typo_corrections.get(category_str, category_str)
-
-        category = Category(category_str)
-        misconception = misconception_part.strip() if misconception_part.strip() else "NA"
-        return cls(category=category, misconception=misconception)
+        result = parse_single_prediction_robust(prediction_str.strip())
+        if result is None:
+            msg = f"Cannot parse prediction string: {prediction_str}"
+            raise ValueError(msg)
+        return result
 
     def __str__(self) -> Label:
         if self.category.is_misconception and self.misconception != "NA":
@@ -130,27 +117,12 @@ class Prediction(BaseModel):
         return f"{self.category.value}:NA"
 
     @classmethod
-    def parse(cls, response: str) -> list["Prediction"]:
-        predictions = []
-        response_clean = response.strip()
-        response = " ".join([s.strip() for s in response_clean.split("\n") if s.strip()])
-        prediction_parts = response.split()
+    def parse(cls, response: str) -> list[Prediction]:
+        # Use the robust parser that handles typos and format issues
+        from kaggle_map.llm.robust_parser import parse_predictions_with_fuzzy_matching
 
-        for part in prediction_parts:
-            if ":" in part:
-                # Standard format: Category:Misconception
-                prediction = cls.from_string(part)
-            else:
-                # Check if it's a valid category without a colon
-                category = next((cat for cat in Category if part == cat.value), None)
-                if category is None:
-                    logger.debug(f"Skipping invalid prediction part: '{part}'")
-                    continue
-                # Create prediction with NA misconception for categories without colons
-                prediction = cls(category=category, misconception="NA")
-
-            predictions.append(prediction)
-        return predictions[:3]
+        # Don't pad by default - let caller decide if they want padding
+        return parse_predictions_with_fuzzy_matching(response, max_predictions=3, pad_to_max=False)
 
 
 def normalize_label(label: Label) -> Label:
@@ -249,7 +221,7 @@ class TrainingRow(EvaluationRow):
         return self.prediction.misconception
 
     @classmethod
-    def from_dataframe_row(cls, row: pd.Series) -> "TrainingRow":
+    def from_dataframe_row(cls, row: pd.Series) -> TrainingRow:
         # Create the prediction first
         prediction = Prediction.from_ground_truth_row(row)
 
@@ -310,7 +282,7 @@ class EmbeddingStrategy(Enum):
         return 16384 if self == EmbeddingStrategy.DOUBLE_BLIND else 8192
 
     @classmethod
-    def from_string(cls, value: str | None) -> "EmbeddingStrategy":
+    def from_string(cls, value: str | None) -> EmbeddingStrategy:
         """Convert string to enum, with default to DOUBLE_BLIND."""
         if value is None:
             return cls.DOUBLE_BLIND
