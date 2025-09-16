@@ -75,12 +75,10 @@ def _encode_batch(
     if strategy == EmbeddingStrategy.DOUBLE_BLIND:
         # DOUBLE_BLIND: Create two separate embeddings for each row and concatenate
         question_correct_texts = [
-            f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}"
-            for row in rows
+            f"Question: {row.question_text}\nCorrect Answer: {row.correct_answer}" for row in rows
         ]
         answer_explanation_texts = [
-            f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}"
-            for row in rows
+            f"Student Answer: {row.mc_answer}\nStudent Explanation: {row.student_explanation}" for row in rows
         ]
 
         question_correct_embeddings = model_instance.encode(question_correct_texts)
