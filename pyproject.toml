@@ -56,6 +56,7 @@ dev-dependencies = [
     "ruff>=0.11.6",
     "ty>=0.0.1a14",
     "pyrefly>=0.31.0",
+    "hypothesis>=6.139.2",
 ]
 
 
