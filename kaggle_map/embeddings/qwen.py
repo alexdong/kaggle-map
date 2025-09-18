@@ -34,7 +34,6 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
-from kaggle_map.utils.device import get_device
 from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
@@ -47,10 +46,14 @@ class QwenEmbeddingModel:
         model_path = self._get_model_path()
         logger.info(f"Loading Qwen3-Embedding-8B Q8_0 from {model_path}")
 
+        # NOTE: You may see warnings like "init: embeddings required but some input tokens were not marked as outputs"
+        # These are harmless for embedding models and come from llama.cpp's internal handling.
+        # The model works correctly despite these warnings.
         self.model = Llama(
-            n_gpu_layers=-1 if get_device().type == "cuda" else 0,
+            n_gpu_layers=-1,
             model_path=str(model_path),
             embedding=True,
+            verbose=False,
         )
 
     @classmethod

@@ -36,6 +36,7 @@ from kaggle_map.core.models import (
 )
 from kaggle_map.embeddings import encode
 from kaggle_map.mlp.dataset import DatasetArrays, MLPDataset
+from kaggle_map.mlp.embedding_cache import get_or_compute_embeddings
 from kaggle_map.mlp.label_encoder import LabelEncoders
 from kaggle_map.mlp.loss import ListMLELoss
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
@@ -123,11 +124,11 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
     correct_answers = extract_correct_answers(training_data)
     question_predictions = _extract_question_predictions(training_data)
 
-    logger.info("Computing embeddings...")
+    logger.info("Preparing embeddings...")
 
     # First pass: Create all EvaluationRows and collect metadata
     eval_rows = []
-    metadata = []
+    metadata_tuples = []
     for row in training_data:
         eval_row = EvaluationRow(
             row_id=row.row_id,
@@ -138,18 +139,16 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
             correct_answer=correct_answers.get(row.question_id, ""),
         )
         eval_rows.append(eval_row)
-        metadata.append((row.question_id, str(row.prediction), row.mc_answer))
+        metadata_tuples.append((row.question_id, str(row.prediction), row.mc_answer))
 
-    # Second pass: Batch encode all rows at once
-    logger.info(f"Batch encoding {len(eval_rows)} rows...")
-    embeddings_tensor = encode(eval_rows, strategy, config.embedding_model)
-    embeddings = embeddings_tensor.cpu().numpy()
-
-    # Unpack metadata using modern unpacking with walrus operator
-    if not (metadata_unpacked := list(zip(*metadata, strict=True))):
-        msg = "No metadata to process"
-        raise ValueError(msg)
-    question_ids, predictions, mc_answers = map(np.array, metadata_unpacked)
+    # Get embeddings from cache or compute them
+    embeddings, question_ids, predictions, mc_answers = get_or_compute_embeddings(
+        eval_rows,
+        metadata_tuples,
+        config.train_csv_path,
+        config.embedding_model,
+        strategy
+    )
 
     embedding_dim = embeddings.shape[1]
     logger.info(f"Embedding dimension: {embedding_dim}")
@@ -495,7 +494,7 @@ def save(model: QuestionSpecificMLP, filepath: Path, config: TrainingConfig | No
             "dropout": config.dropout if config else 0.3,
             "activation": config.activation.value if config else ActivationType.GELU.value,
             "embedding_model": config.embedding_model.value if config else EmbeddingModel.QWEN.value,
-            "embedding_strategy": config.embedding_strategy.value if config and hasattr(config, 'embedding_strategy') else "goal_driven",
+            "embedding_strategy": config.embedding_strategy.value if config and hasattr(config, "embedding_strategy") else "goal_driven",
         },
         "question_predictions": question_predictions,
     }
