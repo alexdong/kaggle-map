@@ -14,11 +14,11 @@ dev:
 
 test:
 	# Run fast tests only (excludes slow integration tests)
-	uv run pytest --durations=10 --randomly-seed=$(date +%s) -m "not slow"
+	uv run pytest --durations=10 --randomly-seed=$$(date +%s) -m "not slow"
 
 test-all:
 	# Run all tests including slow integration tests
-	uv run pytest --durations=10 --randomly-seed=$(date +%s)
+	uv run pytest --durations=10 --randomly-seed=$$(date +%s)
 
 # ============================================================================
 # Model Training & Evaluation
