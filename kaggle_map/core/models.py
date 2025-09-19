@@ -271,16 +271,6 @@ class EmbeddingStrategy(Enum):
     DOUBLE_BLIND = "double_blind"
     GOAL_DRIVEN = "goal_driven"  # Previously called SEMANTIC
 
-    @property
-    def dimension(self) -> int:
-        """Return the output dimension for this embedding strategy."""
-        # DOUBLE_BLIND concatenates two embeddings (2 * 4096 for QWEN = 8192)
-        # GOAL_DRIVEN uses single embedding (8192 for QWEN)
-        # Since QWEN now produces 8192-dim embeddings natively, both are 8192
-        # But DOUBLE_BLIND would be 16384 if we concatenate two 8192 embeddings
-        # Let's keep it at historical sizes for compatibility
-        return 16384 if self == EmbeddingStrategy.DOUBLE_BLIND else 8192
-
     @classmethod
     def from_string(cls, value: str | None) -> EmbeddingStrategy:
         """Convert string to enum, with default to DOUBLE_BLIND."""
@@ -552,10 +542,7 @@ class RoutingSession(BaseModel):
 
         for row_id in self.entropy_sorted_row_ids:
             prediction = self.predictions[row_id]
-            if (
-                prediction.routing_decision.should_route
-                and prediction.state == PredictionState.LLM_PENDING
-            ):
+            if prediction.routing_decision.should_route and prediction.state == PredictionState.LLM_PENDING:
                 return prediction
 
         return None
@@ -567,7 +554,7 @@ class RoutingSession(BaseModel):
             question_id=mlp_result.question_id,
             mlp_result=mlp_result,
             routing_decision=routing_decision,
-            state=PredictionState.LLM_PENDING if routing_decision.should_route else PredictionState.MLP_ONLY
+            state=PredictionState.LLM_PENDING if routing_decision.should_route else PredictionState.MLP_ONLY,
         )
 
         self.predictions[mlp_result.row_id] = routed_prediction
@@ -608,18 +595,13 @@ class RoutingSession(BaseModel):
             prediction = self.predictions[row_id]
             final_preds = prediction.get_best_predictions()
 
-            submission_rows.append(SubmissionRow(
-                row_id=row_id,
-                predicted_categories=final_preds
-            ))
+            submission_rows.append(SubmissionRow(row_id=row_id, predicted_categories=final_preds))
 
         return submission_rows
 
     def get_performance_summary(self) -> dict[str, float | int]:
         """Get summary statistics for the routing session."""
-        llm_success_rate = (
-            self.predictions_completed_by_llm / max(1, self.predictions_routed_to_llm)
-        )
+        llm_success_rate = self.predictions_completed_by_llm / max(1, self.predictions_routed_to_llm)
 
         return {
             "total_predictions": self.total_predictions,

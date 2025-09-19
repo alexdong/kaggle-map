@@ -256,9 +256,16 @@ def test_fit_uses_batch_encoding(mock_embedder, sample_training_data):
     from kaggle_map.core.models import TrainingConfig
     from kaggle_map.mlp.main import fit
 
+    # Create a mock encode function that returns the expected tensor shape
+    def mock_encode(rows, strategy, model):
+        return torch.randn(len(rows), 768)
+
+    mock_encode_func = Mock(side_effect=mock_encode)
+
     with (
         patch("kaggle_map.mlp.main.load_training_data", return_value=sample_training_data),
-        patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder),
+        patch("kaggle_map.mlp.embedding_cache.encode", mock_encode_func),
+        patch("kaggle_map.mlp.embedding_cache.load_embeddings", return_value=None),  # Force recomputation
         patch("kaggle_map.mlp.main.train_model"),
     ):
                 config = TrainingConfig(epochs=1, batch_size=32)
@@ -267,10 +274,10 @@ def test_fit_uses_batch_encoding(mock_embedder, sample_training_data):
                 # Should call encode with batch (list), not individual items
                 # For GOAL_DRIVEN and SEMANTIC strategies, should make 1 batch call
                 expected_calls = 1
-                assert mock_embedder.encode.call_count == expected_calls
+                assert mock_encode_func.call_count == expected_calls
 
                 # Verify it was called with a list
-                call_args = mock_embedder.encode.call_args[0][0]
+                call_args = mock_encode_func.call_args[0][0]
                 assert isinstance(call_args, list)
                 assert len(call_args) == len(sample_training_data)
 
