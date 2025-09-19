@@ -79,5 +79,3 @@ class MLPDataset(Dataset):
             "label": self.labels[idx],
             "is_correct": self.is_correct[idx],
         }
-
-

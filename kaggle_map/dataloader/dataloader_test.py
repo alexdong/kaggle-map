@@ -8,13 +8,16 @@ from kaggle_map.core.models import Category
 from kaggle_map.dataloader import load_rows_by_ids, load_training_data, load_validation_data
 
 
+FULL_TRAIN_CSV = Path("datasets/33474_full_train.csv")
+TINY_VALIDATION_CSV = Path("datasets/33474_tiny_train.csv")
+
+
 def test_load_training_data_returns_correct_count():
     """Test that load_training_data returns 1766 rows for question 33474."""
     # Question 33474 has exactly 1766 rows in the training dataset
-    csv_path = Path("datasets/train.csv")
     question_id = 33474
 
-    training_rows = load_training_data(csv_path, question_id)
+    training_rows = load_training_data(FULL_TRAIN_CSV, question_id)
 
     assert len(training_rows) == 1766, f"Expected 1766 rows but got {len(training_rows)}"
 
@@ -24,14 +27,14 @@ def test_load_training_data_returns_correct_count():
 
 
 def test_load_validation_data_returns_correct_count():
-    """Test that load_validation_data returns 341 rows for question 33474."""
-    # Question 33474 has 341 rows in the error prediction dataset
-    csv_path = Path("datasets/error_prediction.csv")
+    """Test that load_validation_data returns 17 rows for question 33474."""
+    # 33474 has 17 labelled rows in the tiny validation subset
     question_id = 33474
 
-    error_pairs = load_validation_data(csv_path, question_id)
+    error_pairs = load_validation_data(TINY_VALIDATION_CSV, question_id)
 
-    assert len(error_pairs) == 341, f"Expected 341 rows but got {len(error_pairs)}"
+    # 33474_tiny_train.csv contains 17 labelled rows for question 33474
+    assert len(error_pairs) == 17, f"Expected 17 rows but got {len(error_pairs)}"
 
     # Verify all rows have the correct question_id
     for eval_row, _prediction in error_pairs:
@@ -40,10 +43,9 @@ def test_load_validation_data_returns_correct_count():
 
 def test_training_row_structure():
     """Test that TrainingRow objects have the expected structure."""
-    csv_path = Path("datasets/train.csv")
-    question_id = 31772
+    question_id = 33474
 
-    training_rows = load_training_data(csv_path, question_id)
+    training_rows = load_training_data(FULL_TRAIN_CSV, question_id)
 
     # Check first row has expected attributes
     first_row = training_rows[0]
@@ -66,10 +68,9 @@ def test_training_row_structure():
 
 def test_validation_data_structure():
     """Test that validation data rows have the expected structure."""
-    csv_path = Path("datasets/error_prediction.csv")
-    question_id = 31772
+    question_id = 33474
 
-    error_pairs = load_validation_data(csv_path, question_id)
+    error_pairs = load_validation_data(TINY_VALIDATION_CSV, question_id)
 
     # Check first pair has expected structure
     assert len(error_pairs) > 0, "Should have at least one error pair"
@@ -96,39 +97,81 @@ def test_validation_data_structure():
     assert isinstance(first_prediction.misconception, str), "misconception should be str"
 
 
-def test_load_all_training_data():
+def test_load_all_training_data(tmp_path):
     """Test that load_training_data can load all data when question_id is None."""
-    csv_path = Path("datasets/train.csv")
+    sample_df = pd.DataFrame(
+        [
+            {
+                "row_id": 10,
+                "QuestionId": 1,
+                "QuestionText": "Q1",
+                "MC_Answer": "A",
+                "StudentExplanation": "Exp1",
+                "Category": "True_Correct",
+                "Misconception": "NA",
+            },
+            {
+                "row_id": 11,
+                "QuestionId": 2,
+                "QuestionText": "Q2",
+                "MC_Answer": "B",
+                "StudentExplanation": "Exp2",
+                "Category": "False_Misconception",
+                "Misconception": "Calculation",
+            },
+        ]
+    )
+    csv_path = tmp_path / "sample_train.csv"
+    sample_df.to_csv(csv_path, index=False)
 
     all_training_rows = load_training_data(csv_path)
+    assert len(all_training_rows) == 2, f"Expected 2 rows but got {len(all_training_rows)}"
 
-    # Should load all rows from the training set
-    assert len(all_training_rows) > 0, "Should load at least some training rows"
+    single_question_rows = load_training_data(csv_path, 1)
+    assert len(single_question_rows) == 1, (
+        f"Expected 1 row for question 1 but got {len(single_question_rows)}"
+    )
 
-    # Verify we get more rows than for a single question
-    single_question_rows = load_training_data(csv_path, 33474)
-    assert len(all_training_rows) > len(single_question_rows), "Should load more rows when not filtering"
-
-    # Check structure of first row
     first_row = all_training_rows[0]
     assert hasattr(first_row, "question_id"), "TrainingRow should have question_id"
     assert isinstance(first_row.question_id, int), "question_id should be int"
 
 
-def test_load_all_validation_data():
+def test_load_all_validation_data(tmp_path):
     """Test that load_validation_data can load all data when question_id is None."""
-    csv_path = Path("datasets/error_prediction.csv")
+    sample_df = pd.DataFrame(
+        [
+            {
+                "row_id": 20,
+                "QuestionId": 1,
+                "QuestionText": "Q1",
+                "MC_Answer": "A",
+                "StudentExplanation": "Exp1",
+                "Category": "True_Correct",
+                "Misconception": "NA",
+            },
+            {
+                "row_id": 21,
+                "QuestionId": 2,
+                "QuestionText": "Q2",
+                "MC_Answer": "B",
+                "StudentExplanation": "Exp2",
+                "Category": "False_Misconception",
+                "Misconception": "Reason",
+            },
+        ]
+    )
+    csv_path = tmp_path / "sample_validation.csv"
+    sample_df.to_csv(csv_path, index=False)
 
     all_validation_pairs = load_validation_data(csv_path)
+    assert len(all_validation_pairs) == 2, f"Expected 2 pairs but got {len(all_validation_pairs)}"
 
-    # Should load all rows from the validation set
-    assert len(all_validation_pairs) > 0, "Should load at least some validation rows"
+    single_question_pairs = load_validation_data(csv_path, 1)
+    assert len(single_question_pairs) == 1, (
+        f"Expected 1 pair for question 1 but got {len(single_question_pairs)}"
+    )
 
-    # Verify we get more rows than for a single question
-    single_question_pairs = load_validation_data(csv_path, 33474)
-    assert len(all_validation_pairs) > len(single_question_pairs), "Should load more rows when not filtering"
-
-    # Check structure of first pair
     first_eval_row, first_prediction = all_validation_pairs[0]
     assert hasattr(first_eval_row, "question_id"), "EvaluationRow should have question_id"
     assert isinstance(first_eval_row.question_id, int), "question_id should be int"
