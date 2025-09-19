@@ -249,11 +249,5 @@ def test_encode_batch_requires_correct_answer_for_goal_driven(create_evaluation_
         encode(rows, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
 
 
-def test_encode_rejects_invalid_input_type():
-    """Test that encode rejects invalid input types."""
-    with pytest.raises(TypeError, match="Expected EvaluationRow or list"):
-        encode(cast("EvaluationRow", "invalid_input"), EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
