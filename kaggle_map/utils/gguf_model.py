@@ -44,7 +44,6 @@ https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Thinking
 """
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -53,7 +52,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 from loguru import logger
 
-from kaggle_map.core.models import Prediction
+from kaggle_map.core.models import Category, Prediction
 from kaggle_map.utils.logger_config import configure_logger
 
 # Configure module-specific logging
@@ -62,14 +61,6 @@ configure_logger(__name__)
 # LLM operation type aliases
 PromptTemplate = str
 LLMResponse = str
-
-
-@dataclass
-class ParseResult:
-    """Result from parsing LLM response."""
-
-    predictions: list  # Will be list[Prediction] but avoiding circular import
-    thinking_trace: str | None = None
 
 
 class GGUFModelName(str, Enum):
@@ -466,18 +457,26 @@ def _parse_think_tags(response: str) -> tuple[str | None, str]:
     return thinking_trace, clean_response
 
 
-def parse_llm_response(response: str, parse_predictions_fn: Callable[[str], list] | None = None) -> ParseResult:
+def parse_predictions(response: str) -> list[Prediction]:
+    logger.debug(f"LLM response:\n{response}\n")
     # Check for GPT-OSS Harmony format first
     if "<|channel|>" in response:
         thinking_trace, clean_response = _parse_harmony_format(response)
     else:
         # Standard <think>...</think> format
         thinking_trace, clean_response = _parse_think_tags(response)
+    if thinking_trace:
+        logger.info(f"LLM Thinking Trace:\n{thinking_trace}")
+    logger.debug(f"Cleaned response for prediction parsing:\n{clean_response}\n")
 
-    # Parse predictions from cleaned response
-    predictions = parse_predictions_fn(clean_response) if parse_predictions_fn else []
-
-    return ParseResult(predictions=predictions, thinking_trace=thinking_trace)
+    # TODO: Implement a robust parse_predictions function for QuestionId and Correctness
+    label_options = {
+        1: Prediction(category=Category.TRUE_CORRECT, misconception="NA"),
+        2: Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Subtraction"),
+        3: Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Division"),
+        4: Prediction(category=Category.TRUE_NEITHER, misconception="NA"),
+    }
+    return [label_options[int(index)] for index in clean_response.split(",")]
 
 
 def get_llm_predictions(llm: Llama, prompt: str, model_name: GGUFModelName) -> list[Prediction]:
@@ -491,13 +490,4 @@ def get_llm_predictions(llm: Llama, prompt: str, model_name: GGUFModelName) -> l
         repeat_penalty=inference_config.repeat_penalty,
         stop=inference_config.stop_words,
     )
-
-    response_text = response["choices"][0]["text"]  # type: ignore[index]
-    logger.debug(f"LLM response:\n{response_text}\n")
-
-    result = parse_llm_response(response_text, Prediction.parse)
-
-    if result.thinking_trace:
-        logger.info(f"LLM Thinking Trace:\n{result.thinking_trace}")
-
-    return result.predictions
+    return parse_predictions(response["choices"][0]["text"])  # type: ignore[index]
