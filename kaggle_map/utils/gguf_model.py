@@ -178,7 +178,7 @@ class GGUFModelLoadConfig:
             case GGUFModelName.GPT_OSS_20B:
                 return GGUFModelLoadConfig(
                     quantization=GGUFModelQuantizationLevel.Q2_K_L,
-                    n_ctx=1024 * 20,
+                    n_ctx=32768,
                     n_batch=512,
                     n_gpu_layers=-1,
                     n_threads=8,
@@ -229,7 +229,7 @@ class GGUFModelInferenceConfig:
 
         Current settings:
         - QWEN3_30B: n_ctx=32768, max_tokens=16384 (50% - good for long prompts)
-        - GPT_OSS_20B: n_ctx=16384, max_tokens=10240 (62.5% - balanced)
+        - GPT_OSS_20B: n_ctx=32768, max_tokens=16384 (50% - matches OpenAI recommendations)
         - GEMMA_3_27B_IT: n_ctx=8192, max_tokens=4096 (50% - conservative)
         """
         match model_name:
@@ -243,7 +243,7 @@ class GGUFModelInferenceConfig:
                 )
             case GGUFModelName.GPT_OSS_20B:
                 return GGUFModelInferenceConfig(
-                    temperature=0.1,
+                    temperature=1.0,
                     top_p=1.0,
                     stop_words=["<|end|>"],
                     max_tokens=1024 * 16,
