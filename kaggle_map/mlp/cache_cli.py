@@ -42,7 +42,7 @@ def cmd_list() -> None:
             entry["strategy"],
             str(entry["n_samples"]),
             str(entry["embedding_dim"]),
-            f"{entry['size_mb']:.1f}"
+            f"{entry['size_mb']:.1f}",
         )
 
     console.print(table)
@@ -55,16 +55,16 @@ def cmd_clear() -> None:
     console.print("[green]Cache cleared successfully[/green]")
 
 
-def cmd_precompute(dataset_path: str) -> None:
+def cmd_precompute(dataset_path: str | Path) -> None:
     """Precompute all embedding combinations for a dataset."""
-    dataset_path = Path(dataset_path)
+    path = Path(dataset_path)
 
-    if not dataset_path.exists():
-        console.print(f"[red]Dataset not found: {dataset_path}[/red]")
+    if not path.exists():
+        console.print(f"[red]Dataset not found: {path}[/red]")
         return
 
-    console.print(f"[yellow]Loading dataset: {dataset_path}[/yellow]")
-    training_data = load_training_data(dataset_path)
+    console.print(f"[yellow]Loading dataset: {path}[/yellow]")
+    training_data = load_training_data(path)
     correct_answers = extract_correct_answers(training_data)
 
     console.print(f"[yellow]Preparing {len(training_data)} rows for embedding...[/yellow]")
@@ -91,7 +91,7 @@ def cmd_precompute(dataset_path: str) -> None:
     console.print("  • GEMMA + GOAL_DRIVEN (768 dims)")
     console.print("  • GEMMA + DOUBLE_BLIND (1536 dims)")
 
-    precompute_all_embeddings(eval_rows, metadata_tuples, dataset_path)
+    precompute_all_embeddings(eval_rows, metadata_tuples, path)
 
     console.print("[green]✓ All embeddings precomputed successfully[/green]")
 
@@ -112,7 +112,7 @@ Examples:
   # Precompute all embeddings for a dataset
   python -m kaggle_map.mlp.cache_cli precompute datasets/train.csv
   python -m kaggle_map.mlp.cache_cli precompute datasets/synth_balanced_30000_total.csv
-"""
+""",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -124,15 +124,8 @@ Examples:
     subparsers.add_parser("clear", help="Clear all cached embeddings")
 
     # Precompute command
-    precompute_parser = subparsers.add_parser(
-        "precompute",
-        help="Precompute all embedding combinations for a dataset"
-    )
-    precompute_parser.add_argument(
-        "dataset",
-        type=str,
-        help="Path to the dataset CSV file"
-    )
+    precompute_parser = subparsers.add_parser("precompute", help="Precompute all embedding combinations for a dataset")
+    precompute_parser.add_argument("dataset", type=str, help="Path to the dataset CSV file")
 
     args = parser.parse_args()
 
