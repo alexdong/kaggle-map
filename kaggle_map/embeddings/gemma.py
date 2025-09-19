@@ -43,21 +43,20 @@ class GemmaEmbeddingModel:
         assert all(isinstance(t, str) for t in text), "All items in list must be strings"
         assert text, "Cannot encode empty list of texts"
 
-        return self.model.encode(
-            text,
-            batch_size=batch_size,
-            convert_to_tensor=True
-        )
+        return self.model.encode(text, batch_size=batch_size, convert_to_tensor=True)
 
 
 if __name__ == "__main__":
-    import time
-
-    from loguru import logger
-
     logger.info("Testing GemmaEmbeddingModel")
-    model = GemmaEmbeddingModel.get_instance()
 
+    EMBEDDING_DIMENSION = 768
+    SINGLE_VECTOR_DIMENSIONS = 1
+    BATCH_TENSOR_DIMENSIONS = 2
+    SMALL_BATCH_SIZE = 3
+    CONSISTENCY_TOLERANCE = 1e-5
+    LARGE_BATCH_MULTIPLIER = 100
+
+    model = GemmaEmbeddingModel.get_instance()
     test_texts = [
         "The quick brown fox jumps over the lazy dog.",
         "Machine learning is a subset of artificial intelligence.",
@@ -79,8 +78,10 @@ if __name__ == "__main__":
         logger.info(f"  First 5 values: {embedding[:5].tolist()}")
 
         assert isinstance(embedding, torch.Tensor)
-        assert embedding.dim() == 1, f"Expected 1D tensor, got {embedding.dim()}D"
-        assert embedding.shape[0] == 768, f"Expected 768 dims, got {embedding.shape[0]}"
+        assert embedding.dim() == SINGLE_VECTOR_DIMENSIONS, f"Expected 1D tensor, got {embedding.dim()}D"
+        assert embedding.shape[0] == EMBEDDING_DIMENSION, (
+            f"Expected {EMBEDDING_DIMENSION} dims, got {embedding.shape[0]}"
+        )
         assert not torch.isnan(embedding).any(), "Embedding contains NaN values"
         assert not torch.isinf(embedding).any(), "Embedding contains infinite values"
 
@@ -94,8 +95,11 @@ if __name__ == "__main__":
     logger.info(f"  Type: {type(batch_embeddings)}")
 
     assert isinstance(batch_embeddings, torch.Tensor)
-    assert batch_embeddings.dim() == 2, f"Expected 2D tensor, got {batch_embeddings.dim()}D"
-    assert batch_embeddings.shape == (3, 768), f"Expected (3, 768), got {batch_embeddings.shape}"
+    assert batch_embeddings.dim() == BATCH_TENSOR_DIMENSIONS, f"Expected 2D tensor, got {batch_embeddings.dim()}D"
+    expected_batch_shape = (SMALL_BATCH_SIZE, EMBEDDING_DIMENSION)
+    assert batch_embeddings.shape == expected_batch_shape, (
+        f"Expected {expected_batch_shape}, got {batch_embeddings.shape}"
+    )
     assert not torch.isnan(batch_embeddings).any(), "Batch embeddings contain NaN values"
     assert not torch.isinf(batch_embeddings).any(), "Batch embeddings contain infinite values"
 
@@ -106,15 +110,16 @@ if __name__ == "__main__":
         batch_row = batch_embeddings[i]
         diff = torch.abs(individual - batch_row).max()
         logger.info(f"Text {i}: max difference = {diff:.6f}")
-        assert diff < 1e-5, f"Batch and individual encodings differ by {diff}"
+        assert diff < CONSISTENCY_TOLERANCE, f"Batch and individual encodings differ by {diff}"
 
     # Test larger batch
     logger.info("\n=== Testing larger batch ===")
-    large_batch = test_texts * 100  # 300 texts
+    large_batch = test_texts * LARGE_BATCH_MULTIPLIER
     start = time.time()
     large_embeddings = model.encode(large_batch, batch_size=64)
     elapsed = time.time() - start
-    logger.info(f"Encoded {len(large_batch)} texts in {elapsed:.3f}s ({len(large_batch)/elapsed:.1f} texts/sec)")
-    assert large_embeddings.shape == (300, 768)
+    logger.info(f"Encoded {len(large_batch)} texts in {elapsed:.3f}s ({len(large_batch) / elapsed:.1f} texts/sec)")
+    expected_large_batch_shape = (len(test_texts) * LARGE_BATCH_MULTIPLIER, EMBEDDING_DIMENSION)
+    assert large_embeddings.shape == expected_large_batch_shape
 
     logger.success("All tests passed!")
