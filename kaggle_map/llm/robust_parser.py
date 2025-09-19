@@ -1,8 +1,14 @@
 """Robust prediction parser using Levenshtein distance for typo tolerance."""
 
+from __future__ import annotations
+
 from loguru import logger
 
-from kaggle_map.core.models import Category, Prediction
+from kaggle_map.core.models import MAX_PREDICTIONS, Category, Prediction
+
+DEFAULT_CATEGORY_THRESHOLD = 0.7
+MAX_REASONABLE_PREDICTIONS = 10
+MAX_FORMATTED_LINES = MAX_PREDICTIONS
 
 
 def levenshtein_distance(s1: str, s2: str) -> int:
@@ -47,7 +53,7 @@ def similarity_ratio(s1: str, s2: str) -> float:
     return ratio
 
 
-def find_best_category_match(text: str, threshold: float = 0.7) -> Category | None:
+def find_best_category_match(text: str, threshold: float = DEFAULT_CATEGORY_THRESHOLD) -> Category | None:
     """Find the best matching category for a given text using fuzzy matching.
 
     Args:
@@ -120,7 +126,9 @@ def extract_tokens_from_response(response: str) -> list[str]:
     lines = prediction_line.split("\n")
 
     # Newline-separated format (3 lines with categories)
-    if len(lines) >= 3 and all(":" in line or any(cat.value in line for cat in Category) for line in lines[:3]):
+    if len(lines) >= MAX_FORMATTED_LINES and all(
+        ":" in line or any(cat.value in line for cat in Category) for line in lines[:MAX_FORMATTED_LINES]
+    ):
         return [line.strip() for line in lines if line.strip()]
 
     # Space-separated format
@@ -140,7 +148,10 @@ def extract_tokens_from_response(response: str) -> list[str]:
 
 
 def parse_predictions_with_fuzzy_matching(
-    response: str, max_predictions: int = 3, pad_to_max: bool = True
+    response: str,
+    max_predictions: int = MAX_PREDICTIONS,
+    *,
+    pad_to_max: bool = True,
 ) -> list[Prediction]:
     """Parse LLM response to extract predictions with typo tolerance.
 
@@ -161,31 +172,46 @@ def parse_predictions_with_fuzzy_matching(
         List of Prediction objects (up to max_predictions, padded if pad_to_max=True)
     """
     assert isinstance(response, str), f"response must be string, got {type(response)}"
-    assert max_predictions > 0, f"max_predictions must be positive, got {max_predictions}"
-    assert max_predictions <= 10, f"max_predictions seems unreasonable: {max_predictions}"
-    default_prediction = Prediction(category=Category.TRUE_CORRECT, misconception="NA")
+    _validate_parse_request(response, max_predictions)
     tokens = extract_tokens_from_response(response)
+    predictions = _collect_predictions(tokens, max_predictions)
+    return _finalise_predictions(predictions, max_predictions, pad_to_max=pad_to_max)
 
-    predictions = []
+
+def _validate_parse_request(response: str, max_predictions: int) -> None:
+    assert isinstance(response, str), f"response must be string, got {type(response)}"
+    assert max_predictions > 0, f"max_predictions must be positive, got {max_predictions}"
+    assert max_predictions <= MAX_REASONABLE_PREDICTIONS, f"max_predictions seems unreasonable: {max_predictions}"
+
+
+def _collect_predictions(tokens: list[str], max_predictions: int) -> list[Prediction]:
+    predictions: list[Prediction] = []
     for token in tokens:
         if len(predictions) >= max_predictions:
             break
+        parsed = parse_single_prediction_robust(token)
+        if parsed is not None:
+            predictions.append(parsed)
+    return predictions
 
-        pred = parse_single_prediction_robust(token)
-        if pred:
-            predictions.append(pred)
 
-    # Pad with defaults if requested
+def _default_prediction() -> Prediction:
+    return Prediction(category=Category.TRUE_CORRECT, misconception="NA")
+
+
+def _finalise_predictions(
+    predictions: list[Prediction],
+    max_predictions: int,
+    *,
+    pad_to_max: bool,
+) -> list[Prediction]:
     if pad_to_max:
         while len(predictions) < max_predictions:
-            predictions.append(default_prediction)
+            predictions.append(_default_prediction())
 
     result = predictions[:max_predictions]
-
-    # Only enforce exact count if padding is enabled
     if pad_to_max:
         assert len(result) == max_predictions, f"Expected {max_predictions} predictions, got {len(result)}"
 
-    assert all(isinstance(p, Prediction) for p in result), "All results must be Prediction objects"
-
+    assert all(isinstance(prediction, Prediction) for prediction in result), "All results must be Prediction objects"
     return result

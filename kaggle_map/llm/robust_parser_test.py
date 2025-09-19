@@ -1,5 +1,7 @@
 """Unit tests for robust prediction parser."""
 
+import re
+from typing import cast
 
 import pytest
 
@@ -41,10 +43,10 @@ class TestLevenshteinDistance:
     def test_invalid_input_types(self):
         """Test that non-string inputs fail fast with clear messages."""
         with pytest.raises(AssertionError, match="s1 must be string"):
-            levenshtein_distance(123, "hello")
+            levenshtein_distance(cast("str", 123), "hello")
 
         with pytest.raises(AssertionError, match="s2 must be string"):
-            levenshtein_distance("hello", 456)
+            levenshtein_distance("hello", cast("str", 456))
 
 
 class TestSimilarityRatio:
@@ -73,10 +75,10 @@ class TestSimilarityRatio:
     def test_invalid_input_types(self):
         """Test that non-string inputs fail fast."""
         with pytest.raises(AssertionError, match="s1 must be string"):
-            similarity_ratio(123, "hello")
+            similarity_ratio(cast("str", 123), "hello")
 
         with pytest.raises(AssertionError, match="s2 must be string"):
-            similarity_ratio("hello", 456)
+            similarity_ratio("hello", cast("str", 456))
 
     def test_ratio_bounds(self):
         """Test that similarity ratio is always in valid range."""
@@ -124,10 +126,11 @@ class TestFindBestCategoryMatch:
 
     def test_invalid_threshold(self):
         """Test that invalid thresholds fail fast."""
-        with pytest.raises(AssertionError, match="threshold must be between 0.0 and 1.0"):
+        threshold_message = re.escape("threshold must be between 0.0 and 1.0")
+        with pytest.raises(AssertionError, match=threshold_message):
             find_best_category_match("True_Correct", threshold=-0.1)
 
-        with pytest.raises(AssertionError, match="threshold must be between 0.0 and 1.0"):
+        with pytest.raises(AssertionError, match=threshold_message):
             find_best_category_match("True_Correct", threshold=1.5)
 
     def test_empty_text(self):
@@ -141,7 +144,7 @@ class TestFindBestCategoryMatch:
     def test_invalid_text_type(self):
         """Test that non-string text fails fast."""
         with pytest.raises(AssertionError, match="text must be string"):
-            find_best_category_match(123)
+            find_best_category_match(cast("str", 123))
 
     def test_boundary_threshold_conditions(self):
         # Test exact threshold boundary conditions
@@ -198,7 +201,7 @@ class TestParseSinglePredictionRobust:
     def test_invalid_token_type(self):
         """Test that non-string tokens fail fast."""
         with pytest.raises(AssertionError, match="token must be string"):
-            parse_single_prediction_robust(123)
+            parse_single_prediction_robust(cast("str", 123))
 
     def test_empty_misconception(self):
         pred = parse_single_prediction_robust("True_Correct:")
@@ -340,7 +343,7 @@ These represent the student's understanding."""
     def test_invalid_response_type(self):
         """Test that non-string responses fail fast."""
         with pytest.raises(AssertionError, match="response must be string"):
-            parse_predictions_with_fuzzy_matching(123)
+            parse_predictions_with_fuzzy_matching(cast("str", 123))
 
     def test_tab_separated_format(self):
         # Test tab-separated format to improve coverage
