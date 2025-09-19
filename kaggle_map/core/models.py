@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
 from pydantic import BaseModel, field_validator
@@ -102,9 +103,6 @@ class Prediction(BaseModel):
 
     @classmethod
     def from_string(cls, prediction_str: str) -> Prediction:
-        # Use the robust parser for single predictions too
-        from kaggle_map.llm.robust_parser import parse_single_prediction_robust
-
         result = parse_single_prediction_robust(prediction_str.strip())
         if result is None:
             msg = f"Cannot parse prediction string: {prediction_str}"
@@ -118,9 +116,6 @@ class Prediction(BaseModel):
 
     @classmethod
     def parse(cls, response: str) -> list[Prediction]:
-        # Use the robust parser that handles typos and format issues
-        from kaggle_map.llm.robust_parser import parse_predictions_with_fuzzy_matching
-
         # Don't pad by default - let caller decide if they want padding
         return parse_predictions_with_fuzzy_matching(response, max_predictions=3, pad_to_max=False)
 
@@ -353,6 +348,7 @@ class TrainingConfig(BaseModel):
     embedding_model: EmbeddingModel = EmbeddingModel.QWEN
     embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
     architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
+    embedding_dim: int | None = None
 
     # File paths
     train_csv_path: Path = Path("datasets/train.csv")
@@ -367,6 +363,7 @@ class TrainingConfig(BaseModel):
 # Constants for validation
 MAX_PREDICTIONS = 3
 PROBABILITY_TOLERANCE = 1e-6
+PostInitContext = Mapping[str, object] | None
 
 
 class MLPPredictionResult(BaseModel):
@@ -383,7 +380,7 @@ class MLPPredictionResult(BaseModel):
     entropy: float  # Entropy score: -sum(p_i * log(p_i)) for routing
     prediction_time_ms: float  # Time taken for this prediction
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: PostInitContext) -> None:
         """Validate prediction result consistency."""
         assert len(self.top_predictions) <= MAX_PREDICTIONS, "Maximum 3 predictions allowed"
         assert len(self.top_predictions) == len(self.top_probabilities), "Predictions and probabilities must match"
@@ -406,7 +403,7 @@ class LLMPredictionResult(BaseModel):
     prediction_time_ms: float  # Time taken for LLM prediction
     success: bool  # Whether LLM prediction completed successfully
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: PostInitContext) -> None:
         """Validate LLM prediction result."""
         assert len(self.predictions) <= MAX_PREDICTIONS, "Maximum 3 predictions allowed"
         if self.success:
@@ -427,7 +424,7 @@ class RoutingDecision(BaseModel):
     routing_rank: int | None = None  # Rank in entropy-sorted queue (1-based)
     reason: str = ""  # Explanation for routing decision
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: PostInitContext) -> None:
         """Validate routing decision."""
         assert self.entropy >= 0.0, "Entropy must be non-negative"
         if self.should_route:
@@ -496,7 +493,7 @@ class RoutedPrediction(BaseModel):
 
         return self.mlp_result.top_predictions
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: PostInitContext) -> None:
         """Validate routed prediction consistency."""
         assert self.row_id == self.mlp_result.row_id, "Row IDs must match"
         assert self.question_id == self.mlp_result.question_id, "Question IDs must match"
@@ -552,10 +549,7 @@ class RoutingSession(BaseModel):
 
         for row_id in self.entropy_sorted_row_ids:
             prediction = self.predictions[row_id]
-            if (
-                prediction.routing_decision.should_route
-                and prediction.state == PredictionState.LLM_PENDING
-            ):
+            if prediction.routing_decision.should_route and prediction.state == PredictionState.LLM_PENDING:
                 return prediction
 
         return None
@@ -567,7 +561,7 @@ class RoutingSession(BaseModel):
             question_id=mlp_result.question_id,
             mlp_result=mlp_result,
             routing_decision=routing_decision,
-            state=PredictionState.LLM_PENDING if routing_decision.should_route else PredictionState.MLP_ONLY
+            state=PredictionState.LLM_PENDING if routing_decision.should_route else PredictionState.MLP_ONLY,
         )
 
         self.predictions[mlp_result.row_id] = routed_prediction
@@ -608,18 +602,13 @@ class RoutingSession(BaseModel):
             prediction = self.predictions[row_id]
             final_preds = prediction.get_best_predictions()
 
-            submission_rows.append(SubmissionRow(
-                row_id=row_id,
-                predicted_categories=final_preds
-            ))
+            submission_rows.append(SubmissionRow(row_id=row_id, predicted_categories=final_preds))
 
         return submission_rows
 
     def get_performance_summary(self) -> dict[str, float | int]:
         """Get summary statistics for the routing session."""
-        llm_success_rate = (
-            self.predictions_completed_by_llm / max(1, self.predictions_routed_to_llm)
-        )
+        llm_success_rate = self.predictions_completed_by_llm / max(1, self.predictions_routed_to_llm)
 
         return {
             "total_predictions": self.total_predictions,
@@ -631,3 +620,9 @@ class RoutingSession(BaseModel):
             "total_llm_time_used_seconds": self.total_llm_time_used_seconds,
             "time_budget_utilization": self.total_llm_time_used_seconds / max(1e-9, self.total_time_budget_seconds),
         }
+
+
+from kaggle_map.llm.robust_parser import (  # noqa: E402  # Imported late to avoid circular dependency
+    parse_predictions_with_fuzzy_matching,
+    parse_single_prediction_robust,
+)
