@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -49,7 +49,7 @@ from kaggle_map.utils.metrics import calculate_map_at_3
 if TYPE_CHECKING:
     from argparse import ArgumentParser
 
-    SubparsersAction: TypeAlias = argparse._SubParsersAction[ArgumentParser]
+    SubparsersAction = argparse._SubParsersAction[ArgumentParser]
 else:
     SubparsersAction = argparse._SubParsersAction
 

@@ -93,7 +93,7 @@ def run_search(
     study_name: str,
     n_trials: int,
     *,
-    fixed: dict[TunableParameters, Any] | None = None,
+    fixed: dict[TunableParameters, Any],
 ) -> optuna.Study:
     """Run an Optuna study with optional fixed hyperparameters."""
 
@@ -104,11 +104,10 @@ def run_search(
         "Starting optimisation",
         study=study.study_name,
         trials=n_trials,
-        fixed_parameters=len(fixed or {}),
+        fixed_parameters=fixed,
     )
-
     study.optimize(
-        partial(objective, fixed=dict(fixed or {})),
+        partial(objective, fixed=fixed),
         n_trials=n_trials,
         n_jobs=1,
         gc_after_trial=True,

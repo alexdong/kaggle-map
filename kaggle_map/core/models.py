@@ -100,6 +100,20 @@ class Prediction(BaseModel):
         misconception = row["Misconception"] if pd.notna(row["Misconception"]) else "NA"
         return cls(category=category, misconception=misconception)
 
+    @classmethod
+    def from_string(cls, text: str) -> Prediction:
+        """Parse a Prediction from a string in 'Category:Misconception' format."""
+        assert text, "Prediction string cannot be empty"
+        assert ":" in text, f"Invalid prediction format (missing ':'): '{text}'"
+
+        parts = text.split(":", 1)
+        assert len(parts) == 2, f"Invalid prediction format: '{text}'"
+
+        category_str, misconception = parts
+        category = Category(category_str)
+        misconception = misconception if misconception else "NA"
+        return cls(category=category, misconception=misconception)
+
     def __str__(self) -> Label:
         if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
@@ -596,5 +610,3 @@ class RoutingSession(BaseModel):
             "total_llm_time_used_seconds": self.total_llm_time_used_seconds,
             "time_budget_utilization": self.total_llm_time_used_seconds / max(1e-9, self.total_time_budget_seconds),
         }
-
-
