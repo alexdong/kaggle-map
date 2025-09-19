@@ -15,45 +15,29 @@ Label Definitions
 -------------------
 
 {% if mc_answer == "(1/3) * (2/3)" %}
-<True_Correct:NA>
-The written explanation indicates that the answer would be (1/3) * (2/3) = 2/9 since the student's explanation clearly demonstrates understanding of multiplying.
-</True_Correct:NA>
+(1) True_Correct:NA: The written explanation indicates that the answer would be (1/3) * (2/3) = 2/9 since the student's explanation clearly demonstrates understanding of multiplying.
 
-<True_Misconception:Subtraction>
-The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
-</True_Misconception:Subtraction>
+(2) True_Misconception:Subtraction: The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
 
-<True_Misconception:Division>
-The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
-</True_Misconception:Division>
+(3) True_Misconception:Division: The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
 
-<True_Neither:NA>
-Use this label when:
+(4) True_Neither:NA: Use this label when:
 - The written explanation produces an answer that is not 2/9, 1/3, -1/3, 2 or 1/2.
 - The explanation is mathematically incorrect, incoherent, or incomplete
 - The explanation contains unrelated math operations or nonsensical calculations
 - The student's work is too unclear to determine their specific approach
-</True_Neither:NA>
 {% else %}
-<False_Correct:NA>
-The written explanation indicates that the answer would be 2/9 since the student's explanation clearly demonstrates understanding of multiplying (1/3) * (2/3), even though they selected the wrong answer. They may have made a selection error.
-</False_Correct:NA>
+(1) False_Correct:NA: The written explanation indicates that the answer would be 2/9 since the student's explanation clearly demonstrates understanding of multiplying (1/3) * (2/3), even though they selected the wrong answer. They may have made a selection error.
 
-<False_Misconception:Subtraction>
-The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
-</False_Misconception:Subtraction>
+(2) False_Misconception:Subtraction: The written explanation indicates that the answer would be (2/3) - (1/3) = 1/3 or (1/3) - (2/3) = -1/3 since the student tries to solve the problem using subtraction.  
 
-<False_Misconception:Division>
-The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
-</False_Misconception:Division>
+(3) False_Misconception:Division: The written explanation indicates that the answer would be (1/3) ÷ (2/3) = 2 or (2/3) ÷ (1/3) = 1/2 since student tries to solve the problem using division.
 
-<False_Neither:NA>
-Use this label when:
+(4) False_Neither:NA: Use this label when:
 - The written explanation produces an answer that is not 2/9, 1/3, -1/3, 2 or 1/2.
 - The explanation is mathematically incorrect, incoherent, or incomplete
 - The explanation contains unrelated math operations or nonsensical calculations
 - The student's work is too unclear to determine their specific approach
-</False_Neither:NA>
 {% endif %}
 
 Instructions
@@ -63,15 +47,10 @@ Instructions
 
 2. Forget about the student's Multiple Choice Answer. Review the Student's Written Explanation carefully. Based solely on the explanation, determine what the final answer would be. If the explanation doesn't provide enough details for you to follow through, output it. 
 
-3. Now, based on the final answer, rank the labels from most to least likely.  To recap, here are the valid labels: {% if mc_answer == "(1/3) * (2/3)" %} True_Correct:NA True_Misconception:Subtraction True_Misconception:Division True_Neither:NA {% else %}False_Correct:NA False_Misconception:Subtraction False_Misconception:Division False_Neither:NA {% endif %}
+3. Now, based on the final answer, rank the labels from most to least likely. 
 
 
 Output Format
 -------------------
 
-Only provide the ranked labels as a single line of text, with no additional commentary or explanation.  Make sure you output the labels exactly as shown, including capitalization, underscores, colons, and spacing. CRITICAL - Check one last time that you use ONLY the exact labels provided above. Do not create variations, abbreviations, or modified versions.  Example Output: 
-
-{% if mc_answer == "(1/3) * (2/3)" %}True_Correct:NA True_Neither:NA True_Misconception:Subtraction True_Misconception.Division{% else %}False_Correct:NA False_Misconception:Subtraction False_Neither:NA False_Misconception:Division{% endif %}
-
-{# Important to make sure there are exactly three labels in the output #}
-Make sure you output extractly three labels in the output, no more, no less.
+Only output the ranked labels as a single comma-separated string of numbers, with no additional commentary or explanation (eg. `0,1,3` or `3,1,2`) 
