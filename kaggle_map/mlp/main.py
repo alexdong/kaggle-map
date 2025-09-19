@@ -56,7 +56,6 @@ _DEFAULT_TRAINING_CONFIG = TrainingConfig()
 
 
 def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
-    """Extract unique prediction strings per question."""
     question_predictions = defaultdict(list)
     for row in training_data:
         pred_str = str(row.prediction)
@@ -211,28 +210,6 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
     return result.model, config
 
 
-def predict(
-    model: QuestionSpecificMLP, evaluation_row: EvaluationRow, config: TrainingConfig | None = None
-) -> SubmissionRow:
-    """Single-row prediction interface delegating to efficient batch processing.
-
-    Delegates to predict_batch() to avoid code duplication and ensure consistent
-    encoding behavior between single and batch predictions.
-
-    Args:
-        model: Trained MLP model
-        evaluation_row: Input data for prediction
-        config: Embedding configuration (defaults to model's training settings)
-
-    Returns:
-        Submission row with top 3 misconception predictions
-    """
-    # Single-item batch ensures consistent embedding behavior across prediction modes
-    results = predict_batch(model, [evaluation_row], config)
-    assert len(results) == 1, "Expected exactly one prediction result"
-    return results[0]
-
-
 def _process_single_prediction(
     model: QuestionSpecificMLP,
     eval_row: EvaluationRow,
@@ -314,26 +291,9 @@ def _process_single_prediction(
 
 
 def predict_batch(
-    model: QuestionSpecificMLP, evaluation_rows: list[EvaluationRow], config: TrainingConfig | None = None
+    model: QuestionSpecificMLP, evaluation_rows: list[EvaluationRow], config: TrainingConfig
 ) -> list[SubmissionRow]:
-    """Batch prediction optimizing expensive embedding computation.
-
-    Key optimization: computes embeddings for all rows in a single batch call
-    rather than individual encoding. This dramatically reduces overhead from
-    model loading and GPU memory transfers for large prediction sets.
-
-    Args:
-        model: Trained MLP model
-        evaluation_rows: Input data for predictions
-        config: Embedding configuration (defaults to GOAL_DRIVEN/GEMMA)
-
-    Returns:
-        Submission rows with top 3 misconception predictions per input
-    """
-    # Preconditions - enforce function contract
-
-    if not evaluation_rows:
-        return []
+    assert evaluation_rows, "Evaluation rows list is empty"
 
     # Amortize expensive data loading across all predictions in batch
     logger.debug("Loading training data for batch prediction")
@@ -342,10 +302,9 @@ def predict_batch(
 
     device = get_device()
     logger.debug(f"Device selection: using {device}")
-
-    # Determine embedding configuration
-    embedding_strategy = config.embedding_strategy if config else EmbeddingStrategy.GOAL_DRIVEN
-    embedding_model = config.embedding_model if config else EmbeddingModel.QWEN
+    assert config is not None, "TrainingConfig must be provided for prediction"
+    embedding_strategy = config.embedding_strategy
+    embedding_model = config.embedding_model
     logger.debug(f"Embedding configuration: strategy={embedding_strategy.value}, model={embedding_model.value}")
 
     # Add correct answers to evaluation rows for embedding
@@ -397,31 +356,9 @@ def predict_batch(
 
 
 def evaluate(
-    model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig | None = None
+    model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig
 ) -> dict[str, float]:
-    """Calculate MAP@3 score by comparing predictions to ground truth.
-
-    Converts training data to evaluation format, generates predictions via
-    batch processing, then computes Mean Average Precision at 3 for each
-    question's misconception ranking.
-
-    Args:
-        model: Trained MLP model
-        test_data: Training rows with ground truth predictions
-        config: Embedding configuration for prediction generation
-
-    Returns:
-        Dictionary containing 'validation_map@3' score and sample count
-    """
-    # Preconditions - fail fast on invalid inputs
-
-    if not test_data:
-        return {
-            "validation_map@3": 0.0,
-            "validation_samples": 0,
-        }
-
-    # Convert training rows to evaluation rows using comprehension
+    assert test_data, "Test data is empty, cannot evaluate model"
     eval_rows: list[EvaluationRow] = [
         EvaluationRow(
             row_id=row.row_id,
@@ -433,11 +370,8 @@ def evaluate(
         for row in test_data
     ]
 
-    # Generate predictions for MAP@3 calculation
     logger.info(f"Starting batch evaluation of {len(test_data)} samples")
     predictions = predict_batch(model, eval_rows, config)
-
-    # Validate prediction integrity before scoring
     assert len(test_data) == len(predictions), f"Mismatch: {len(test_data)} test rows vs {len(predictions)} predictions"
 
     # Score each prediction against ground truth for overall metric
@@ -638,99 +572,21 @@ def handle_eval(args: argparse.Namespace) -> None:
 
     # Load the model
     model_path = Path(args.model_path)
-    if not model_path.exists():
-        logger.error(f"Model file not found: {model_path}")
-        sys.exit(1)
+    assert model_path.exists(), f"Model file not found: {model_path}"
 
     logger.info(f"Loading model from {model_path}...")
     model, config = load(model_path)
-
-    # Load training data for evaluation
+    assert config is not None, "Loaded model missing TrainingConfig; retrain with the latest pipeline"
     train_data_path = Path(args.train_data)
-    if not train_data_path.exists():
-        logger.error(f"Training data not found: {train_data_path}")
-        sys.exit(1)
+    assert train_data_path.exists(), f"Training data not found: {train_data_path}"
 
     # Evaluate the model
     logger.info("Evaluating model performance...")
     training_data = load_training_data(train_data_path)
     metrics = evaluate(model, training_data, config)
-
     logger.success(f"MAP@3 Score: {metrics['validation_map@3']:.4f}")
     if args.verbose:
         logger.info(f"Evaluation complete. Model achieved MAP@3 score of {metrics['validation_map@3']:.4f}")
-
-
-def handle_predict(args: argparse.Namespace) -> None:
-    """Handle the predict command to generate predictions."""
-
-    # Configure logging level
-    if args.verbose:
-        logger.info("Starting prediction generation with parameters:")
-        logger.info(f"  Model path: {args.model_path}")
-        logger.info(f"  Input file: {args.input_file}")
-        logger.info(f"  Output file: {args.output_file}")
-
-    # Load the model
-    model_path = Path(args.model_path)
-    if not model_path.exists():
-        logger.error(f"Model file not found: {model_path}")
-        sys.exit(1)
-
-    logger.info(f"Loading model from {model_path}...")
-    model, config = load(model_path)
-
-    # Load input data
-    input_path = Path(args.input_file)
-    if not input_path.exists():
-        logger.error(f"Input file not found: {input_path}")
-        sys.exit(1)
-
-    logger.info(f"Loading input data from {input_path}...")
-    # Read the CSV to get evaluation rows
-    df = pd.read_csv(input_path)
-
-    # Convert to EvaluationRow objects using comprehension
-    # Handle both test.csv format (row_id) and expected format (id)
-    eval_rows = [
-        EvaluationRow(
-            row_id=row.get("row_id", row.get("id")),
-            question_id=QuestionId(row["QuestionId"]),
-            question_text=row.get("QuestionText", ""),
-            mc_answer=row.get("MC_Answer", row.get("MCAnswer", "")),
-            student_explanation=row.get("StudentExplanation", ""),
-            # These fields may not exist in test.csv, use empty strings as defaults
-            construct_name=row.get("ConstructName", ""),
-            subject_name=row.get("SubjectName", ""),
-            correct_answer=row.get("CorrectAnswer", row.get("MC_Answer", "")),  # Use MC_Answer as correct answer if CorrectAnswer not present
-            wrong_answer=row.get("WrongAnswer", ""),
-        )
-        for _, row in df.iterrows()
-    ]
-
-    # Generate predictions using batch processing for efficiency
-    logger.info(f"Generating predictions for {len(eval_rows)} rows...")
-    predictions = predict_batch(model, eval_rows, config)
-
-    # Convert predictions to submission format using comprehension
-    submission_rows = [
-        {
-            "row_id": pred.row_id,  # Use row_id to match test.csv format
-            "prediction": " ".join(str(p) for p in pred.predicted_categories[:MAX_PREDICTIONS]),
-        }
-        for pred in predictions
-    ]
-
-    # Save predictions
-    output_path = Path(args.output_file)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    submission_df = pd.DataFrame(submission_rows)
-    submission_df.to_csv(output_path, index=False)
-    logger.success(f"Predictions saved to {output_path}")
-
-    if args.verbose:
-        logger.info(f"Generated predictions for {len(submission_rows)} samples")
 
 
 def main() -> None:
@@ -748,9 +604,6 @@ Examples:
 
   # Evaluate a trained model
   python -m kaggle_map.mlp eval --model-path models/mlp.pkl
-
-  # Generate predictions for submission
-  python -m kaggle_map.mlp predict --input-file test.csv --output-file submission.csv
         """,
     )
 
@@ -829,33 +682,6 @@ Examples:
         help="Show detailed evaluation metrics",
     )
 
-    # Predict command
-    predict_parser = subparsers.add_parser("predict", help="Generate predictions")
-    predict_parser.add_argument(
-        "--model-path",
-        type=str,
-        default="models/mlp.pkl",
-        help="Path to the saved model (default: models/mlp.pkl)",
-    )
-    predict_parser.add_argument(
-        "--input-file",
-        type=str,
-        required=True,
-        help="Path to input CSV file with test data",
-    )
-    predict_parser.add_argument(
-        "--output-file",
-        type=str,
-        required=True,
-        help="Path to output CSV file for predictions",
-    )
-    predict_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show prediction progress",
-    )
-
     # Parse arguments
     args = parser.parse_args()
 
@@ -870,8 +696,6 @@ Examples:
             handle_fit(args)
         elif args.command == "eval":
             handle_eval(args)
-        elif args.command == "predict":
-            handle_predict(args)
         else:
             logger.error(f"Unknown command: {args.command}")
             sys.exit(1)

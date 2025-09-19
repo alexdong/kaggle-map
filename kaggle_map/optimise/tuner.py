@@ -21,13 +21,13 @@ configure_logger(__name__)
 
 def objective(trial: optuna.Trial, scope: set[TunableParameters]) -> float:
     config = TrainingConfig(**sample_hyperparameters(trial, scope))
-    model = fit(config)
+    model, trained_config = fit(config)
 
     training_data = load_training_data(config.train_csv_path)
     n_samples = len(training_data)
     split = _get_split_indices(n_samples, config.train_split)
     test_data = [training_data[i] for i in split.val_indices]
-    result = evaluate(model, test_data)
+    result = evaluate(model, test_data, trained_config)
     return result["validation_map@3"]
 
 
