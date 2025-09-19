@@ -8,12 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
+import numpy as np
 from pydantic import BaseModel, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
 
-if TYPE_CHECKING:
-    import numpy as np
 
 # ============================================================================
 # Constants
@@ -101,23 +100,10 @@ class Prediction(BaseModel):
         misconception = row["Misconception"] if pd.notna(row["Misconception"]) else "NA"
         return cls(category=category, misconception=misconception)
 
-    @classmethod
-    def from_string(cls, prediction_str: str) -> Prediction:
-        result = parse_single_prediction_robust(prediction_str.strip())
-        if result is None:
-            msg = f"Cannot parse prediction string: {prediction_str}"
-            raise ValueError(msg)
-        return result
-
     def __str__(self) -> Label:
         if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
-
-    @classmethod
-    def parse(cls, response: str) -> list[Prediction]:
-        # Don't pad by default - let caller decide if they want padding
-        return parse_predictions_with_fuzzy_matching(response, max_predictions=3, pad_to_max=False)
 
 
 def normalize_label(label: Label) -> Label:
@@ -622,7 +608,3 @@ class RoutingSession(BaseModel):
         }
 
 
-from kaggle_map.llm.robust_parser import (  # noqa: E402  # Imported late to avoid circular dependency
-    parse_predictions_with_fuzzy_matching,
-    parse_single_prediction_robust,
-)

@@ -8,11 +8,12 @@ import argparse
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
-import pandas as pd
 import torch
 from loguru import logger
 from torch.nn import functional
@@ -45,6 +46,13 @@ from kaggle_map.utils.device import get_device
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
 
+if TYPE_CHECKING:
+    from argparse import ArgumentParser
+
+    SubparsersAction: TypeAlias = argparse._SubParsersAction[ArgumentParser]
+else:
+    SubparsersAction = argparse._SubParsersAction
+
 configure_logger(__name__)
 
 # Maximum predictions per question as required by Kaggle MAP competition format
@@ -53,6 +61,18 @@ MAX_PREDICTIONS = 3
 
 # Default configuration instances to avoid None checks
 _DEFAULT_TRAINING_CONFIG = TrainingConfig()
+EMBEDDING_TENSOR_DIMENSIONS = 2
+CORRECTNESS_EMBEDDING_DIMENSIONS = 32
+LEGACY_DEFAULT_EMBEDDING_DIM = 4096
+
+
+@dataclass(frozen=True)
+class LoadedCheckpoint:
+    state_dict: dict[str, torch.Tensor]
+    raw_config: dict[str, Any]
+    question_predictions: dict[QuestionId, list[str]]
+    embedding_dim: int
+    is_new_format: bool
 
 
 def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
@@ -62,6 +82,59 @@ def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[Ques
         question_predictions[row.question_id].append(pred_str)
 
     return {qid: list(set(preds)) for qid, preds in question_predictions.items()}
+
+
+def _load_training_question_predictions() -> dict[QuestionId, list[str]]:
+    training_rows = load_training_data(TrainingConfig().train_csv_path)
+    return _extract_question_predictions(training_rows)
+
+
+def _infer_embedding_dim_from_state_dict(state_dict: dict[str, torch.Tensor]) -> int:
+    trunk_weight = state_dict.get("trunk.0.weight")
+    if trunk_weight is None:
+        return LEGACY_DEFAULT_EMBEDDING_DIM
+    return trunk_weight.shape[1] - CORRECTNESS_EMBEDDING_DIMENSIONS
+
+
+def _prepare_loaded_checkpoint(checkpoint: object) -> LoadedCheckpoint:
+    is_new_format = isinstance(checkpoint, dict) and "state_dict" in checkpoint
+
+    if is_new_format:
+        mapping = cast("dict[str, Any]", checkpoint)
+        state_dict = cast("dict[str, torch.Tensor]", mapping["state_dict"])
+        raw_config = dict(cast("dict[str, Any]", mapping.get("config", {})))
+        embedding_dim = cast("int | None", raw_config.get("embedding_dim"))
+        if embedding_dim is None:
+            embedding_dim = _infer_embedding_dim_from_state_dict(state_dict)
+        question_predictions = cast("dict[QuestionId, list[str]] | None", mapping.get("question_predictions"))
+        if question_predictions is None:
+            question_predictions = _load_training_question_predictions()
+        return LoadedCheckpoint(
+            state_dict=state_dict,
+            raw_config=raw_config,
+            question_predictions=question_predictions,
+            embedding_dim=embedding_dim,
+            is_new_format=True,
+        )
+
+    legacy_state_dict = cast("dict[str, torch.Tensor]", checkpoint)
+    embedding_dim = _infer_embedding_dim_from_state_dict(legacy_state_dict)
+    question_predictions = _load_training_question_predictions()
+    legacy_config = {
+        "architecture_size": ArchitectureSize.XLARGE.value,
+        "dropout": 0.3,
+        "activation": ActivationType.GELU.value,
+        "embedding_model": EmbeddingModel.QWEN.value,
+        "embedding_strategy": EmbeddingStrategy.GOAL_DRIVEN.value,
+    }
+
+    return LoadedCheckpoint(
+        state_dict=legacy_state_dict,
+        raw_config=legacy_config,
+        question_predictions=question_predictions,
+        embedding_dim=embedding_dim,
+        is_new_format=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -105,6 +178,131 @@ def _get_split_indices(n_samples: int, train_ratio: float = 0.7) -> DataSplit:
     )
 
 
+def _configure_fit_parser(
+    subparsers: SubparsersAction,
+) -> None:
+    fit_parser = subparsers.add_parser("fit", help="Train the MLP model")
+    fit_parser.add_argument(
+        "--train-data",
+        type=str,
+        default="datasets/train.csv",
+        help="Path to training data CSV (default: datasets/train.csv)",
+    )
+    fit_parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+        help="Number of training epochs (default: 50)",
+    )
+    fit_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=256,
+        help="Batch size for training (default: 256)",
+    )
+    fit_parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=1e-4,
+        help="Learning rate (default: 1e-4)",
+    )
+    fit_parser.add_argument(
+        "--train-split",
+        type=float,
+        default=0.7,
+        help="Fraction of data for training (default: 0.7)",
+    )
+    fit_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/mlp.pkl",
+        help="Path to save the trained model (default: models/mlp.pkl)",
+    )
+    fit_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed training progress",
+    )
+
+
+def _configure_eval_parser(
+    subparsers: SubparsersAction,
+) -> None:
+    eval_parser = subparsers.add_parser("eval", help="Evaluate the MLP model")
+    eval_parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/mlp.pkl",
+        help="Path to the saved model (default: models/mlp.pkl)",
+    )
+    eval_parser.add_argument(
+        "--train-data",
+        type=str,
+        default="datasets/train.csv",
+        help="Path to training data CSV for evaluation (default: datasets/train.csv)",
+    )
+    eval_parser.add_argument(
+        "--train-split",
+        type=float,
+        default=0.7,
+        help="Fraction of data used for training (default: 0.7)",
+    )
+    eval_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Show detailed evaluation metrics",
+    )
+
+
+def _build_cli_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="MLP model for student misconception prediction",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Train a model with default settings
+  python -m kaggle_map.mlp fit
+
+  # Train with custom parameters
+  python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001
+
+  # Evaluate a trained model
+  python -m kaggle_map.mlp eval --model-path models/mlp.pkl
+        """,
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    _configure_fit_parser(subparsers)
+    _configure_eval_parser(subparsers)
+    return parser
+
+
+def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    handlers: dict[str, Callable[[argparse.Namespace], None]] = {
+        "fit": handle_fit,
+        "eval": handle_eval,
+    }
+
+    handler = handlers.get(args.command)
+    if handler is None:
+        logger.error(f"Unknown command: {args.command}")
+        parser.print_help()
+        sys.exit(1)
+
+    try:
+        assert handler is not None
+        handler(args)
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        sys.exit(1)
+    except Exception as exc:
+        logger.error(f"Error during {args.command}: {exc}")
+        if getattr(args, "verbose", False):
+            logger.exception("Full traceback:")
+        sys.exit(1)
+
+
 def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpecificMLP, TrainingConfig]:
     """Train an MLP model for misconception prediction.
 
@@ -142,11 +340,7 @@ def fit(config: TrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpec
 
     # Get embeddings from cache or compute them
     embeddings, question_ids, predictions, mc_answers = get_or_compute_embeddings(
-        eval_rows,
-        metadata_tuples,
-        config.train_csv_path,
-        config.embedding_model,
-        strategy
+        eval_rows, metadata_tuples, config.train_csv_path, config.embedding_model, strategy
     )
 
     embedding_dim = embeddings.shape[1]
@@ -329,7 +523,9 @@ def predict_batch(
     assert embeddings.size(0) == len(eval_rows_with_answers), (
         f"Embedding count mismatch: got {embeddings.size(0)}, expected {len(eval_rows_with_answers)}"
     )
-    assert embeddings.dim() == 2, f"Expected 2D embeddings, got {embeddings.dim()}D"
+    assert embeddings.dim() == EMBEDDING_TENSOR_DIMENSIONS, (
+        f"Expected {EMBEDDING_TENSOR_DIMENSIONS}D embeddings, got {embeddings.dim()}D"
+    )
 
     # Ensure embeddings are on CPU for numpy conversion if needed
     if embeddings.is_cuda:
@@ -355,9 +551,7 @@ def predict_batch(
     return submission_rows
 
 
-def evaluate(
-    model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig
-) -> dict[str, float]:
+def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow], config: TrainingConfig) -> dict[str, float]:
     assert test_data, "Test data is empty, cannot evaluate model"
     eval_rows: list[EvaluationRow] = [
         EvaluationRow(
@@ -406,8 +600,9 @@ def save(model: QuestionSpecificMLP, filepath: Path, config: TrainingConfig | No
     # Save both model state and configuration
     # Extract architecture info from the model
     first_layer = model.trunk[0]
-    total_input_dim = first_layer.in_features
-    embedding_dim = total_input_dim - 32  # Subtract correctness embedding dimension
+    assert hasattr(first_layer, "in_features"), "First trunk layer must expose in_features"
+    total_input_dim = cast("int", first_layer.in_features)
+    embedding_dim = total_input_dim - CORRECTNESS_EMBEDDING_DIMENSIONS
 
     # Reconstruct question_predictions from the model's encoders
     question_predictions = {}
@@ -428,7 +623,7 @@ def save(model: QuestionSpecificMLP, filepath: Path, config: TrainingConfig | No
             "dropout": config.dropout if config else 0.3,
             "activation": config.activation.value if config else ActivationType.GELU.value,
             "embedding_model": config.embedding_model.value if config else EmbeddingModel.QWEN.value,
-            "embedding_strategy": config.embedding_strategy.value if config and hasattr(config, "embedding_strategy") else "goal_driven",
+            "embedding_strategy": (config.embedding_strategy.value if config else EmbeddingStrategy.GOAL_DRIVEN.value),
         },
         "question_predictions": question_predictions,
     }
@@ -448,80 +643,38 @@ def load(filepath: Path) -> tuple[QuestionSpecificMLP, TrainingConfig | None]:
     assert filepath.exists(), f"Model file not found: {filepath}"
 
     checkpoint = torch.load(filepath, weights_only=False)
+    loaded = _prepare_loaded_checkpoint(checkpoint)
 
-    # Handle both old (state_dict only) and new (with config) formats
-    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        # New format with configuration
-        state_dict = checkpoint["state_dict"]
-        config = checkpoint.get("config", {})
-        embedding_dim = config.get("embedding_dim")
-        question_predictions = checkpoint.get("question_predictions")
-
-        # If question_predictions not in checkpoint, load from training data
-        if question_predictions is None:
-            training_data = load_training_data(TrainingConfig().train_csv_path)
-            question_predictions = _extract_question_predictions(training_data)
-    else:
-        # Old format - just state_dict
-        state_dict = checkpoint
-
-        # Try to infer embedding dimension from the first layer
-        # trunk.0.weight shape is [hidden_dim, input_dim]
-        if "trunk.0.weight" in state_dict:
-            total_input_dim = state_dict["trunk.0.weight"].shape[1]
-            embedding_dim = total_input_dim - 32  # Subtract correctness embedding
-        else:
-            # Fallback to old hardcoded logic
-            config = TrainingConfig()
-            embedding_dim = 4096  # GOAL_DRIVEN and SEMANTIC both use single embedding
-
-        # Load question predictions from training data
-        training_data = load_training_data(TrainingConfig().train_csv_path)
-        question_predictions = _extract_question_predictions(training_data)
-
-    # Create model with detected/loaded dimensions and config
-    if isinstance(checkpoint, dict) and "config" in checkpoint:
-        config = checkpoint["config"]
-        architecture_size = ArchitectureSize(config.get("architecture_size", "xlarge"))
-        dropout = config.get("dropout", 0.3)
-        activation = ActivationType(config.get("activation", "gelu"))
-    else:
-        # Use defaults for old format
-        architecture_size = ArchitectureSize.XLARGE
-        dropout = 0.3
-        activation = ActivationType.GELU
+    config_dict = loaded.raw_config
+    architecture_size = ArchitectureSize(config_dict.get("architecture_size", "xlarge"))
+    raw_dropout = config_dict.get("dropout", 0.3)
+    dropout = float(raw_dropout) if isinstance(raw_dropout, str) else float(cast("float", raw_dropout))
+    activation = ActivationType(config_dict.get("activation", "gelu"))
 
     model = QuestionSpecificMLP(
-        question_predictions,
-        embedding_dim=embedding_dim,
+        loaded.question_predictions,
+        embedding_dim=loaded.embedding_dim,
         architecture_size=architecture_size,
         dropout=dropout,
         activation=activation,
     )
+    model.load_state_dict(loaded.state_dict)
 
-    model.load_state_dict(state_dict)
-
-    # Move model to appropriate device
     device = get_device()
     model = model.to(device)
     logger.debug(f"Model loaded and moved to device: {device}")
 
-    # Reconstruct config if available
-    loaded_config = None
-    if isinstance(checkpoint, dict) and "config" in checkpoint:
-        config_dict = checkpoint["config"]
+    loaded_config: TrainingConfig | None = None
+    if loaded.is_new_format:
+        embedding_strategy_value = config_dict.get("embedding_strategy", "double_blind")
+        normalized_strategy = "goal_driven" if embedding_strategy_value == "semantic" else embedding_strategy_value
         loaded_config = TrainingConfig(
-            embedding_dim=embedding_dim,
-            architecture_size=ArchitectureSize(config_dict.get("architecture_size", "xlarge")),
-            dropout=config_dict.get("dropout", 0.3),
-            activation=ActivationType(config_dict.get("activation", "gelu")),
+            embedding_dim=loaded.embedding_dim,
+            architecture_size=architecture_size,
+            dropout=dropout,
+            activation=activation,
             embedding_model=EmbeddingModel(config_dict.get("embedding_model", "qwen")),
-            # Handle backward compatibility: semantic -> goal_driven
-            embedding_strategy=EmbeddingStrategy(
-                "goal_driven"
-                if config_dict.get("embedding_strategy") == "semantic"
-                else config_dict.get("embedding_strategy", "double_blind")
-            ),
+            embedding_strategy=EmbeddingStrategy(normalized_strategy),
         )
 
     return model, loaded_config
@@ -591,122 +744,14 @@ def handle_eval(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Main entry point for CLI execution."""
-    parser = argparse.ArgumentParser(
-        description="MLP model for student misconception prediction",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Train a model with default settings
-  python -m kaggle_map.mlp fit
-
-  # Train with custom parameters
-  python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001
-
-  # Evaluate a trained model
-  python -m kaggle_map.mlp eval --model-path models/mlp.pkl
-        """,
-    )
-
-    # Add subparsers for different commands
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # Fit command
-    fit_parser = subparsers.add_parser("fit", help="Train the MLP model")
-    fit_parser.add_argument(
-        "--train-data",
-        type=str,
-        default="datasets/train.csv",
-        help="Path to training data CSV (default: datasets/train.csv)",
-    )
-    fit_parser.add_argument(
-        "--epochs",
-        type=int,
-        default=50,
-        help="Number of training epochs (default: 50)",
-    )
-    fit_parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=256,
-        help="Batch size for training (default: 256)",
-    )
-    fit_parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-4,
-        help="Learning rate (default: 1e-4)",
-    )
-    fit_parser.add_argument(
-        "--train-split",
-        type=float,
-        default=0.7,
-        help="Fraction of data for training (default: 0.7)",
-    )
-    fit_parser.add_argument(
-        "--model-path",
-        type=str,
-        default="models/mlp.pkl",
-        help="Path to save the trained model (default: models/mlp.pkl)",
-    )
-    fit_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show detailed training progress",
-    )
-
-    # Eval command
-    eval_parser = subparsers.add_parser("eval", help="Evaluate the MLP model")
-    eval_parser.add_argument(
-        "--model-path",
-        type=str,
-        default="models/mlp.pkl",
-        help="Path to the saved model (default: models/mlp.pkl)",
-    )
-    eval_parser.add_argument(
-        "--train-data",
-        type=str,
-        default="datasets/train.csv",
-        help="Path to training data CSV for evaluation (default: datasets/train.csv)",
-    )
-    eval_parser.add_argument(
-        "--train-split",
-        type=float,
-        default=0.7,
-        help="Fraction of data used for training (default: 0.7)",
-    )
-    eval_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show detailed evaluation metrics",
-    )
-
-    # Parse arguments
+    parser = _build_cli_parser()
     args = parser.parse_args()
 
-    # Show help if no command specified
-    if args.command is None:
+    if getattr(args, "command", None) is None:
         parser.print_help()
         sys.exit(1)
 
-    # Dispatch to appropriate handler
-    try:
-        if args.command == "fit":
-            handle_fit(args)
-        elif args.command == "eval":
-            handle_eval(args)
-        else:
-            logger.error(f"Unknown command: {args.command}")
-            sys.exit(1)
-    except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Error during {args.command}: {e}")
-        if args.verbose if hasattr(args, "verbose") else False:
-            logger.exception("Full traceback:")
-        sys.exit(1)
+    _dispatch_command(args, parser)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,9 @@
 
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
-from optuna import Trial
+from optuna.trial import BaseTrial
 
 from kaggle_map.core.models import (
     ActivationType,
@@ -34,8 +35,24 @@ class TunableParameters(str, Enum):
     EMBEDDING_STRATEGY = "embedding_strategy"
 
 
-def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -> dict:
-    """Sample hyperparameters from an Optuna trial for specified parameters."""
+def sample_hyperparameters(trial: BaseTrial, fixed: dict[TunableParameters, Any]) -> dict[str, Any]:
+    """Sample hyperparameters while respecting fixed overrides."""
+
+    raw_overrides = dict(fixed or {})
+    enum_values = tuple(TunableParameters.__members__.values())
+    valid_keys = {param.value for param in enum_values}
+
+    fixed_overrides: dict[str, Any] = {}
+    unknown_keys: set[str] = set()
+
+    for key, value in raw_overrides.items():
+        key_name = key.value if isinstance(key, TunableParameters) else str(key)
+        if key_name in valid_keys:
+            fixed_overrides[key_name] = value
+            continue
+        unknown_keys.add(key_name)
+
+    assert not unknown_keys, f"Unknown fixed parameters: {sorted(unknown_keys)}"
 
     suggestions = {
         TunableParameters.EPOCHS: lambda t: t.suggest_int("epochs", 28, 180),
@@ -69,9 +86,6 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
                 "train_csv_path",
                 [
                     "datasets/train.csv",
-                    "datasets/synth_balanced_30000_total.csv",
-                    "datasets/synth_original_366960_unbalanced.csv",
-                    "datasets/synth_median_balanced_354210_total.csv",
                 ],
             )
         ),
@@ -93,8 +107,12 @@ def sample_hyperparameters(trial: Trial, search_scope: set[TunableParameters]) -
         ),
     }
 
-    sampled = {}
-    for field in search_scope:
-        sampled[field.value] = suggestions[field](trial)
+    sampled: dict[str, Any] = {}
+    for parameter in enum_values:
+        key = parameter.value
+        if key in fixed_overrides:
+            sampled[key] = fixed_overrides[key]
+            continue
+        sampled[key] = suggestions[parameter](trial)
 
     return sampled

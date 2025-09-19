@@ -119,6 +119,16 @@ Latency budget: the MLP runs in ~20 ms per sample, while the local LLM takes ~10
 **logs/** – Module-scoped structured logs
 
 
+## Tech Stack
+
+- **Language & Packaging**: Python 3.12+ with strict type modeling via Pydantic; project tooling managed by `uv` and standard `pyproject.toml` metadata.
+- **Modeling & Training**: PyTorch MLP classifiers complemented by scikit-learn utilities, calibrated softmax outputs.
+- **Embeddings & LLMs**: Sentence-transformers and Hugging Face `transformers` backends, local GGUF models (e.g., Qwen, Gemma) served through `llama-cpp-python`, plus Hugging Face Hub integration for artifact sync.
+- **Data & Experimentation**: Pandas/numpy pipelines, Kaggle API ingestion helpers, and Optuna with `optuna-dashboard` for hyperparameter search and study visualization.
+- **Interfaces & Observability**: CLI surfaces built with Click and Prompt Toolkit, templating/visualization via python-fasthtml, Textual, Jinja2, and logging/diagnostics handled by Loguru, better-exceptions, psutil, and platformdirs.
+- **Developer Tooling**: Makefile targets wrap `uv run` workflows; Ruff, Ty, and Pyrefly enforce linting and static analysis; pytest, pytest-asyncio, and Hypothesis back the testing strategy.
+
+
 ## Development Principles
 
 These opinionated principles contradict much of the common wisdom. Take the time to read and understand the philosophy behind them. Follow them religiously.
