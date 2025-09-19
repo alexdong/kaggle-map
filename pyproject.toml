@@ -47,6 +47,7 @@ package = true
 dev-dependencies = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-randomly>=3.15.0",
     # Minimal runtime deps needed by tests when using --no-project
     "pandas>=2.0.0",
     "pydantic",
@@ -157,4 +158,3 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
-
