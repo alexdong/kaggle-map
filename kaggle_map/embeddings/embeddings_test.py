@@ -1,5 +1,6 @@
 """Tests for embedding module batch encoding functionality."""
 
+from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
@@ -208,12 +209,16 @@ def test_encode_validates_strategy_parameter():
     from kaggle_map.core.models import EvaluationRow
 
     row = EvaluationRow(
-        row_id=1, question_id=100, question_text="What is 2+2?",
-        mc_answer="4", student_explanation="Basic math", correct_answer="4"
+        row_id=1,
+        question_id=100,
+        question_text="What is 2+2?",
+        mc_answer="4",
+        student_explanation="Basic math",
+        correct_answer="4",
     )
 
     with pytest.raises(AssertionError, match="Invalid embedding strategy"):
-        encode(row, "INVALID_STRATEGY", EmbeddingModel.GEMMA)
+        encode(row, cast("EmbeddingStrategy", "INVALID_STRATEGY"), EmbeddingModel.GEMMA)
 
 
 def test_encode_validates_model_parameter():
@@ -221,12 +226,16 @@ def test_encode_validates_model_parameter():
     from kaggle_map.core.models import EvaluationRow
 
     row = EvaluationRow(
-        row_id=1, question_id=100, question_text="What is 2+2?",
-        mc_answer="4", student_explanation="Basic math", correct_answer="4"
+        row_id=1,
+        question_id=100,
+        question_text="What is 2+2?",
+        mc_answer="4",
+        student_explanation="Basic math",
+        correct_answer="4",
     )
 
     with pytest.raises(AssertionError, match="Invalid embedding model"):
-        encode(row, EmbeddingStrategy.GOAL_DRIVEN, "INVALID_MODEL")
+        encode(row, EmbeddingStrategy.GOAL_DRIVEN, cast("EmbeddingModel", "INVALID_MODEL"))
 
 
 def test_encode_batch_requires_correct_answer_for_goal_driven(create_evaluation_row):
@@ -243,7 +252,7 @@ def test_encode_batch_requires_correct_answer_for_goal_driven(create_evaluation_
 def test_encode_rejects_invalid_input_type():
     """Test that encode rejects invalid input types."""
     with pytest.raises(TypeError, match="Expected EvaluationRow or list"):
-        encode("invalid_input", EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        encode(cast("EvaluationRow", "invalid_input"), EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
 
 
 # =============================================================================
@@ -251,7 +260,7 @@ def test_encode_rejects_invalid_input_type():
 # =============================================================================
 
 
-def test_fit_uses_batch_encoding(mock_embedder, sample_training_data):
+def test_fit_uses_batch_encoding(mock_embedder, sample_training_data, tmp_path):
     """Test that fit function uses batch encoding efficiently."""
     from kaggle_map.core.models import TrainingConfig
     from kaggle_map.mlp.main import fit
@@ -259,20 +268,28 @@ def test_fit_uses_batch_encoding(mock_embedder, sample_training_data):
     with (
         patch("kaggle_map.mlp.main.load_training_data", return_value=sample_training_data),
         patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder),
+        patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder),
+        patch("kaggle_map.mlp.embedding_cache.load_embeddings", return_value=None),
         patch("kaggle_map.mlp.main.train_model"),
     ):
-                config = TrainingConfig(epochs=1, batch_size=32)
-                fit(config)
+        config = TrainingConfig(
+            epochs=1,
+            batch_size=32,
+            embedding_strategy=EmbeddingStrategy.GOAL_DRIVEN,
+            embedding_model=EmbeddingModel.GEMMA,
+            train_csv_path=tmp_path / "mock_train.csv",
+        )
+        fit(config)
 
-                # Should call encode with batch (list), not individual items
-                # For GOAL_DRIVEN and SEMANTIC strategies, should make 1 batch call
-                expected_calls = 1
-                assert mock_embedder.encode.call_count == expected_calls
+        # Should call encode with batch (list), not individual items
+        # For GOAL_DRIVEN and SEMANTIC strategies, should make 1 batch call
+        expected_calls = 1
+        assert mock_embedder.encode.call_count == expected_calls
 
-                # Verify it was called with a list
-                call_args = mock_embedder.encode.call_args[0][0]
-                assert isinstance(call_args, list)
-                assert len(call_args) == len(sample_training_data)
+        # Verify it was called with a list
+        call_args = mock_embedder.encode.call_args[0][0]
+        assert isinstance(call_args, list)
+        assert len(call_args) == len(sample_training_data)
 
 
 # =============================================================================

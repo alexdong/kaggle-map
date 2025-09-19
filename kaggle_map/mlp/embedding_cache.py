@@ -143,10 +143,10 @@ def validate_cache(metadata: dict, dataset_path: Path, model: EmbeddingModel, st
     current_hash = _compute_dataset_hash(dataset_path)
 
     is_valid = (
-        metadata["dataset_path"] == str(dataset_path) and
-        metadata["dataset_hash"] == current_hash and
-        metadata["model"] == model.value and
-        metadata["strategy"] == strategy.value
+        metadata["dataset_path"] == str(dataset_path)
+        and metadata["dataset_hash"] == current_hash
+        and metadata["model"] == model.value
+        and metadata["strategy"] == strategy.value
     )
 
     if not is_valid:
@@ -160,7 +160,7 @@ def get_or_compute_embeddings(
     metadata_tuples: list[tuple],
     dataset_path: Path,
     model: EmbeddingModel,
-    strategy: EmbeddingStrategy
+    strategy: EmbeddingStrategy,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Get embeddings from cache or compute them if not cached."""
     cache_path = _get_cache_path(dataset_path, model, strategy)
@@ -201,11 +201,7 @@ def get_or_compute_embeddings(
     return embeddings, question_ids, predictions, mc_answers
 
 
-def precompute_all_embeddings(
-    eval_rows: list[EvaluationRow],
-    metadata_tuples: list[tuple],
-    dataset_path: Path
-) -> None:
+def precompute_all_embeddings(eval_rows: list[EvaluationRow], metadata_tuples: list[tuple], dataset_path: Path) -> None:
     """Precompute embeddings for all model/strategy combinations."""
     models = [EmbeddingModel.QWEN, EmbeddingModel.GEMMA]
     strategies = [EmbeddingStrategy.DOUBLE_BLIND, EmbeddingStrategy.GOAL_DRIVEN]
@@ -242,11 +238,7 @@ def list_cached_embeddings() -> list[dict]:
         result = load_embeddings(cache_file)
         if result is not None:
             _, _, _, _, metadata = result
-            cached.append({
-                "file": cache_file.name,
-                "size_mb": cache_file.stat().st_size / (1024 * 1024),
-                **metadata
-            })
+            cached.append({"file": cache_file.name, "size_mb": cache_file.stat().st_size / (1024 * 1024), **metadata})
 
     return cached
 
@@ -276,9 +268,7 @@ if __name__ == "__main__":
             raise ValueError(msg)
         return subset
 
-    def _derive_correct_answers(
-        training_rows: list[TrainingRow], subset: list[TrainingRow]
-    ) -> dict[int, str]:
+    def _derive_correct_answers(training_rows: list[TrainingRow], subset: list[TrainingRow]) -> dict[int, str]:
         try:
             return extract_correct_answers(training_rows)
         except AssertionError as exc:  # pragma: no cover - defensive branch
