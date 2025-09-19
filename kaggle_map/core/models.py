@@ -252,16 +252,6 @@ class EmbeddingStrategy(Enum):
     DOUBLE_BLIND = "double_blind"
     GOAL_DRIVEN = "goal_driven"  # Previously called SEMANTIC
 
-    @property
-    def dimension(self) -> int:
-        """Return the output dimension for this embedding strategy."""
-        # DOUBLE_BLIND concatenates two embeddings (2 * 4096 for QWEN = 8192)
-        # GOAL_DRIVEN uses single embedding (8192 for QWEN)
-        # Since QWEN now produces 8192-dim embeddings natively, both are 8192
-        # But DOUBLE_BLIND would be 16384 if we concatenate two 8192 embeddings
-        # Let's keep it at historical sizes for compatibility
-        return 16384 if self == EmbeddingStrategy.DOUBLE_BLIND else 8192
-
     @classmethod
     def from_string(cls, value: str | None) -> EmbeddingStrategy:
         """Convert string to enum, with default to DOUBLE_BLIND."""

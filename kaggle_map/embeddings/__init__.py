@@ -7,7 +7,7 @@ with Q8_0 quantization for efficient processing.
 
   - Creates one unified embedding containing all components:
     - (question, correct_answer, mc_answer, student_explanation)
-  - Returns 8192-dimensional torch.Tensor for QWEN, 768-dimensional for GEMMA
+  - Returns 4096-dimensional torch.Tensor for QWEN, 768-dimensional for GEMMA
 """
 
 import torch
@@ -19,7 +19,8 @@ from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
     # DOUBLE_BLIND concatenates two embeddings, GOAL_DRIVEN uses single
-    base_dim = 8192 if model == EmbeddingModel.QWEN else 768
+    # QWEN produces 4096-dim embeddings, GEMMA produces 768-dim embeddings
+    base_dim = 4096 if model == EmbeddingModel.QWEN else 768
     return base_dim * 2 if strategy == EmbeddingStrategy.DOUBLE_BLIND else base_dim
 
 
