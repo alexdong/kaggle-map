@@ -7,7 +7,14 @@ from loguru import logger
 from sklearn.preprocessing import LabelEncoder
 from torch import nn
 
-from kaggle_map.core.models import ActivationType, ArchitectureSize, QuestionId
+from kaggle_map.core.models import (
+    ActivationType,
+    ArchitectureSize,
+    EmbeddingModel,
+    EmbeddingStrategy,
+    QuestionId,
+)
+from kaggle_map.embeddings import get_input_embeddings_dimension
 from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
@@ -37,13 +44,26 @@ class Architecture:
     activation: ActivationType = ActivationType.GELU
 
 
-def get_architecture(size: ArchitectureSize, total_input_dim: int) -> Architecture:
-    """Get architecture config for given size and total input dimension.
+CORRECTNESS_EMBEDDING_DIMENSIONS = 32
+
+
+def get_architecture(
+    size: ArchitectureSize,
+    embedding_model: EmbeddingModel,
+    embedding_strategy: EmbeddingStrategy,
+    correctness_embedding_dim: int = CORRECTNESS_EMBEDDING_DIMENSIONS,
+) -> Architecture:
+    """Compose architecture layers based on embedding sources and size.
 
     Args:
         size: Architecture size (MEDIUM, LARGE, XLARGE)
-        total_input_dim: Total input dimension including embeddings and correctness
+        embedding_model: Embedding backend used to generate explanations embeddings
+        embedding_strategy: Strategy describing how text inputs are combined
+        correctness_embedding_dim: Dimensionality of the correctness embedding head
     """
+    embedding_dim = get_input_embeddings_dimension(embedding_strategy, embedding_model)
+    total_input_dim = embedding_dim + correctness_embedding_dim
+
     # Create architecture layers based on input dimension
     # The hidden layers progressively reduce dimensionality
     if size == ArchitectureSize.MEDIUM:
@@ -85,20 +105,32 @@ class QuestionSpecificMLP(nn.Module):
     def __init__(
         self,
         question_predictions: dict[QuestionId, list[str]],
-        embedding_dim: int,
+        embedding_model: EmbeddingModel,
+        embedding_strategy: EmbeddingStrategy,
         architecture_size: ArchitectureSize = ArchitectureSize.XLARGE,
         dropout: float = 0.3,
         activation: ActivationType = ActivationType.GELU,
+        correctness_embedding_dim: int = CORRECTNESS_EMBEDDING_DIMENSIONS,
     ) -> None:
         super().__init__()
 
-        correctness_embedding_dim = 32
+        assert correctness_embedding_dim > 0, "Correctness embedding dimension must be positive"
+
+        self.embedding_model = embedding_model
+        self.embedding_strategy = embedding_strategy
+        self.correctness_embedding_dim = correctness_embedding_dim
+
+        embedding_dim = get_input_embeddings_dimension(embedding_strategy, embedding_model)
+        self.embedding_dim = embedding_dim
+
         self.correctness_embedding = nn.Embedding(2, correctness_embedding_dim)
 
-        # Total input dimension is embedding + correctness embedding
-        total_input_dim = embedding_dim + correctness_embedding_dim
-
-        arch = get_architecture(architecture_size, total_input_dim)
+        arch = get_architecture(
+            size=architecture_size,
+            embedding_model=embedding_model,
+            embedding_strategy=embedding_strategy,
+            correctness_embedding_dim=correctness_embedding_dim,
+        )
         activation_fn = get_activation(activation)
 
         layers = []
@@ -110,6 +142,7 @@ class QuestionSpecificMLP(nn.Module):
 
         self.trunk = nn.Sequential(*layers)
         self.output_dim = arch.layers[-1]
+        self.total_input_dim = arch.layers[0]
 
         self.true_heads = nn.ModuleDict()
         self.false_heads = nn.ModuleDict()
@@ -140,9 +173,9 @@ class QuestionSpecificMLP(nn.Module):
         """Forward pass returning logits per question, split by correctness.
 
         Args:
-            x: [batch_size, embedding_dim] - embeddings
+            input_embeddings: [batch_size, embedding_dim] - explanation embeddings
             question_ids: [batch_size] - question IDs
-            is_correct: [batch_size] - correctness indices (0 or 1)
+            mc_answer_correctnesses: [batch_size] - correctness indices (0 or 1)
 
         Returns:
             Dictionary mapping EvaluationResult to logits tensor
