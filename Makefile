@@ -93,15 +93,16 @@ MODAL_SMOKE_PROMPT ?= Deployment smoke test
 
 deploy-llm:
 	@echo "Deploying GPT-OSS Modal service..."
-	MODAL_MIN_CONTAINERS=$(MODAL_MIN_CONTAINERS) MODAL_MAX_CONTAINERS=$(MODAL_MAX_CONTAINERS) modal deploy -m $(MODAL_APP)
-	@echo "Deployment complete. Web endpoint:"
-	@URL=$$(modal function url $(MODAL_APP)::GPTOSSService.completions); \
-		echo "$$URL"; \
+	@bash -lc 'set -o pipefail; MODAL_MIN_CONTAINERS=$(MODAL_MIN_CONTAINERS) MODAL_MAX_CONTAINERS=$(MODAL_MAX_CONTAINERS) modal deploy -m $(MODAL_APP) | tee .modal-deploy.log'
+	@URL=$$(grep -Eo 'https://[^ ]*modal\.run[^ ]*' .modal-deploy.log | tail -1); \
+		rm -f .modal-deploy.log; \
+		echo "Deployment complete. Web endpoint:"; \
+		echo "  $$URL"; \
 		echo "Running curl smoke test..."; \
 		curl -sS -X POST "$$URL" \
-		    -H "Content-Type: application/json" \
-		    -d '{"prompt":"$(MODAL_SMOKE_PROMPT)"}' || true
+				-H "Content-Type: application/json" \
+				-d '{"prompt":"$(MODAL_SMOKE_PROMPT)"}' || true; \
 
 serve-llm:
 	@echo "Starting Modal dev server for GPT-OSS..."
-modal serve $(MODAL_APP)
+	modal serve -m $(MODAL_APP)

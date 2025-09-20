@@ -51,7 +51,7 @@ VOLUME_NAME = "kaggle-map-gpt-oss-gguf-cache"
 MODEL_NAME = GGUFModelName.GPT_OSS_20B
 DEFAULT_QUANTIZATION = GGUFModelQuantizationLevel.Q2_K_L
 CONTAINER_ROOT = Path("/root/kaggle-map")
-
+API_URL = "https://alex-dong--kaggle-map-gpt-oss-gptossservice-completions.modal.run"
 
 MIN_CONTAINERS = int(os.environ.get("MODAL_MIN_CONTAINERS", "1"))
 MAX_CONTAINERS = int(os.environ.get("MODAL_MAX_CONTAINERS", "8"))
@@ -92,6 +92,7 @@ image = (
     .apt_install("curl", "git")
     .pip_install(
         "fastapi>=0.111.0",
+        "pandas>=2.0.0",
         "llama-cpp-python>=0.2.90",
         "huggingface-hub>=0.20.0",
         "numpy>=2.0.0",
