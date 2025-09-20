@@ -89,7 +89,15 @@ search:
 MODAL_APP ?= kaggle_map.llm.api
 MODAL_MIN_CONTAINERS ?= 1
 MODAL_MAX_CONTAINERS ?= 8
+MODAL_SMOKE_PROMPT ?= Deployment smoke test
 
 deploy-llm:
 	@echo "Deploying GPT-OSS Modal service..."
 	MODAL_MIN_CONTAINERS=$(MODAL_MIN_CONTAINERS) MODAL_MAX_CONTAINERS=$(MODAL_MAX_CONTAINERS) modal deploy -m $(MODAL_APP)
+	@echo "Deployment complete. Web endpoint:"
+	@URL=$$(modal function url $(MODAL_APP)::GPTOSSService.completions); \
+		echo "$$URL"; \
+		echo "Running curl smoke test..."; \
+		curl -sS -X POST "$$URL" \
+		    -H "Content-Type: application/json" \
+		    -d '{"prompt":"$(MODAL_SMOKE_PROMPT)"}' || true
