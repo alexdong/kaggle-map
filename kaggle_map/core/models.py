@@ -1,18 +1,15 @@
 """Core data structures for the Kaggle student misconception prediction competition."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import Annotated, NamedTuple
 
-import pandas as pd
 import numpy as np
-from pydantic import BaseModel, field_validator
+import pandas as pd
+from pydantic import BaseModel, Field, field_validator
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
-
 
 # ============================================================================
 # Constants
@@ -56,7 +53,7 @@ class Category(Enum):
         return self.value.startswith("True_")
 
     @classmethod
-    def from_csv_string(cls, csv_value: str) -> Category:
+    def from_csv_string(cls, csv_value: str) -> "Category":
         """Convert CSV format category string to Category enum.
 
         CSV files use ALL_CAPS format (e.g., 'TRUE_MISCONCEPTION') while
@@ -72,6 +69,7 @@ class Category(Enum):
             >>> Category.from_csv_string('TRUE_MISCONCEPTION')
             Category.TRUE_MISCONCEPTION
         """
+
         assert csv_value, "CSV category value cannot be empty"
         assert "_" in csv_value, f"Invalid CSV category format: '{csv_value}'"
 
@@ -83,7 +81,7 @@ class Category(Enum):
         return cls(formatted_value)
 
     @classmethod
-    def by_truth_value(cls, *, is_true: bool) -> list[Category]:
+    def by_truth_value(cls, *, is_true: bool) -> list["Category"]:
         prefix = "True_" if is_true else "False_"
         return [category for category in cls if category.value.startswith(prefix)]
 
@@ -93,7 +91,7 @@ class Prediction(BaseModel):
     misconception: Misconception = "NA"
 
     @classmethod
-    def from_ground_truth_row(cls, row: pd.Series) -> Prediction:
+    def from_ground_truth_row(cls, row: pd.Series) -> "Prediction":
         """Create a Prediction from a ground truth CSV row."""
         category = Category.from_csv_string(str(row["Category"]))
         # Handle NaN misconceptions (pandas converts "NA" to NaN)
@@ -101,13 +99,13 @@ class Prediction(BaseModel):
         return cls(category=category, misconception=misconception)
 
     @classmethod
-    def from_string(cls, text: str) -> Prediction:
+    def from_string(cls, text: str) -> "Prediction":
         """Parse a Prediction from a string in 'Category:Misconception' format."""
         assert text, "Prediction string cannot be empty"
         assert ":" in text, f"Invalid prediction format (missing ':'): '{text}'"
 
         parts = text.split(":", 1)
-        assert len(parts) == 2, f"Invalid prediction format: '{text}'"
+        assert len(parts) == 2, f"Invalid prediction format: '{text}'"  # noqa: PLR2004
 
         category_str, misconception = parts
         category = Category(category_str)
@@ -118,38 +116,6 @@ class Prediction(BaseModel):
         if self.category.is_misconception and self.misconception != "NA":
             return f"{self.category.value}:{self.misconception}"
         return f"{self.category.value}:NA"
-
-
-def normalize_label(label: Label) -> Label:
-    return label.replace("Category.", "").title()
-
-
-def compare_labels(actual: Label, predicted: Label) -> bool:
-    """Compare two labels with normalization."""
-    assert actual, f"Actual label cannot be empty: '{actual}'"
-    assert predicted, f"Predicted label cannot be empty: '{predicted}'"
-
-    # Fast path: exact match
-    if actual == predicted:
-        return True
-
-    # Normalize and compare
-    actual_norm = normalize_label(actual)
-    predicted_norm = normalize_label(predicted)
-
-    # Handle category:misconception format
-    if ":" in actual_norm and ":" in predicted_norm:
-        actual_parts = actual_norm.split(":", 1)
-        pred_parts = predicted_norm.split(":", 1)
-
-        # Category must match exactly
-        if actual_parts[0] != pred_parts[0]:
-            return False
-
-        # Misconception comparison (case-insensitive)
-        return actual_parts[1].lower() == pred_parts[1].lower()
-
-    return actual_norm == predicted_norm
 
 
 class EvaluationRow(BaseModel):
@@ -206,7 +172,7 @@ class TrainingRow(EvaluationRow):
 
     # Expose prediction fields at the top level for backward compatibility
     @property
-    def category(self) -> Category:
+    def category(self) -> "Category":
         """Access the category from the embedded prediction."""
         return self.prediction.category
 
@@ -216,7 +182,7 @@ class TrainingRow(EvaluationRow):
         return self.prediction.misconception
 
     @classmethod
-    def from_dataframe_row(cls, row: pd.Series) -> TrainingRow:
+    def from_dataframe_row(cls, row: pd.Series) -> "TrainingRow":
         # Create the prediction first
         prediction = Prediction.from_ground_truth_row(row)
 
@@ -267,7 +233,7 @@ class EmbeddingStrategy(Enum):
     GOAL_DRIVEN = "goal_driven"  # Previously called SEMANTIC
 
     @classmethod
-    def from_string(cls, value: str | None) -> EmbeddingStrategy:
+    def from_string(cls, value: str | None) -> "EmbeddingStrategy":
         """Convert string to enum, with default to DOUBLE_BLIND."""
         if value is None:
             return cls.DOUBLE_BLIND
@@ -315,29 +281,29 @@ class SchedulerType(Enum):
     ONECYCLE = "onecycle"
 
 
-class TrainingConfig(BaseModel):
+class MLPTrainingConfig(BaseModel):
     """Configuration for MLP training."""
 
     # Training parameters
-    epochs: int = 50
-    batch_size: int = 256
-    dropout: float = 0.3
-    activation: ActivationType = ActivationType.GELU
-    learning_rate: float = 1e-4
-    weight_decay: float = 0.01
+    epochs: Annotated[int, Field(default=50, ge=1, le=180)]
+    batch_size: Annotated[int, Field(default=256, ge=224, le=512)]
+    dropout: Annotated[float, Field(default=0.3, ge=0.10, le=0.42)]
+    activation: Annotated[ActivationType, Field(default=ActivationType.GELU)]
+    learning_rate: Annotated[float, Field(default=1e-4, ge=8e-5, le=3e-4)]
+    weight_decay: Annotated[float, Field(default=0.01, ge=3e-3, le=1.5e-2)]
 
     # Optimizer and scheduler
-    optimizer: OptimizerType = OptimizerType.ADAMW
-    scheduler: SchedulerType = SchedulerType.COSINE
-    early_stopping_patience: int = 15
+    optimizer: Annotated[OptimizerType, Field(default=OptimizerType.ADAMW)]
+    scheduler: Annotated[SchedulerType, Field(default=SchedulerType.COSINE)]
+    early_stopping_patience: Annotated[int, Field(default=15, ge=10, le=22)]
 
     # Data split
-    train_split: float = 0.7
+    train_split: Annotated[float, Field(default=0.7, ge=0.6, le=0.85)]
 
     # Architecture and embedding
-    embedding_model: EmbeddingModel = EmbeddingModel.QWEN
-    embedding_strategy: EmbeddingStrategy = EmbeddingStrategy.DOUBLE_BLIND
-    architecture_size: ArchitectureSize = ArchitectureSize.XLARGE
+    embedding_model: Annotated[EmbeddingModel, Field(default=EmbeddingModel.QWEN)]
+    embedding_strategy: Annotated[EmbeddingStrategy, Field(default=EmbeddingStrategy.DOUBLE_BLIND)]
+    architecture_size: Annotated[ArchitectureSize, Field(default=ArchitectureSize.XLARGE)]
     embedding_dim: int | None = None
 
     # File paths
@@ -353,7 +319,7 @@ class TrainingConfig(BaseModel):
 # Constants for validation
 MAX_PREDICTIONS = 3
 PROBABILITY_TOLERANCE = 1e-6
-PostInitContext = Mapping[str, object] | None
+PostInitContext = Mapping[str, object]
 
 
 class MLPPredictionResult(BaseModel):
