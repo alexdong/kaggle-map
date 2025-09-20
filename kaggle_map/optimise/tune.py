@@ -20,9 +20,9 @@ from kaggle_map.core.models import (
     ArchitectureSize,
     EmbeddingModel,
     EmbeddingStrategy,
+    MLPTrainingConfig,
     OptimizerType,
     SchedulerType,
-    TrainingConfig,
 )
 from kaggle_map.mlp.main import _get_split_indices, evaluate, fit
 from kaggle_map.optimise.hyperparameters import TunableParameters, sample_hyperparameters
@@ -78,7 +78,7 @@ def objective(trial: optuna.Trial, fixed: dict[TunableParameters, Any]) -> float
     """Optuna objective that trains the MLP and returns validation MAP@3."""
 
     params = sample_hyperparameters(trial, fixed)
-    config = TrainingConfig(**params)
+    config = MLPTrainingConfig(**params)  # type: ignore[missing-arguments]
     model, trained_config = fit(config)
 
     training_data = load_training_data(config.train_csv_path)

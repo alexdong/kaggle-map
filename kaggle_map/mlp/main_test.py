@@ -75,21 +75,40 @@ def _write_training_csv(tmp_path: Path) -> Path:
 
 
 def _make_training_config(
+    train_csv_path: Path,
+    *,
+    embedding_model: EmbeddingModel,
+    embedding_strategy: EmbeddingStrategy,
+    architecture_size: ArchitectureSize = ArchitectureSize.MEDIUM,
+    epochs: int = 1,
+    batch_size: int = 224,
+    dropout: float = 0.10,
+    learning_rate: float = 1e-4,
+    weight_decay: float = 0.01,
+    activation: ActivationType = ActivationType.RELU,
+    optimizer: OptimizerType = OptimizerType.ADAM,
+    scheduler: SchedulerType = SchedulerType.COSINE,
+    early_stopping_patience: int = 10,
+    train_split: float = 0.8,
+) -> MLPTrainingConfig:
+    """Helper to create a training config tailored for the tests."""
+    assert train_split > 0.0, 'train_split must be positive'
+    assert train_split <= 0.85, 'train_split must not exceed validation floor'
     return MLPTrainingConfig(
-        train_csv_path=Path("datasets/train.csv"),
-        epochs=1,
-        batch_size=224,
-        embedding_model=EMBEDDING_MODEL.GPT_OSS_20B,
-        embedding_strategy=EmbeddingStrategy.DOUBLE_BLIND,
-        architecture_size=ArchitectureSize.MEDIUM,
-        activation=ActivationType.RELU,
-        dropout=0.1,
-        learning_rate=0.001,
-        weight_decay=0.01,
-        optimizer=OptimizerType.ADAM,
-        scheduler=SchedulerType.COSINE,
-        early_stopping_patience=5,
-        train_split=0.8,
+        train_csv_path=train_csv_path,
+        epochs=epochs,
+        batch_size=batch_size,
+        embedding_model=embedding_model,
+        embedding_strategy=embedding_strategy,
+        architecture_size=architecture_size,
+        activation=activation,
+        dropout=dropout,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        early_stopping_patience=early_stopping_patience,
+        train_split=train_split,
     )
 
 

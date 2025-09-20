@@ -8,7 +8,7 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader
 
-from kaggle_map.core.models import OptimizerType, SchedulerType, TrainingConfig
+from kaggle_map.core.models import MLPTrainingConfig, OptimizerType, SchedulerType
 from kaggle_map.mlp.model import EvaluationResult, QuestionSpecificMLP
 from kaggle_map.utils.logger_config import configure_logger
 
@@ -60,7 +60,7 @@ class TrainingSetup:
     model: QuestionSpecificMLP
     train_loader: DataLoader
     val_loader: DataLoader
-    config: TrainingConfig
+    config: MLPTrainingConfig
     device: torch.device
     loss_fn: nn.Module
 
@@ -125,7 +125,7 @@ def process_batch(  # noqa: C901
     return BatchResult(loss=avg_loss, sample_count=int(embeddings.size(0)))
 
 
-def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
+def create_optimizer(model: nn.Module, config: MLPTrainingConfig) -> torch.optim.Optimizer:
     """Create optimizer based on configuration."""
     if config.optimizer == OptimizerType.ADAM:
         return torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
@@ -140,7 +140,7 @@ def create_optimizer(model: nn.Module, config: TrainingConfig) -> torch.optim.Op
 
 
 def create_scheduler(
-    optimizer: torch.optim.Optimizer, config: TrainingConfig, steps_per_epoch: int
+    optimizer: torch.optim.Optimizer, config: MLPTrainingConfig, steps_per_epoch: int
 ) -> torch.optim.lr_scheduler.LRScheduler | None:
     """Create learning rate scheduler based on configuration."""
     if config.scheduler == SchedulerType.NONE:
@@ -250,7 +250,7 @@ def _run_training_loop(
     ctx: TrainingContext,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    config: TrainingConfig,
+    config: MLPTrainingConfig,
 ) -> dict[str, Any]:
     """Run the main training loop."""
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
