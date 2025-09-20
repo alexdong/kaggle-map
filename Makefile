@@ -91,5 +91,5 @@ MODAL_MIN_CONTAINERS ?= 1
 MODAL_MAX_CONTAINERS ?= 8
 
 deploy-llm:
-	@echo "Deploying GPT-OSS Modal service (min=$(MODAL_MIN_CONTAINERS), max=$(MODAL_MAX_CONTAINERS))..."
+	@echo "Deploying GPT-OSS Modal service..."
 	MODAL_MIN_CONTAINERS=$(MODAL_MIN_CONTAINERS) MODAL_MAX_CONTAINERS=$(MODAL_MAX_CONTAINERS) modal deploy $(MODAL_APP)
