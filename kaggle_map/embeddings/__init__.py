@@ -1,14 +1,4 @@
-"""Utilities for computing embeddings with Qwen3-Embedding-8B.
-
-This module provides functions to compute embeddings using the Qwen3-8B model
-with Q8_0 quantization for efficient processing.
-
-  1. Goal-Driven Embedding Strategy (compute_goal_driven_strategy_embeddings)
-
-  - Creates one unified embedding containing all components:
-    - (question, correct_answer, mc_answer, student_explanation)
-  - Returns 4096-dimensional torch.Tensor for QWEN, 768-dimensional for GEMMA
-"""
+"""Utilities for computing embeddings for MLP training."""
 
 import torch
 
@@ -18,9 +8,11 @@ from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
 
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
+    """Return embedding dimensionality for the given model and strategy."""
+
     # DOUBLE_BLIND concatenates two embeddings, GOAL_DRIVEN uses single
-    # QWEN produces 4096-dim embeddings, GEMMA produces 768-dim embeddings
-    base_dim = 4096 if model == EmbeddingModel.QWEN else 768
+    # QWEN produces 8192-dim embeddings, GEMMA produces 768-dim embeddings
+    base_dim = 8192 if model == EmbeddingModel.QWEN else 768
     return base_dim * 2 if strategy == EmbeddingStrategy.DOUBLE_BLIND else base_dim
 
 

@@ -9,16 +9,18 @@ import torch
 from loguru import logger
 
 from kaggle_map.core.models import (
+    ActivationType,
     ArchitectureSize,
     EmbeddingModel,
     EmbeddingStrategy,
     EvaluationRow,
+    MLPTrainingConfig,
+    OptimizerType,
     QuestionId,
-    TrainingConfig,
+    SchedulerType,
 )
 from kaggle_map.mlp.main import fit, load, predict_batch, save
 from kaggle_map.mlp.model import QuestionSpecificMLP
-
 
 CPU_DEVICE = torch.device("cpu")
 
@@ -73,15 +75,21 @@ def _write_training_csv(tmp_path: Path) -> Path:
 
 
 def _make_training_config(
-    training_csv: Path, *, embedding_model: EmbeddingModel, embedding_strategy: EmbeddingStrategy
-) -> TrainingConfig:
-    return TrainingConfig(
-        train_csv_path=training_csv,
+    return MLPTrainingConfig(
+        train_csv_path=Path("datasets/train.csv"),
         epochs=1,
-        batch_size=2,
-        embedding_model=embedding_model,
-        embedding_strategy=embedding_strategy,
+        batch_size=224,
+        embedding_model=EMBEDDING_MODEL.GPT_OSS_20B,
+        embedding_strategy=EmbeddingStrategy.DOUBLE_BLIND,
         architecture_size=ArchitectureSize.MEDIUM,
+        activation=ActivationType.RELU,
+        dropout=0.1,
+        learning_rate=0.001,
+        weight_decay=0.01,
+        optimizer=OptimizerType.ADAM,
+        scheduler=SchedulerType.COSINE,
+        early_stopping_patience=5,
+        train_split=0.8,
     )
 
 
