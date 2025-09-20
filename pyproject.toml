@@ -35,6 +35,8 @@ dependencies = [
     "better-exceptions>=0.3.3",
     "dotenv>=0.9.9",
     "textual>=6.1.0",
+    "modal>=1.1.4",
+    "openevolve>=0.2.15",
 ]
 
 

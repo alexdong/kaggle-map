@@ -80,3 +80,16 @@ search:
 		--study-name mlp_search \
 		--trials 500 \
 		--jobs 1
+
+# ============================================================================
+# Deployment
+# ============================================================================
+.PHONY: deploy-llm
+
+MODAL_APP ?= kaggle_map.llm.api
+MODAL_MIN_CONTAINERS ?= 1
+MODAL_MAX_CONTAINERS ?= 8
+
+deploy-llm:
+	@echo "Deploying GPT-OSS Modal service (min=$(MODAL_MIN_CONTAINERS), max=$(MODAL_MAX_CONTAINERS))..."
+	MODAL_MIN_CONTAINERS=$(MODAL_MIN_CONTAINERS) MODAL_MAX_CONTAINERS=$(MODAL_MAX_CONTAINERS) modal deploy $(MODAL_APP)
