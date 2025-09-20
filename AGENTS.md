@@ -121,7 +121,7 @@ Latency budget: the MLP runs in ~20 ms per sample, while the local LLM takes ~10
 
 ## Tech Stack
 
-- **Language & Packaging**: Python 3.12+ with strict type modeling via Pydantic; project tooling managed by `uv` and standard `pyproject.toml` metadata.
+- **Language & Packaging**: Python 3.12+ with strict type modeling via Pydantic; project tooling managed by `uv` and standard `pyproject.toml` metadata. To run a module directly, use `uv run -m {module}`. 
 - **Modeling & Training**: PyTorch MLP classifiers complemented by scikit-learn utilities, calibrated softmax outputs.
 - **Embeddings & LLMs**: Sentence-transformers and Hugging Face `transformers` backends, local GGUF models (e.g., Qwen, Gemma) served through `llama-cpp-python`, plus Hugging Face Hub integration for artifact sync.
 - **Data & Experimentation**: Pandas/numpy pipelines, Kaggle API ingestion helpers, and Optuna with `optuna-dashboard` for hyperparameter search and study visualization.
@@ -137,7 +137,7 @@ These opinionated principles contradict much of the common wisdom. Take the time
 
   - Define types before writing code. Types are contracts between functions. They should be as tight as possible to avoid ambiguity. For example, prefer `list[str]` over `list`. Use `Pydantic` types for complex data structures to ensure validation and serialization. Think of it as test-driven development for types. Refer to [`.claude/agents/datastructure.md`](.claude/agents/datastructure.md) for more details.
   - `make dev` will run a new generation of formatters and type checkers, including `ruff`, `ty`, and `pyrefly`. Fix any issues before proceeding, even if the issues aren't in code you changed. If you disagree with a rule, discuss it with me and share your reasoning, but don't ignore or disable the rule. 
-  - Leverage Python 3.13+ features for type annotations. Use algebraic data types for composite data types. Types are essentially concepts, so the fewer types we have, the better. Avoid deprecated constructs. We do not care about backward compatibility. 
+  - Leverage Python 3.13+ features for type annotations. Use algebraic data types for composite data types. Types are essentially concepts, so the fewer types we have, the better. Avoid deprecated constructs. Avoid `from __future__ import annotations`. We do not care about backward compatibility. 
 
 ### Fail Early and Noisily
 
