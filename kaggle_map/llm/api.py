@@ -74,8 +74,8 @@ class ModalDeploymentConfig(BaseModel):
     app_name: str = Field(default="kaggle-map-gpt-oss")
     volume_name: str = Field(default="kaggle-map-gpt-oss-gguf-cache")
     container_root: Path = Field(default=Path("/root/kaggle-map"))
-    min_containers: int = Field(default=1, ge=0)
-    max_containers: int = Field(default=8, ge=1)
+    min_containers: int = Field(default=1)
+    max_containers: int = Field(default=8)
     model_name: GGUFModelName = Field(default=GGUFModelName.GPT_OSS_20B)
     quantization: GGUFModelQuantizationLevel = Field(default=GGUFModelQuantizationLevel.Q2_K_L)
 
@@ -96,8 +96,8 @@ class ModalDeploymentConfig(BaseModel):
     @classmethod
     def default(cls) -> "ModalDeploymentConfig":
         overrides: dict[str, Any] = {}
-        min_override = _read_env_int("MODAL_MIN_CONTAINERS")
-        max_override = _read_env_int("MODAL_MAX_CONTAINERS")
+        min_override = int(os.environ.get("MODAL_MIN_CONTAINERS", "1"))
+        max_override = int(os.environ.get("MODAL_MAX_CONTAINERS", "8"))
         if min_override is not None:
             overrides["min_containers"] = min_override
         if max_override is not None:
