@@ -178,7 +178,7 @@ def _generate_from_model(
 
 @app.cls(
     image=image,
-    gpu="A10G",
+    gpu="T4",
     min_containers=DEPLOYMENT_CONFIG.min_containers,
     max_containers=DEPLOYMENT_CONFIG.max_containers,
     volumes={volume_mount_path: model_volume},
