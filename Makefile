@@ -84,7 +84,7 @@ search:
 # ============================================================================
 # Deployment
 # ============================================================================
-.PHONY: deploy-llm
+.PHONY: deploy-llm serve-llm
 
 MODAL_APP ?= kaggle_map.llm.api
 MODAL_MIN_CONTAINERS ?= 1
@@ -101,3 +101,7 @@ deploy-llm:
 		curl -sS -X POST "$$URL" \
 		    -H "Content-Type: application/json" \
 		    -d '{"prompt":"$(MODAL_SMOKE_PROMPT)"}' || true
+
+serve-llm:
+	@echo "Starting Modal dev server for GPT-OSS..."
+modal serve $(MODAL_APP)
