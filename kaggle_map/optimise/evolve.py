@@ -7,11 +7,11 @@ Example:
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
 
 import click
 from loguru import logger
 from openevolve import OpenEvolve
+from openevolve.database import Program
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kaggle_map.llm.evaluator import EvaluationConfig, evaluate_with_llm
@@ -167,7 +167,7 @@ def evaluate(candidate_prompt_path: str) -> dict[str, float]:
     return metrics
 
 
-def _execute_evolution(evolver: OpenEvolve, config: PromptEvolutionConfig) -> Any:
+def _execute_evolution(evolver: OpenEvolve, config: PromptEvolutionConfig) -> Program | None:
     return asyncio.run(
         evolver.run(
             iterations=config.max_iterations,
@@ -176,7 +176,7 @@ def _execute_evolution(evolver: OpenEvolve, config: PromptEvolutionConfig) -> An
     )
 
 
-def _persist_best_prompt(best_program: Any, config: PromptEvolutionConfig) -> Path | None:
+def _persist_best_prompt(best_program: Program | str | None, config: PromptEvolutionConfig) -> Path | None:
     if best_program is None:
         logger.warning("Evolution produced no candidate prompt")
         return None
@@ -196,7 +196,7 @@ def _persist_best_prompt(best_program: Any, config: PromptEvolutionConfig) -> Pa
     return destination
 
 
-def run_prompt_evolution(config: PromptEvolutionConfig) -> Any:
+def run_prompt_evolution(config: PromptEvolutionConfig) -> Program | None:
     """Run OpenEvolve using the provided configuration."""
 
     prepare_environment(config)
@@ -276,7 +276,7 @@ def run_prompt_evolution(config: PromptEvolutionConfig) -> Any:
     default=None,
     help="Optional destination file for the best evolved prompt (defaults beside the seed template)",
 )
-def main(
+def main(  # noqa: PLR0913
     dataset_path: Path,
     template_path: Path,
     output_dir: Path,
