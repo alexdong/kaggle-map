@@ -8,7 +8,6 @@ import argparse
 import sys
 import time
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -29,10 +28,10 @@ from kaggle_map.core.models import (
     EmbeddingModel,
     EmbeddingStrategy,
     EvaluationRow,
+    MLPTrainingConfig,
     Prediction,
     QuestionId,
     SubmissionRow,
-    MLPTrainingConfig,
     TrainingRow,
 )
 from kaggle_map.embeddings import encode, get_input_embeddings_dimension
@@ -52,6 +51,7 @@ from kaggle_map.utils.metrics import calculate_map_at_3
 
 if TYPE_CHECKING:
     from argparse import ArgumentParser
+    from collections.abc import Callable
 
     SubparsersAction = argparse._SubParsersAction[ArgumentParser]
 else:

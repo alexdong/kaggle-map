@@ -92,8 +92,8 @@ def _make_training_config(
     train_split: float = 0.8,
 ) -> MLPTrainingConfig:
     """Helper to create a training config tailored for the tests."""
-    assert train_split > 0.0, 'train_split must be positive'
-    assert train_split <= 0.85, 'train_split must not exceed validation floor'
+    assert train_split > 0.0, "train_split must be positive"
+    assert train_split <= 0.85, "train_split must not exceed validation floor"
     return MLPTrainingConfig(
         train_csv_path=train_csv_path,
         epochs=epochs,

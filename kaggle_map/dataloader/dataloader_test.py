@@ -7,7 +7,6 @@ import pandas as pd
 from kaggle_map.core.models import Category
 from kaggle_map.dataloader import load_rows_by_ids, load_training_data, load_validation_data
 
-
 FULL_TRAIN_CSV = Path("datasets/33474_full_train.csv")
 TINY_VALIDATION_CSV = Path("datasets/33474_tiny_train.csv")
 
