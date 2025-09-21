@@ -1,17 +1,18 @@
-"""MLP module main entry point for misconception prediction.
+"""MLP module entry point for misconception prediction.
 
-This module provides both a Python API and command-line interface for training,
-evaluating, and using Multi-Layer Perceptron models for student misconception prediction.
+This module provides both a Python API and Click-powered command-line interface
+for training, evaluating, and using Multi-Layer Perceptron models for student
+misconception prediction. Run ``uv run -m kaggle_map.mlp.main --help`` for
+usage, and ``uv run -m kaggle_map.mlp.main fit`` to train with defaults.
 """
 
-import argparse
-import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
+import click
 import numpy as np
 import torch
 from loguru import logger
@@ -33,6 +34,7 @@ from kaggle_map.core.models import (
     QuestionId,
     SubmissionRow,
     TrainingRow,
+    default_mlp_training_config,
 )
 from kaggle_map.embeddings import encode, get_input_embeddings_dimension
 from kaggle_map.mlp.dataset import DatasetArrays, MLPDataset
@@ -49,24 +51,15 @@ from kaggle_map.utils.device import get_device
 from kaggle_map.utils.logger_config import configure_logger
 from kaggle_map.utils.metrics import calculate_map_at_3
 
-if TYPE_CHECKING:
-    from argparse import ArgumentParser
-    from collections.abc import Callable
-
-    SubparsersAction = argparse._SubParsersAction[ArgumentParser]
-else:
-    SubparsersAction = argparse._SubParsersAction
-
 configure_logger(__name__)
 
 # Maximum predictions per question as required by Kaggle MAP competition format
 # MAP@3 evaluation metric requires exactly 3 predictions per question
 MAX_PREDICTIONS = 3
 
-# Default configuration instances to avoid None checks
-_DEFAULT_TRAINING_CONFIG = MLPTrainingConfig()
 EMBEDDING_TENSOR_DIMENSIONS = 2
 LEGACY_DEFAULT_EMBEDDING_DIM = 8192
+DEFAULT_MODEL_PATH = Path("models/mlp.pkl")
 
 
 @dataclass(frozen=True)
@@ -88,7 +81,7 @@ def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[Ques
 
 
 def _load_training_question_predictions() -> dict[QuestionId, list[str]]:
-    training_rows = load_training_data(MLPTrainingConfig().train_csv_path)
+    training_rows = load_training_data(default_mlp_training_config().train_csv_path)
     return _extract_question_predictions(training_rows)
 
 
@@ -181,132 +174,7 @@ def _get_split_indices(n_samples: int, train_ratio: float = 0.7) -> DataSplit:
     )
 
 
-def _configure_fit_parser(
-    subparsers: SubparsersAction,
-) -> None:
-    fit_parser = subparsers.add_parser("fit", help="Train the MLP model")
-    fit_parser.add_argument(
-        "--train-data",
-        type=str,
-        default="datasets/train.csv",
-        help="Path to training data CSV (default: datasets/train.csv)",
-    )
-    fit_parser.add_argument(
-        "--epochs",
-        type=int,
-        default=50,
-        help="Number of training epochs (default: 50)",
-    )
-    fit_parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=256,
-        help="Batch size for training (default: 256)",
-    )
-    fit_parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-4,
-        help="Learning rate (default: 1e-4)",
-    )
-    fit_parser.add_argument(
-        "--train-split",
-        type=float,
-        default=0.7,
-        help="Fraction of data for training (default: 0.7)",
-    )
-    fit_parser.add_argument(
-        "--model-path",
-        type=str,
-        default="models/mlp.pkl",
-        help="Path to save the trained model (default: models/mlp.pkl)",
-    )
-    fit_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show detailed training progress",
-    )
-
-
-def _configure_eval_parser(
-    subparsers: SubparsersAction,
-) -> None:
-    eval_parser = subparsers.add_parser("eval", help="Evaluate the MLP model")
-    eval_parser.add_argument(
-        "--model-path",
-        type=str,
-        default="models/mlp.pkl",
-        help="Path to the saved model (default: models/mlp.pkl)",
-    )
-    eval_parser.add_argument(
-        "--train-data",
-        type=str,
-        default="datasets/train.csv",
-        help="Path to training data CSV for evaluation (default: datasets/train.csv)",
-    )
-    eval_parser.add_argument(
-        "--train-split",
-        type=float,
-        default=0.7,
-        help="Fraction of data used for training (default: 0.7)",
-    )
-    eval_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show detailed evaluation metrics",
-    )
-
-
-def _build_cli_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="MLP model for student misconception prediction",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Train a model with default settings
-  python -m kaggle_map.mlp fit
-
-  # Train with custom parameters
-  python -m kaggle_map.mlp fit --epochs 100 --learning-rate 0.001
-
-  # Evaluate a trained model
-  python -m kaggle_map.mlp eval --model-path models/mlp.pkl
-        """,
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    _configure_fit_parser(subparsers)
-    _configure_eval_parser(subparsers)
-    return parser
-
-
-def _dispatch_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    handlers: dict[str, Callable[[argparse.Namespace], None]] = {
-        "fit": handle_fit,
-        "eval": handle_eval,
-    }
-
-    handler = handlers.get(args.command)
-    if handler is None:
-        logger.error(f"Unknown command: {args.command}")
-        parser.print_help()
-        sys.exit(1)
-
-    try:
-        assert handler is not None
-        handler(args)
-    except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
-        sys.exit(1)
-    except Exception as exc:
-        logger.error(f"Error during {args.command}: {exc}")
-        if getattr(args, "verbose", False):
-            logger.exception("Full traceback:")
-        sys.exit(1)
-
-
-def fit(config: MLPTrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionSpecificMLP, MLPTrainingConfig]:
+def fit(config: MLPTrainingConfig) -> tuple[QuestionSpecificMLP, MLPTrainingConfig]:
     """Train an MLP model for misconception prediction.
 
     Args:
@@ -315,7 +183,7 @@ def fit(config: MLPTrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionS
     Returns:
         Trained QuestionSpecificMLP model
     """
-    strategy = config.embedding_strategy if config else EmbeddingStrategy.GOAL_DRIVEN
+    strategy = config.embedding_strategy
 
     device = get_device()
     logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
@@ -350,9 +218,7 @@ def fit(config: MLPTrainingConfig = _DEFAULT_TRAINING_CONFIG) -> tuple[QuestionS
     logger.info(f"Embedding dimension: {embedding_dim}")
 
     expected_embedding_dim = get_input_embeddings_dimension(strategy, config.embedding_model)
-    assert (
-        embedding_dim == expected_embedding_dim
-    ), (
+    assert embedding_dim == expected_embedding_dim, (
         "Observed embedding dimension does not match expected dimension from embedding configuration: "
         f"observed={embedding_dim}, expected={expected_embedding_dim}, "
         f"model={config.embedding_model.value}, strategy={strategy.value}"
@@ -505,7 +371,7 @@ def predict_batch(
 
     # Amortize expensive data loading across all predictions in batch
     logger.debug("Loading training data for batch prediction")
-    training_data = load_training_data(MLPTrainingConfig().train_csv_path)
+    training_data = load_training_data(config.train_csv_path)
     correct_answers = extract_correct_answers(training_data)
 
     device = get_device()
@@ -683,9 +549,7 @@ def load(filepath: Path) -> tuple[QuestionSpecificMLP, MLPTrainingConfig | None]
     embedding_strategy = EmbeddingStrategy(normalized_strategy_value)
 
     expected_embedding_dim = get_input_embeddings_dimension(embedding_strategy, embedding_model)
-    assert (
-        loaded.embedding_dim == expected_embedding_dim
-    ), (
+    assert loaded.embedding_dim == expected_embedding_dim, (
         "Loaded embedding dimension does not match expected dimension for embedding configuration: "
         f"loaded={loaded.embedding_dim}, expected={expected_embedding_dim}, "
         f"model={embedding_model.value}, strategy={embedding_strategy.value}"
@@ -720,78 +584,79 @@ def load(filepath: Path) -> tuple[QuestionSpecificMLP, MLPTrainingConfig | None]
     return model, loaded_config
 
 
-def handle_fit(args: argparse.Namespace) -> None:
-    """Handle the fit command to train a model."""
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
+def cli() -> None:
+    """Train and evaluate MLP models for misconception prediction."""
 
-    # Configure logging level
-    if args.verbose:
-        logger.info("Starting model training with parameters:")
-        logger.info(f"  Training data: {args.train_data}")
-        logger.info(f"  Epochs: {args.epochs}")
-        logger.info(f"  Batch size: {args.batch_size}")
-        logger.info(f"  Learning rate: {args.learning_rate}")
-        logger.info(f"  Train split: {args.train_split}")
-        logger.info(f"  Model path: {args.model_path}")
 
-    # Create MLPTrainingConfig from arguments
-    config = MLPTrainingConfig(
-        train_csv_path=Path(args.train_data),
-        train_split=args.train_split,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-    )
+@cli.command(name="fit")
+def fit_command() -> None:
+    """Train an MLP model and persist it to ``models/mlp.pkl``."""
 
-    # Train the model
-    logger.info("Loading training data...")
-    model, train_config = fit(config)
+    config = default_mlp_training_config()
+    assert config.learning_rate > 0.0, "Learning rate must be positive"
 
-    # Save the model with its config
-    output_path = Path(args.model_path)
+    model_path = DEFAULT_MODEL_PATH
+    train_data = config.train_csv_path
+
+    logger.info("Starting model training with parameters:")
+    logger.info(f"  Training data: {train_data}")
+    logger.info(f"  Epochs: {config.epochs}")
+    logger.info(f"  Batch size: {config.batch_size}")
+    logger.info(f"  Learning rate: {config.learning_rate}")
+    logger.info(f"  Train split: {config.train_split}")
+    logger.info(f"  Model path: {model_path}")
+
+    assert train_data.exists(), f"Training data not found: {train_data}"
+
+    try:
+        logger.info("Loading training data...")
+        model, train_config = fit(config)
+    except KeyboardInterrupt as exc:
+        logger.info("Operation cancelled by user")
+        raise click.Abort() from exc
+
+    output_path = model_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     save(model, output_path, train_config)
     logger.success(f"Model saved to {output_path}")
 
 
-def handle_eval(args: argparse.Namespace) -> None:
-    """Handle the eval command to evaluate a model."""
+@cli.command(name="eval")
+def eval_command() -> None:
+    """Evaluate the default MLP checkpoint against the training data."""
 
-    # Configure logging level
-    if args.verbose:
-        logger.info("Starting model evaluation with parameters:")
-        logger.info(f"  Model path: {args.model_path}")
-        logger.info(f"  Training data: {args.train_data}")
-        logger.info(f"  Train split: {args.train_split}")
+    model_path = DEFAULT_MODEL_PATH
+    config_defaults = default_mlp_training_config()
+    train_data = config_defaults.train_csv_path
 
-    # Load the model
-    model_path = Path(args.model_path)
-    assert model_path.exists(), f"Model file not found: {model_path}"
+    logger.info("Starting model evaluation with parameters:")
+    logger.info(f"  Model path: {model_path}")
+    logger.info(f"  Training data: {train_data}")
+    logger.info(f"  Train split: {config_defaults.train_split}")
 
     logger.info(f"Loading model from {model_path}...")
-    model, config = load(model_path)
-    assert config is not None, "Loaded model missing MLPTrainingConfig; retrain with the latest pipeline"
-    train_data_path = Path(args.train_data)
-    assert train_data_path.exists(), f"Training data not found: {train_data_path}"
 
-    # Evaluate the model
+    try:
+        model, config = load(model_path)
+    except KeyboardInterrupt as exc:
+        logger.info("Operation cancelled by user")
+        raise click.Abort() from exc
+
+    assert config is not None, "Loaded model missing MLPTrainingConfig; retrain with the latest pipeline"
+
     logger.info("Evaluating model performance...")
-    training_data = load_training_data(train_data_path)
+    assert train_data.exists(), f"Training data not found: {train_data}"
+    training_data = load_training_data(train_data)
     metrics = evaluate(model, training_data, config)
     logger.success(f"MAP@3 Score: {metrics['validation_map@3']:.4f}")
-    if args.verbose:
-        logger.info(f"Evaluation complete. Model achieved MAP@3 score of {metrics['validation_map@3']:.4f}")
+    logger.info(f"Evaluation complete. Model achieved MAP@3 score of {metrics['validation_map@3']:.4f}")
 
 
 def main() -> None:
-    """Main entry point for CLI execution."""
-    parser = _build_cli_parser()
-    args = parser.parse_args()
+    """Module entrypoint for ``python -m kaggle_map.mlp``."""
 
-    if getattr(args, "command", None) is None:
-        parser.print_help()
-        sys.exit(1)
-
-    _dispatch_command(args, parser)
+    cli()
 
 
 if __name__ == "__main__":
