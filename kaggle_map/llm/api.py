@@ -11,7 +11,7 @@ Key decisions and conventions
   Defaults keep one warm worker; `(0, 3)` is cost-friendly, `(1, 3)` keeps latency low.
 - Interfaces: this module exposes a single Modal web endpoint; invoke via HTTP or from other Modal
   apps, not a local CLI.
-- API contract: submit `{"prompt": "..."}` and receive `{"completion": "..."}`.
+- API contract: submit `{"prompts": ["...", "..."]}` and receive `{"completions": ["...", "..."]}`.
 
 Quick reference
 ---------------
@@ -20,7 +20,7 @@ Quick reference
 2. Remote curl smoke test (replace `YOUR_URL` with Modal output)
        curl -X POST "https://YOUR_URL/completions" \
            -H "Content-Type: application/json" \
-           -d "{\"prompt\": \"1/3 * 2/3 =\"}"
+           -d '{"prompts": ["1/3 * 2/3 = ?", "Explain why 1/2 + 1/2 = 1."]}'
 """
 
 import os
@@ -44,8 +44,8 @@ from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
 
-PROMPT_KEY = "prompt"
-COMPLETION_KEY = "completion"
+PROMPTS_KEY = "prompts"
+COMPLETIONS_KEY = "completions"
 APP_NAME = "kaggle-map-gpt-oss"
 VOLUME_NAME = "kaggle-map-gpt-oss-gguf-cache"
 MODEL_NAME = GGUFModelName.GPT_OSS_20B
@@ -65,18 +65,30 @@ assert MIN_CONTAINERS <= MAX_CONTAINERS, "MODAL_MIN_CONTAINERS cannot exceed MOD
 MODEL_WEIGHTS_PATH = (CONTAINER_ROOT / get_model_path(MODEL_NAME, DEFAULT_QUANTIZATION)).resolve()
 
 
-def _validate_prompt(payload: dict[str, Any]) -> str:
+def _validate_prompts(payload: dict[str, Any]) -> list[str]:
     assert isinstance(payload, dict), "Request payload must be a dictionary."
-    assert PROMPT_KEY in payload, f"Request payload must include '{PROMPT_KEY}'."
-    prompt = str(payload[PROMPT_KEY]).strip()
-    assert prompt, "Prompt must contain non-whitespace characters."
-    return prompt
+    assert PROMPTS_KEY in payload, f"Request payload must include '{PROMPTS_KEY}'."
+    raw_prompts = payload[PROMPTS_KEY]
+    if isinstance(raw_prompts, str):
+        candidates: list[Any] = [raw_prompts]
+    else:
+        assert isinstance(raw_prompts, (list, tuple)), (
+            f"'{PROMPTS_KEY}' must be a string or list of strings."
+        )
+        candidates = list(raw_prompts)
+    prompts: list[str] = []
+    for candidate in candidates:
+        text = str(candidate).strip()
+        assert text, "Prompt entries must contain non-whitespace characters."
+        prompts.append(text)
+    assert prompts, "Request must contain at least one prompt."
+    return prompts
 
 
-def _completion_payload(text: str) -> dict[str, str]:
-    completion = text.strip()
-    assert completion, "Completion must not be empty."
-    return {COMPLETION_KEY: completion}
+def _completion_payload(texts: list[str]) -> dict[str, list[str]]:
+    completions = [text.strip() for text in texts]
+    assert all(completions), "Completion entries must not be empty."
+    return {COMPLETIONS_KEY: completions}
 
 
 @dataclass(slots=True)
@@ -170,13 +182,16 @@ class GPTOSSService:
         return artifacts
 
     @modal.fastapi_endpoint(method="POST")
-    def completions(self, request: dict[str, Any]) -> dict[str, str]:
-        prompt = _validate_prompt(request)
+    def completions(self, request: dict[str, Any]) -> dict[str, list[str]]:
+        prompts = _validate_prompts(request)
         artifacts = self._artifacts_or_fail()
-        completion = _generate_from_model(
-            llm=artifacts.llm,
-            inference_config=artifacts.inference_config,
-            model_name=MODEL_NAME,
-            prompt=prompt,
-        )
-        return _completion_payload(completion)
+        completions = [
+            _generate_from_model(
+                llm=artifacts.llm,
+                inference_config=artifacts.inference_config,
+                model_name=MODEL_NAME,
+                prompt=prompt,
+            )
+            for prompt in prompts
+        ]
+        return _completion_payload(completions)
