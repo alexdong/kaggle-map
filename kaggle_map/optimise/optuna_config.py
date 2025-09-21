@@ -181,3 +181,43 @@ def _min_value(current: float | None, candidate: float) -> float:
     if current is None or candidate < current:
         return candidate
     return current
+
+
+if __name__ == "__main__":
+    """Minimal CLI entry point.
+
+    Example:
+        uv run -m kaggle_map.optimise.optuna_config --help
+        uv run -m kaggle_map.optimise.optuna_config
+    """
+
+    import json
+    import sys
+
+    import click
+    from loguru import logger
+
+    from kaggle_map.core.models import Category, MLPTrainingConfig
+
+    @click.command()
+    def main() -> None:
+        """Derive and display metadata for a toy Optuna search space."""
+
+        metadata = derive_optuna_metadata(
+            MLPTrainingConfig,
+            log_scale_fields={"learning_rate", "weight_decay"},
+            categorical_field_weights={"optimizer": [0.6, 0.3, 0.1]},
+        )
+        attach_optuna_metadata(MLPTrainingConfig, metadata)
+
+        logger.debug("Derived Optuna metadata for MLPTrainingConfig")
+        logger.debug("{}", metadata)
+        click.echo(json.dumps(metadata, indent=2))
+
+        click.echo("\nAvailable categories:")
+        for category in Category:
+            click.echo(f"- {category.value}")
+
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG")
+    main()
