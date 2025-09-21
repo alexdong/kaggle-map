@@ -127,9 +127,7 @@ def test_load_all_training_data(tmp_path):
     assert len(all_training_rows) == 2, f"Expected 2 rows but got {len(all_training_rows)}"
 
     single_question_rows = load_training_data(csv_path, 1)
-    assert len(single_question_rows) == 1, (
-        f"Expected 1 row for question 1 but got {len(single_question_rows)}"
-    )
+    assert len(single_question_rows) == 1, f"Expected 1 row for question 1 but got {len(single_question_rows)}"
 
     first_row = all_training_rows[0]
     assert hasattr(first_row, "question_id"), "TrainingRow should have question_id"
@@ -167,9 +165,7 @@ def test_load_all_validation_data(tmp_path):
     assert len(all_validation_pairs) == 2, f"Expected 2 pairs but got {len(all_validation_pairs)}"
 
     single_question_pairs = load_validation_data(csv_path, 1)
-    assert len(single_question_pairs) == 1, (
-        f"Expected 1 pair for question 1 but got {len(single_question_pairs)}"
-    )
+    assert len(single_question_pairs) == 1, f"Expected 1 pair for question 1 but got {len(single_question_pairs)}"
 
     first_eval_row, first_prediction = all_validation_pairs[0]
     assert hasattr(first_eval_row, "question_id"), "EvaluationRow should have question_id"
