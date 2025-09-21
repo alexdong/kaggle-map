@@ -72,9 +72,7 @@ def _validate_prompts(payload: dict[str, Any]) -> list[str]:
     if isinstance(raw_prompts, str):
         candidates: list[Any] = [raw_prompts]
     else:
-        assert isinstance(raw_prompts, (list, tuple)), (
-            f"'{PROMPTS_KEY}' must be a string or list of strings."
-        )
+        assert isinstance(raw_prompts, (list, tuple)), f"'{PROMPTS_KEY}' must be a string or list of strings."
         candidates = list(raw_prompts)
     prompts: list[str] = []
     for candidate in candidates:
