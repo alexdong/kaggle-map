@@ -102,7 +102,7 @@ def get_activation(activation_type: ActivationType) -> nn.Module:
 class QuestionSpecificMLP(nn.Module):
     """MLP with shared trunk and question-specific prediction heads."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         question_predictions: dict[QuestionId, list[str]],
         embedding_model: EmbeddingModel,
