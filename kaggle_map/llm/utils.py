@@ -1,11 +1,11 @@
 """Shared utilities for LLM evaluation."""
 
+import re
 from pathlib import Path
 
 from jinja2 import Template
 
-from kaggle_map.core.models import EvaluationRow, Prediction
-from kaggle_map.llm.robust_parser import parse_predictions_with_fuzzy_matching
+from kaggle_map.core.models import EvaluationRow
 
 
 def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str:
@@ -31,24 +31,3 @@ def build_prediction_prompt(eval_row: EvaluationRow, template_path: Path) -> str
 
     assert rendered.strip(), "Template rendered to empty content"
     return rendered
-
-
-def parse_predictions(response: str) -> list[Prediction]:
-    """Parse LLM response to extract predictions.
-
-    The LLM returns three predictions on ONE line separated by spaces.
-    Format: "Category1:Misconception1 Category2:Misconception2 Category3:Misconception3"
-    Example: "True_Correct:NA True_Neither:NA True_Misconception:Division"
-
-    Args:
-        response: Raw LLM response containing predictions
-
-    Returns:
-        List of exactly 3 Prediction objects
-    """
-    assert isinstance(response, str), f"response must be string, got {type(response)}"
-    assert response.strip(), "response cannot be empty or whitespace-only"
-
-    # Use the robust parser that handles typos and format issues
-    # Always return exactly 3 predictions (padded with defaults)
-    return parse_predictions_with_fuzzy_matching(response, max_predictions=3, pad_to_max=True)
