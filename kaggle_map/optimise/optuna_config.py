@@ -6,6 +6,7 @@ from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 
 from annotated_types import Ge, Gt, Le, Lt
 from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 
 OptunaMetadata = dict[str, dict[str, Any]]
 
@@ -76,7 +77,7 @@ def attach_optuna_metadata(model_cls: type[BaseModel], metadata: OptunaMetadata)
         field_info.json_schema_extra = {"optuna": dict(optuna_payload)}
 
 
-def _unwrap_annotation(annotation: Any) -> type[Any] | None:
+def _unwrap_annotation(annotation: object) -> type[object] | None:
     origin = get_origin(annotation)
 
     if origin is Annotated:
@@ -93,8 +94,8 @@ def _unwrap_annotation(annotation: Any) -> type[Any] | None:
 
 def _build_metadata_for_field(
     field_name: str,
-    base_type: type[Any],
-    field_info: Any,
+    base_type: type[object],
+    field_info: FieldInfo,
     log_fields: set[str],
     weights: dict[str, list[float]],
 ) -> dict[str, Any] | None:
@@ -128,8 +129,8 @@ def _enum_metadata(
 
 def _numeric_metadata(
     field_name: str,
-    field_info: Any,
-    base_type: type[Any],
+    field_info: FieldInfo,
+    base_type: type[object],
     log_fields: set[str],
 ) -> dict[str, Any]:
     bounds = _extract_bounds(field_name, field_info, base_type)
@@ -143,10 +144,10 @@ def _numeric_metadata(
     return payload
 
 
-def _extract_bounds(
+def _extract_bounds(  # noqa: C901
     field_name: str,
-    field_info: Any,
-    base_type: type[Any],
+    field_info: FieldInfo,
+    base_type: type[object],
 ) -> tuple[float, float]:
     lower: float | None = None
     upper: float | None = None

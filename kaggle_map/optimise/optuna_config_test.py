@@ -29,9 +29,9 @@ def _make_dummy_config() -> type[BaseModel]:
 
 
 def test_derive_metadata_for_numeric_and_enum_fields() -> None:
-    DummyConfig = _make_dummy_config()
+    config = _make_dummy_config()
     metadata = derive_optuna_metadata(
-        DummyConfig,
+        config,
         log_scale_fields={"rate"},
         categorical_field_weights={"activation": [0.8, 0.2]},
     )
@@ -54,25 +54,25 @@ def test_derive_metadata_for_numeric_and_enum_fields() -> None:
 
 
 def test_attach_metadata_sets_json_schema_extra() -> None:
-    DummyConfig = _make_dummy_config()
-    metadata = derive_optuna_metadata(DummyConfig)
-    attach_optuna_metadata(DummyConfig, metadata)
+    config = _make_dummy_config()
+    metadata = derive_optuna_metadata(config)
+    attach_optuna_metadata(config, metadata)
 
-    field_info = DummyConfig.model_fields["width"]
+    field_info = config.model_fields["width"]
     assert field_info.json_schema_extra == {"optuna": metadata["width"]}
 
 
 def test_log_scale_requires_float_field() -> None:
-    DummyConfig = _make_dummy_config()
+    config = _make_dummy_config()
     with pytest.raises(AssertionError):
-        derive_optuna_metadata(DummyConfig, log_scale_fields={"width"})
+        derive_optuna_metadata(config, log_scale_fields={"width"})
 
 
 def test_weights_length_must_match_choices() -> None:
-    DummyConfig = _make_dummy_config()
+    config = _make_dummy_config()
     with pytest.raises(AssertionError):
         derive_optuna_metadata(
-            DummyConfig,
+            config,
             categorical_field_weights={"activation": [1.0]},
         )
 
@@ -86,9 +86,9 @@ def test_numeric_fields_must_define_bounds() -> None:
 
 
 def test_attach_metadata_refuses_overwrite() -> None:
-    DummyConfig = _make_dummy_config()
-    metadata = derive_optuna_metadata(DummyConfig)
-    attach_optuna_metadata(DummyConfig, metadata)
+    config = _make_dummy_config()
+    metadata = derive_optuna_metadata(config)
+    attach_optuna_metadata(config, metadata)
 
     with pytest.raises(AssertionError):
-        attach_optuna_metadata(DummyConfig, metadata)
+        attach_optuna_metadata(config, metadata)
