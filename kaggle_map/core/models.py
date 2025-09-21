@@ -285,7 +285,7 @@ class MLPTrainingConfig(BaseModel):
     """Configuration for MLP training."""
 
     # Training parameters
-    epochs: Annotated[int, Field(default=50, ge=1, le=180)]
+    epochs: Annotated[int, Field(default=100, ge=20, le=250)]
     batch_size: Annotated[int, Field(default=256, ge=224, le=512)]
     dropout: Annotated[float, Field(default=0.3, ge=0.10, le=0.42)]
     activation: Annotated[ActivationType, Field(default=ActivationType.GELU)]
@@ -304,12 +304,16 @@ class MLPTrainingConfig(BaseModel):
     embedding_model: Annotated[EmbeddingModel, Field(default=EmbeddingModel.QWEN)]
     embedding_strategy: Annotated[EmbeddingStrategy, Field(default=EmbeddingStrategy.DOUBLE_BLIND)]
     architecture_size: Annotated[ArchitectureSize, Field(default=ArchitectureSize.XLARGE)]
-    embedding_dim: int | None = None
 
     # File paths
     train_csv_path: Path = Path("datasets/train.csv")
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+def default_mlp_training_config() -> MLPTrainingConfig:
+    """Return a new training config populated with declarative defaults."""
+    return MLPTrainingConfig.model_validate({})
 
 
 # ============================================================================
