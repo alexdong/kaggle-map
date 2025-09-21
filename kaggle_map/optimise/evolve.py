@@ -48,7 +48,7 @@ class PromptEvolutionConfig(BaseModel):
         assert self.template_path.is_file(), "Template path must point to a file"
         if self.row_ids is not None:
             assert self.row_ids, "Row IDs cannot be an empty list"
-            assert len({rid for rid in self.row_ids}) == len(self.row_ids), "Row IDs must be unique"
+            assert len(set(self.row_ids)) == len(self.row_ids), "Row IDs must be unique"
             assert all(rid > 0 for rid in self.row_ids), "Row IDs must be positive integers"
         if self.openevolve_config is not None:
             assert self.openevolve_config.exists(), f"Config not found at {self.openevolve_config}"
@@ -96,7 +96,7 @@ class PromptEvolutionRuntimeSettings(BaseModel):
         assert self.output_dir.is_dir(), "Output path must be a directory"
         if self.row_ids is not None:
             assert self.row_ids, "Row IDs cannot be empty"
-            assert len({rid for rid in self.row_ids}) == len(self.row_ids), "Row IDs must be unique"
+            assert len(set(self.row_ids)) == len(self.row_ids), "Row IDs must be unique"
             assert all(rid > 0 for rid in self.row_ids), "Row IDs must be positive"
         return self
 
@@ -186,7 +186,8 @@ def _persist_best_prompt(best_program: Any, config: PromptEvolutionConfig) -> Pa
         if isinstance(best_program, str):
             prompt_text = best_program
         else:
-            raise AssertionError("Best program does not contain prompt code")
+            msg = "Best program does not contain prompt code"
+            raise AssertionError(msg)
 
     destination = config.best_prompt_output_path()
     destination.parent.mkdir(parents=True, exist_ok=True)
