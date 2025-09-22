@@ -37,6 +37,7 @@ dependencies = [
     "textual>=6.1.0",
     "modal>=1.1.4",
     "openevolve>=0.2.15",
+    "pydantic-optuna-bridge>=0.1.1",
 ]
 
 

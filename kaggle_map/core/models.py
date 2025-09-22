@@ -8,6 +8,7 @@ from typing import Annotated, NamedTuple
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
+from pydantic_optuna_bridge import optuna_config
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
 
@@ -281,6 +282,13 @@ class SchedulerType(Enum):
     ONECYCLE = "onecycle"
 
 
+@optuna_config(
+    log_scale_fields={"learning_rate", "weight_decay"},
+    categorical_field_weights={
+        "scheduler": [1.0, 2.0, 1.0],
+        "architecture_size": [1.0, 2.0, 2.0],
+    },
+)
 class MLPTrainingConfig(BaseModel):
     """Configuration for MLP training."""
 

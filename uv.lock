@@ -1232,6 +1232,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
+    { name = "pydantic-optuna-bridge" },
     { name = "pydash" },
     { name = "pytest-asyncio" },
     { name = "python-fasthtml" },
@@ -1285,6 +1286,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic" },
     { name = "pydantic-ai", specifier = ">=0.0.14" },
+    { name = "pydantic-optuna-bridge", specifier = ">=0.1.1" },
     { name = "pydash", specifier = ">=8.0.5" },
     { name = "pytest-asyncio", specifier = ">=1.0.0" },
     { name = "python-fasthtml", specifier = ">=0.7.0" },
@@ -2488,6 +2490,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9d/4c/d9d03445b173784a9d83b4c40b9a74dac8db43eb5b31b0976dbd231c04bc/pydantic_graph-1.0.3.tar.gz", hash = "sha256:b3d3806dc6ec0d487df27deec4afbbab5ddb4f3dba3b80972206fc6dfe656cfb", size = 21894, upload-time = "2025-09-11T00:03:01.253Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/63/35/70d4028d55e0eb99b15fed27c06619d710e2f92d992e2e05fc3cfb6c83da/pydantic_graph-1.0.3-py3-none-any.whl", hash = "sha256:5d7af93434a598aaa2087d964705d9e6f03b5e5052ab683f92afa86dbc701a95", size = 27537, upload-time = "2025-09-11T00:02:49.575Z" },
+]
+
+[[package]]
+name = "pydantic-optuna-bridge"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-types" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/d6/2025a4cdde406997bced0f5697bb47f4db0ab2558574a88e488657053f11/pydantic_optuna_bridge-0.1.1.tar.gz", hash = "sha256:72e2129346161359b287c56726e4e51c4b0bbcfe5478215804ffd37a632a7143", size = 12862, upload-time = "2025-09-21T23:55:37.132Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/d1/3fd90c1814097295bb3e610b9cfa6c92a631f4182d9536f51bd7b2baf073/pydantic_optuna_bridge-0.1.1-py3-none-any.whl", hash = "sha256:c57539300dab5b1e54791853e74e8e9c0b7ebc3ff366097b80c1093212f217c3", size = 15704, upload-time = "2025-09-21T23:55:36.086Z" },
 ]
 
 [[package]]
