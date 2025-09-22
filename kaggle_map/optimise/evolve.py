@@ -7,6 +7,7 @@ Example:
 import asyncio
 import os
 from pathlib import Path
+from typing import Annotated
 
 import click
 from loguru import logger
@@ -25,17 +26,22 @@ _ROW_IDS_ENV = "KAGGLE_MAP_OPENEVO_ROW_IDS"
 _OUTPUT_DIR_ENV = "KAGGLE_MAP_OPENEVO_OUTPUT_DIR"
 
 
+Probability = Annotated[float, Field(ge=0.0, le=1.0)]
+StrictProbability = Annotated[float, Field(gt=0.0, le=1.0)]
+PositiveInt = Annotated[int, Field(gt=0)]
+
+
 class PromptEvolutionConfig(BaseModel):
     """Configuration for launching OpenEvolve prompt optimisation."""
 
     dataset_path: Path = Field(..., description="CSV containing labelled rows for evaluation")
     template_path: Path = Field(..., description="Initial prompt template to evolve")
     output_dir: Path = Field(default=Path("logs/openevolve"), description="Directory for OpenEvolve artefacts")
-    sample_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    sample_ratio: Probability = 0.5
     row_ids: list[int] | None = None
     openevolve_config: Path | None = None
-    max_iterations: int = Field(default=100, gt=0)
-    target_score: float | None = Field(default=None, gt=0.0, le=1.0)
+    max_iterations: PositiveInt = 100
+    target_score: StrictProbability | None = None
     best_prompt_path: Path | None = Field(default=None, description="Where to persist the best evolved prompt")
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -82,7 +88,7 @@ class PromptEvolutionRuntimeSettings(BaseModel):
     """Runtime parameters exposed to the OpenEvolve evaluator."""
 
     dataset_path: Path
-    sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    sample_ratio: Probability = 1.0
     row_ids: list[int] | None = None
     output_dir: Path
 
