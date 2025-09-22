@@ -8,16 +8,14 @@ from kaggle_map.core.models import (
     ArchitectureSize,
     EmbeddingModel,
     EmbeddingStrategy,
+    MLPTrainingConfig,
     OptimizerType,
     SchedulerType,
 )
-from kaggle_map.optimise.hyperparameters import TunableParameters, sample_hyperparameters
-from kaggle_map.optimise.tune import parse_fixed_overrides
+from kaggle_map.optimise.tune import parse_search_scope
 
 
-def test_sample_hyperparameters_respects_fixed_overrides() -> None:
-    """Parameters specified in fixed overrides must not be resampled."""
-
+def test_sample_from_trial_respects_search_scope() -> None:
     trial = FixedTrial(
         {
             "epochs": 72,
@@ -26,7 +24,7 @@ def test_sample_hyperparameters_respects_fixed_overrides() -> None:
             "activation": ActivationType.RELU.value,
             "learning_rate": 1.2e-4,
             "weight_decay": 0.0042,
-            "optimizer": OptimizerType.ADAMW.value,
+            "optimizer": OptimizerType.SGD.value,
             "scheduler": SchedulerType.COSINE.value,
             "early_stopping_patience": 18,
             "train_split": 0.74,
@@ -37,44 +35,20 @@ def test_sample_hyperparameters_respects_fixed_overrides() -> None:
         }
     )
 
-    fixed = {
-        TunableParameters.LEARNING_RATE: 9.9e-5,
-        TunableParameters.OPTIMIZER: OptimizerType.SGD,
-    }
+    scope = ("learning_rate", "optimizer")
 
-    sampled = sample_hyperparameters(trial, fixed)
+    sampled = MLPTrainingConfig.sample_from_trial(trial, search_scope=scope)
+    defaults = MLPTrainingConfig.model_validate({})
 
-    assert sampled["learning_rate"] == 9.9e-5
-    assert sampled["optimizer"] is OptimizerType.SGD
-    assert sampled["epochs"] == 72
-    assert sampled["activation"] is ActivationType.RELU
-    assert sampled["train_csv_path"].as_posix() == "datasets/train.csv"
-    assert sampled["embedding_model"] is EmbeddingModel.GEMMA
-    assert sampled["embedding_strategy"] is EmbeddingStrategy.DOUBLE_BLIND
+    assert sampled.learning_rate == pytest.approx(1.2e-4)
+    assert sampled.optimizer is OptimizerType.SGD
+    assert sampled.epochs == defaults.epochs
+    assert sampled.activation is defaults.activation
+    assert sampled.train_csv_path == defaults.train_csv_path
+    assert sampled.embedding_model is defaults.embedding_model
+    assert sampled.embedding_strategy is defaults.embedding_strategy
 
 
-def test_parse_fixed_overrides_casts_types() -> None:
-    """Parsing CLI fixed overrides should coerce values into typed config fields."""
-
-    overrides = parse_fixed_overrides(
-        (
-            "epochs=120",
-            "dropout=0.19",
-            "activation=gelu",
-            "optimizer=adam",
-            "train_csv_path=datasets/custom.csv",
-        )
-    )
-
-    assert overrides[TunableParameters.EPOCHS] == 120
-    assert overrides[TunableParameters.DROPOUT] == pytest.approx(0.19)
-    assert overrides[TunableParameters.ACTIVATION] is ActivationType.GELU
-    assert overrides[TunableParameters.OPTIMIZER] is OptimizerType.ADAM
-    assert overrides[TunableParameters.TRAIN_CSV_PATH].as_posix() == "datasets/custom.csv"
-
-
-def test_parse_fixed_overrides_rejects_unknown_keys() -> None:
-    """Unknown parameters should be rejected early to avoid silent mistakes."""
-
-    with pytest.raises(AssertionError):
-        parse_fixed_overrides(("unknown=1",))
+def test_parse_search_scope_accepts_comma_separated_values() -> None:
+    scope = parse_search_scope(("learning_rate,dropout", "optimizer"))
+    assert scope == ("learning_rate", "dropout", "optimizer")

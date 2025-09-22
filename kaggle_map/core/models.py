@@ -3,12 +3,13 @@
 from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, NamedTuple
+from typing import Annotated, NamedTuple, Any, cast
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from pydantic_optuna_bridge import optuna_config
+from optuna.trial import BaseTrial
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
 
@@ -317,6 +318,33 @@ class MLPTrainingConfig(BaseModel):
     train_csv_path: Path = Path("datasets/train.csv")
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @classmethod
+    def tunable_parameter_names(cls) -> tuple[str, ...]:
+        return tuple(cls.model_fields.keys())
+
+    @classmethod
+    def sample_from_trial(
+        cls,
+        trial: BaseTrial,
+        *,
+        search_scope: tuple[str, ...],
+    ) -> "MLPTrainingConfig":
+        assert isinstance(trial, BaseTrial), "trial must be an Optuna BaseTrial"
+        assert search_scope, "search_scope cannot be empty"
+        assert len(search_scope) == len(set(search_scope)), "search_scope contains duplicates"
+
+        allowed = set(cls.tunable_parameter_names())
+        unknown = sorted(name for name in search_scope if name not in allowed)
+        assert not unknown, f"Unknown search parameters: {unknown}"
+
+        builder = cast("Any", cls)
+        generated = builder.from_optuna_trial(trial)
+        assert isinstance(generated, cls), "Optuna bridge must return MLPTrainingConfig"
+
+        base = cls.model_validate({})
+        updates = {name: getattr(generated, name) for name in search_scope}
+        return base.model_copy(update=updates)
 
 
 def default_mlp_training_config() -> MLPTrainingConfig:
