@@ -24,7 +24,7 @@ The dataset consists of diagnostic questions from Eedi. After choosing a multipl
 In the [`datasets/`](datasets/) folder, you will find:
 - [`train.csv`](datasets/train.csv): Training data with labels
 - [`33474_full_train.csv`](datasets/33474_full_train.csv): All training data for QuestionId 33474, which is the hardest question.
-- [`33474_tiny_train.csv`](datasets/33474_tiny_train.csv): 17 Questions of different difficulty level from the above. Useful for quick experiments and vibe checks.
+- [`33474_tiny_train.csv`](datasets/33474_tiny_train.csv): 17 questions of different difficulty levels drawn from the full set. Useful for quick experiments and vibe checks.
 - [`test.csv`](datasets/test.csv): Sample test data without labels
 - [`sample_submission.csv`](datasets/sample_submission.csv): Example submission file
 
@@ -38,7 +38,7 @@ Models must perform three sub-tasks:
 
 2. **Determine whether the explanation reveals a misconception**
    - Some explanations show misunderstandings even when the answer is correct.
-   - Example: Student gets the right answer but explains it using incorrect reasoning.
+   - Example: The student gets the right answer but explains it using incorrect reasoning.
    - This influences whether the `Category` is labeled `*_Correct`, `*_Incorrect`, or `*_Misconception`.
 
 3. **Identify the specific misconception tag**
@@ -48,7 +48,7 @@ Models must perform three sub-tasks:
 
 ### Scoring
 
-Submissions are evaluated using **Mean Average Precision @ 3 (MAP@3)**. For each observation, participants may submit up to three predicted `Category:Misconception` pairs ranked by confidence. Given 3 test samples with ground truth and predictions:
+Submissions are evaluated using **Mean Average Precision @ 3 (MAP@3)**. For each observation, participants may submit up to three predicted `Category:Misconception` pairs ranked by confidence. Given three test samples with ground truth and predictions:
 
 ```
 Sample 1: Ground truth = "True_Misconception:Incomplete"
@@ -72,7 +72,7 @@ Please refer to [`docs/competition.md`](docs/competition.md) for more details.
 
 We use a two-stage inference pipeline for each row.
 
-1) Embedding + MLP: Convert the student's explanation into a text embedding and classify with an MLP, producing calibrated probabilities via softmax.
+1) Embedding + MLP: Convert the student's explanation into a text embedding, then classify it with an MLP, producing calibrated probabilities via softmax.
 
 2) LLM augmentation (selective): For uncertain cases, call a local LLM to provide an additional classification. Uncertainty is measured by prediction entropy—higher entropy indicates lower certainty. We prioritize rows from most to least uncertain to control cost.
 
@@ -122,11 +122,11 @@ Latency budget: the MLP runs in ~20 ms per sample, while the local LLM takes ~10
 ## Tech Stack
 
 - **Language & Packaging**: Python 3.12+ with strict type modeling via Pydantic; project tooling managed by `uv` and standard `pyproject.toml` metadata. To run a module directly, use `uv run -m {module}`. 
+- **Developer Tooling**: Makefile targets wrap `uv run` workflows; Ruff, Ty, and Pyrefly enforce linting and static analysis; pytest, pytest-asyncio, and Hypothesis back the testing strategy. When you want to run `python` directly, use `uv run` instead to ensure the environment is correctly set up.
 - **Modeling & Training**: PyTorch MLP classifiers complemented by scikit-learn utilities, calibrated softmax outputs.
 - **Embeddings & LLMs**: Sentence-transformers and Hugging Face `transformers` backends, local GGUF models (e.g., Qwen, Gemma) served through `llama-cpp-python`, plus Hugging Face Hub integration for artifact sync.
 - **Data & Experimentation**: Pandas/numpy pipelines, Kaggle API ingestion helpers, and Optuna with `optuna-dashboard` for hyperparameter search and study visualization.
 - **Interfaces & Observability**: CLI surfaces built with Click and Prompt Toolkit, templating/visualization via python-fasthtml, Textual, Jinja2, and logging/diagnostics handled by Loguru, better-exceptions, psutil, and platformdirs.
-- **Developer Tooling**: Makefile targets wrap `uv run` workflows; Ruff, Ty, and Pyrefly enforce linting and static analysis; pytest, pytest-asyncio, and Hypothesis back the testing strategy. When you want to run `python` directly, use `uv run` instead to ensure the environment is correctly set up.
 
 
 ## Development Principles
@@ -144,7 +144,7 @@ These opinionated principles contradict much of the common wisdom. Take the time
   - Use `assert` statements liberally. Always include a detailed message. Make every function’s contract explicit and enforceable. Refrain from try/except blocks, union-with-None types (`| None`), or guarded early returns (`if ...: return`) unless necessary. Defensive programming is useful when interacting with external inputs, but once we are inside our code, we should aim to fail fast and loudly. Refer to [`.claude/agents/debuggability.md`](.claude/agents/debuggability.md) for more details.
   - Failing loudly makes the codebase easier to maintain in the long run by exposing internal flows and state transitions. Use `loguru` to both document and observe the code's state. Refer to [`kaggle_map/utils/logger_config.py`](kaggle_map/utils/logger_config.py) for detailed configuration and [`.claude/agents/observability.md`](.claude/agents/observability.md) for more details.
   - Add a `__main__` block at the end of each file to provide a quick entry point to key features of the module for testing and debugging purposes. Make sure the log level is set to `DEBUG`. Use the `click` package to define and organize command-line interfaces when necessary. Always include example usages in the docstring. Make sure `uv run -m {module} -h` works and is mentioned in the docstring. Use `rich` to pretty-print complex data structures and tables, but be conservative with its usage. 
- - Be mindful of the comments you leave behind. Unless they are absolutely necessary, drop them. If they can be replaced by `logging` messages, convert them. Remember that comments should explain the "why" behind complex logic, not the "what" or "how". 
+  - Be mindful of the comments you leave behind. Unless they are absolutely necessary, drop them. If they can be replaced by `logging` messages, convert them. Remember that comments should explain the "why" behind complex logic, not the "what" or "how".
 
 ### Shorter Code is Better Code
 
@@ -155,5 +155,11 @@ These opinionated principles contradict much of the common wisdom. Take the time
 ### Tests for Design and Leverage, Not Coverage
 
   - Before you write or change any code, write tests first. Use `uv run pytest`. Use the test code to guide the design of the implementation code. Use the test code to explore, design, and define the optimal data structures and functions for the job. Use `hypothesis` to explicitly define the properties of the code.
-  - The test code should be clear, concise and unambiguous. Test function names should succinctly describe the intent. Hold them at the same high standard as the implementation code. Follow the Don't-Repeat-Yourself principle. Use `pytest.fixture` to reuse test data. Use `pytest.mark.parametrize` to "tabulate" the test data. Use real data to further improve the readability of the tests. Minimize visual noise. Use plain `assert` and functions instead of `TestCase`. Avoid mocking unless absolutely necessary.
-  - Tests should be fast, independent and deterministic. Make sure all tests finish within 0.1 seconds. Be ruthless about removing tests that don't add value. Code coverage is a misleading metric. Aim for meaningful tests that validate behavior. Refer to [`.claude/agents/test.md`](.claude/agents/test.md) for more details.
+  - The test code should be clear, concise, and unambiguous. Test function names should succinctly describe the intent. Hold them at the same high standard as the implementation code. Follow the Don't-Repeat-Yourself principle. Use `pytest.fixture` to reuse test data. Use `pytest.mark.parametrize` to "tabulate" the test data. Use real data to further improve the readability of the tests. Minimize visual noise. Use plain `assert` and functions instead of `TestCase`. Avoid mocking unless absolutely necessary.
+  - Tests should be fast, independent, and deterministic. Make sure all tests finish within 0.1 seconds. Be ruthless about removing tests that don't add value. Code coverage is a misleading metric. Aim for meaningful tests that validate behavior. Refer to [`.claude/agents/test.md`](.claude/agents/test.md) for more details.
+
+## Development Process
+
+1. **Explore**: Spend time understanding the problem space, explore the codebase, and note down information that is relevant to the task at hand. Ask questions to clarify requirements and challenge assumptions.
+2. **Plan**: Plan out the changes you intend to make. This includes defining data structures, function signatures, files/modules, and overall architecture. Break down the plan into smaller tasks; each task should take roughly the same amount of time. Make each task a separate section with a clear goal. Use `[ ]` to describe each step within each task. Consider edge cases and error handling. Make sure you number the tasks and steps clearly so they can be referenced later. Output the plan to the `plans/` directory as a markdown file named `{plan-slug}.md`.
+3. **Code**: Implement the code changes. Review and follow the plan file. Implement changes one task item at a time. Follow the "Development Principles". Ensure that both `make dev` and `make test` pass without issues before you move on to the next one. Check a TODO item off using `[x]` once it is done.
