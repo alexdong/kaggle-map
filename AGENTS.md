@@ -157,6 +157,16 @@ These opinionated principles contradict much of the common wisdom. Take the time
   - Before you write or change any code, write tests first. Use `uv run pytest`. Use the test code to guide the design of the implementation code. Use the test code to explore, design, and define the optimal data structures and functions for the job. Use `hypothesis` to explicitly define the properties of the code.
   - The test code should be clear, concise, and unambiguous. Test function names should succinctly describe the intent. Hold them at the same high standard as the implementation code. Follow the Don't-Repeat-Yourself principle. Use `pytest.fixture` to reuse test data. Use `pytest.mark.parametrize` to "tabulate" the test data. Use real data to further improve the readability of the tests. Minimize visual noise. Use plain `assert` and functions instead of `TestCase`. Avoid mocking unless absolutely necessary.
   - Tests should be fast, independent, and deterministic. Make sure all tests finish within 0.1 seconds. Be ruthless about removing tests that don't add value. Code coverage is a misleading metric. Aim for meaningful tests that validate behavior. Refer to [`.claude/agents/test.md`](.claude/agents/test.md) for more details.
+  - Avoid trivial tests. Allow yourself to delete tests that don't add value. If a test is too trivial, it doesn't help anyone. If a test is too complex, it becomes a maintenance burden. Strive for the Goldilocks zone of testing.
+
+### Optimise for Maintainability
+  - Defensive Programming and Backward Compatibility hurts more in the long run because they add cognitive load and visual noise. Always prefer the simplest solution that works for the current requirements.
+  - We do not care about backward compatibility. We can always reprocess data if needed. We prioritize code clarity and correctness over maintaining compatibility with old versions. Always prefer the simplest solution that works for the current requirements. 
+  - When it comes to refactoring, prefer breaking changes over complex migration paths. Don't be afraid to delete old code. If you need to preserve history, we can always grep through git history. 
+  - When it comes to dependencies, prefer the latest stable versions. Avoid using deprecated libraries or features. If a library is no longer maintained, find an alternative or consider writing the functionality ourselves.
+  - When it comes to type data structures, avoid deprecated constructs. Avoid `from __future__ import annotations`. 
+  - Avoid `Optional` and `Union` types unless absolutely necessary. Avoid `TypedDict` unless you need to interoperate with untyped data (e.g., JSON). 
+  - Avoid exceptions for control flow, unless absolutely necessary. 
 
 ## Development Process
 
