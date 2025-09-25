@@ -3,13 +3,13 @@
 from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, NamedTuple, Any, cast
+from typing import Annotated, Any, NamedTuple, cast
 
 import numpy as np
 import pandas as pd
+from optuna.trial import BaseTrial
 from pydantic import BaseModel, Field, field_validator
 from pydantic_optuna_bridge import optuna_config
-from optuna.trial import BaseTrial
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
 
