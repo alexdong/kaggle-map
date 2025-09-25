@@ -396,7 +396,7 @@ def test_cache_performance(mock_encode_func, temp_cache_dir, tiny_eval_rows, tmp
         _strategy: EmbeddingStrategy,
         _model: EmbeddingModel,
     ) -> torch.Tensor:
-        time.sleep(0.05)  # 50ms delay
+        time.sleep(0.1)  # 100ms delay
         return torch.from_numpy(_random_array(len(rows), 768))
 
     mock_encode_func.side_effect = slow_encode

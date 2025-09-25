@@ -1,7 +1,7 @@
 """LLM-based evaluator for student misconception predictions."""
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +14,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn
 from rich.table import Table
 
 from kaggle_map.core.models import EvaluationRow, Prediction, default_mlp_training_config
+from kaggle_map.core.random_seed import configure_random_seed, get_active_seed
 from kaggle_map.dataloader import MAPDataset
 from kaggle_map.dataloader.sampling import stratified_sample
 from kaggle_map.llm.utils import build_prediction_prompt
@@ -40,6 +41,7 @@ class EvaluationConfig:
     sample_ratio: float
     row_ids: list[int] | None
     template_path: Path
+    random_seed: int = field(default_factory=get_active_seed)
     model_name: GGUFModelName = GGUFModelName.GPT_OSS_20B
     quantization: GGUFModelQuantizationLevel = GGUFModelQuantizationLevel.Q2_K_L
 
@@ -154,6 +156,8 @@ def _sample_dataframe(
     row_ids: list[int] | None,
     sample_ratio: float,
 ) -> pd.DataFrame:
+    seed = get_active_seed()
+
     if row_ids:
         logger.info(f"Filtering data to specified row IDs: {row_ids}")
         sampled_df = df[df["row_id"].isin(row_ids)]
@@ -164,13 +168,12 @@ def _sample_dataframe(
         logger.info(f"Selected {len(sampled_df)} samples for evaluation")
         return pd.DataFrame(sampled_df)
 
-    logger.info(f"Sampling {sample_ratio:.1%} of data with stratification")
+    logger.info(f"Sampling {sample_ratio:.1%} of data with stratification (seed={seed})")
     sampled_df = stratified_sample(
         df,
         sample_ratio=sample_ratio,
         stratify_cols=["QuestionId", "Category", "MC_Answer"],
         min_samples_per_stratum=2,
-        random_seed=42,
     )
     logger.info(f"Selected {len(sampled_df)} samples for evaluation")
     return sampled_df
@@ -244,6 +247,8 @@ def _finalize_results(scores: list[float], evaluation_results: list[dict[str, An
 
 
 def evaluate_with_llm(config: EvaluationConfig) -> float:
+    active_seed = configure_random_seed(override=config.random_seed)
+    logger.debug("LLM evaluator using random seed: {}", active_seed)
     logger.info(f"Loading validation data from {config.data_path}")
     assert config.data_path.exists(), f"Validation CSV not found: {config.data_path}"
     dataset_config = default_mlp_training_config().model_copy(update={"train_csv_path": config.data_path})
@@ -316,6 +321,13 @@ if __name__ == "__main__":
         help="Comma-separated list of specific row IDs to evaluate. Overrides --sample-ratio.",
     )
     @click.option(
+        "--seed",
+        type=int,
+        default=None,
+        show_default=False,
+        help="Override random seed for sampling and evaluation",
+    )
+    @click.option(
         "--data-path",
         type=click.Path(exists=True, path_type=Path),
         default=Path("datasets/33474_focus_group.csv"),
@@ -327,8 +339,10 @@ if __name__ == "__main__":
         default=Path("kaggle_map/llm/prompts/predict.j2"),
         help="Custom prompt template path",
     )
-    def main(sample_ratio: float, row_ids: str | None, data_path: Path, template_path: Path) -> None:
+    def main(sample_ratio: float, row_ids: str | None, seed: int | None, data_path: Path, template_path: Path) -> None:
         configure_logger(__name__, console_level="DEBUG")
+        active_seed = configure_random_seed(override=seed)
+        logger.debug("LLM CLI configured random seed: {}", active_seed)
 
         row_ids_list = None
         if row_ids:
@@ -340,6 +354,7 @@ if __name__ == "__main__":
             data_path=data_path,
             sample_ratio=sample_ratio,
             row_ids=row_ids_list,
+            random_seed=active_seed,
         )
         avg_map_score = evaluate_with_llm(config)
 

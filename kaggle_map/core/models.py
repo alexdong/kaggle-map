@@ -12,12 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_optuna_bridge import optuna_config
 
 from kaggle_map.core.normalise import normalize_latex_answer, normalize_text
-
-# ============================================================================
-# Constants
-# ============================================================================
-
-RANDOM_SEED = 42  # Fixed seed for reproducibility across all experiments
+from kaggle_map.core.random_seed import get_active_seed
 
 # ============================================================================
 # Type Aliases
@@ -309,6 +304,9 @@ class MLPTrainingConfig(BaseModel):
     # Data split
     train_split: Annotated[float, Field(default=0.7, ge=0.6, le=0.85)]
 
+    # Reproducibility
+    random_seed: Annotated[int, Field(default_factory=get_active_seed, ge=0, le=2**32 - 1)]
+
     # Architecture and embedding
     embedding_model: Annotated[EmbeddingModel, Field(default=EmbeddingModel.QWEN)]
     embedding_strategy: Annotated[EmbeddingStrategy, Field(default=EmbeddingStrategy.DOUBLE_BLIND)]
@@ -339,7 +337,8 @@ class MLPTrainingConfig(BaseModel):
         assert not unknown, f"Unknown search parameters: {unknown}"
 
         builder = cast("Any", cls)
-        generated = builder.from_optuna_trial(trial)
+        overrides = {"random_seed": get_active_seed()}
+        generated = builder.from_optuna_trial(trial, **overrides)
         assert isinstance(generated, cls), "Optuna bridge must return MLPTrainingConfig"
 
         base = cls.model_validate({})

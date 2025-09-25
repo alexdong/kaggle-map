@@ -15,6 +15,7 @@ from openevolve import OpenEvolve
 from openevolve.database import Program
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kaggle_map.core.random_seed import configure_random_seed, get_active_seed
 from kaggle_map.llm.evaluator import EvaluationConfig, evaluate_with_llm
 from kaggle_map.utils.logger_config import configure_logger
 
@@ -24,6 +25,7 @@ _DATASET_ENV = "KAGGLE_MAP_OPENEVO_DATASET"
 _SAMPLE_RATIO_ENV = "KAGGLE_MAP_OPENEVO_SAMPLE_RATIO"
 _ROW_IDS_ENV = "KAGGLE_MAP_OPENEVO_ROW_IDS"
 _OUTPUT_DIR_ENV = "KAGGLE_MAP_OPENEVO_OUTPUT_DIR"
+_RANDOM_SEED_ENV = "KAGGLE_MAP_RANDOM_SEED"
 
 
 Probability = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -138,6 +140,9 @@ def prepare_environment(config: PromptEvolutionConfig) -> dict[str, str]:
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     env = config.runtime_environment()
+    seed_value = str(get_active_seed())
+    env[_RANDOM_SEED_ENV] = seed_value
+
     for key, value in env.items():
         os.environ[key] = value
     logger.info("Prepared OpenEvolve environment", environment=env)
@@ -154,7 +159,8 @@ def evaluate(candidate_prompt_path: str) -> dict[str, float]:
         Mapping of metric name to score. Must include ``combined_score``.
     """
 
-    logger.debug("Evaluating candidate prompt", candidate=candidate_prompt_path)
+    active_seed = configure_random_seed()
+    logger.debug("Evaluating candidate prompt", candidate=candidate_prompt_path, seed=active_seed)
     runtime = PromptEvolutionRuntimeSettings.from_environment()
     prompt_path = Path(candidate_prompt_path)
     assert prompt_path.exists(), f"Candidate prompt not found at {prompt_path}"
@@ -165,6 +171,7 @@ def evaluate(candidate_prompt_path: str) -> dict[str, float]:
         sample_ratio=runtime.sample_ratio,
         row_ids=runtime.row_ids,
         template_path=prompt_path,
+        random_seed=active_seed,
     )
 
     score = evaluate_with_llm(evaluation_config)
@@ -205,6 +212,8 @@ def _persist_best_prompt(best_program: Program | str | None, config: PromptEvolu
 def run_prompt_evolution(config: PromptEvolutionConfig) -> Program | None:
     """Run OpenEvolve using the provided configuration."""
 
+    active_seed = configure_random_seed()
+    logger.debug("Prompt evolution configured random seed: {}", active_seed)
     prepare_environment(config)
     logger.info("Starting OpenEvolve run", config=config.model_dump())
     evolver = OpenEvolve(
@@ -257,6 +266,13 @@ def run_prompt_evolution(config: PromptEvolutionConfig) -> Program | None:
     help="Comma-separated row IDs to evaluate instead of random sampling",
 )
 @click.option(
+    "--seed",
+    type=int,
+    default=None,
+    show_default=False,
+    help="Override random seed propagated to all evaluations",
+)
+@click.option(
     "--openevolve-config",
     type=click.Path(path_type=Path, exists=True),
     default=None,
@@ -288,12 +304,16 @@ def main(  # noqa: PLR0913
     output_dir: Path,
     sample_ratio: float,
     row_ids: str | None,
+    seed: int | None,
     openevolve_config: Path | None,
     max_iterations: int,
     target_score: float | None,
     best_prompt_path: Path | None,
 ) -> None:
     """CLI for running OpenEvolve against the MAP@3 evaluator."""
+
+    active_seed = configure_random_seed(override=seed)
+    logger.debug("OpenEvolve CLI configured random seed: {}", active_seed)
 
     parsed_row_ids = None
     if row_ids:

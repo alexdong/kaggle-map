@@ -26,6 +26,7 @@ from kaggle_map.core.models import (
     TrainingRow,
     default_mlp_training_config,
 )
+from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader import MAPDataset
 from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
 from kaggle_map.embeddings import encode
@@ -167,6 +168,7 @@ def _build_training_loaders(
 
 
 def fit(config: MLPTrainingConfig) -> QuestionSpecificMLP:
+    configure_random_seed()
     dataset = MAPDataset(csv_path=config.train_csv_path, config=config)
     question_predictions = dataset.question_predictions
 
@@ -398,8 +400,12 @@ def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow], config: M
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-def cli() -> None:
+@click.option("--seed", type=int, default=None, help="Override random seed for this run", show_default=False)
+def cli(seed: int | None) -> None:
     """Train and evaluate MLP models for misconception prediction."""
+
+    active_seed = configure_random_seed(override=seed)
+    logger.debug("CLI configured random seed: {}", active_seed)
 
 
 @cli.command(name="fit")
@@ -418,6 +424,7 @@ def fit_command() -> None:
     logger.info(f"  Batch size: {config.batch_size}")
     logger.info(f"  Learning rate: {config.learning_rate}")
     logger.info(f"  Train split: {config.train_split}")
+    logger.info(f"  Random seed: {config.random_seed}")
     logger.info(f"  Model path: {model_path}")
 
     assert train_data.exists(), f"Training data not found: {train_data}"

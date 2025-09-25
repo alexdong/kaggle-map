@@ -1,9 +1,8 @@
 """Stratified dataset utilities for MAP competition pipelines."""
 
-from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -13,13 +12,13 @@ from kaggle_map.core.models import (
     Answer,
     Category,
     EvaluationRow,
-    Misconception,
     MLPTrainingConfig,
     Prediction,
     QuestionId,
     TrainingRow,
     default_mlp_training_config,
 )
+from kaggle_map.core.random_seed import configure_random_seed, get_active_seed
 from kaggle_map.dataloader.sampling import stratified_sample
 from kaggle_map.utils.logger_config import configure_logger
 
@@ -27,7 +26,6 @@ configure_logger(__name__)
 
 DEFAULT_SAMPLE_RATIO = 0.1
 Split = Literal["train", "val", "test"]
-DEFAULT_SEED = 42
 MIN_TRAIN_RATIO = 0.5
 MAX_TRAIN_RATIO = 0.9
 
@@ -95,13 +93,11 @@ def build_strata(rows: Sequence[TrainingRow]) -> dict[str, np.ndarray]:
 def stratified_splits(
     strata: Mapping[str, np.ndarray],
     train_ratio: float,
-    *,
-    seed: int = DEFAULT_SEED,
 ) -> dict[Split, list[int]]:
     assert strata, "Strata mapping cannot be empty"
     assert MIN_TRAIN_RATIO < train_ratio < MAX_TRAIN_RATIO, "train_ratio must leave room for validation/test"
 
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(get_active_seed())
     splits: dict[Split, list[int]] = {"train": [], "val": [], "test": []}
 
     for indices in strata.values():
@@ -157,9 +153,8 @@ def _derive_correct_answers(rows: Sequence[TrainingRow]) -> dict[QuestionId, str
 class MAPDataset(Sequence[TrainingRow]):
     """Lightweight dataset wrapper with stratified splits and helpers."""
 
-    def __init__(self, *, csv_path: Path, config: MLPTrainingConfig, seed: int = DEFAULT_SEED) -> None:
+    def __init__(self, *, csv_path: Path, config: MLPTrainingConfig) -> None:
         assert csv_path.exists(), f"Training CSV not found: {csv_path}"
-        self._seed = seed
         self._csv_path = csv_path
 
         logger.info("Loading training CSV from {}", csv_path)
@@ -174,7 +169,7 @@ class MAPDataset(Sequence[TrainingRow]):
 
         logger.info("Preparing stratified splits for {} rows", len(self._rows))
         self._strata = build_strata(self._rows)
-        self._split_indices = stratified_splits(self._strata, config.train_split, seed=seed)
+        self._split_indices = stratified_splits(self._strata, config.train_split)
         train_count, val_count, test_count = self._split_sizes()
         logger.info(
             "Dataset initialised with {} train/{} val/{} test samples",
@@ -211,8 +206,9 @@ class MAPDataset(Sequence[TrainingRow]):
 
     def __getitem__(self, key: int | slice | Split) -> TrainingRow | list[TrainingRow]:
         if isinstance(key, str):
-            assert key in self._split_indices, f"Unknown split: {key}"
-            return [self._rows[idx] for idx in self._split_indices[key]]
+            split_key = cast("Split", key)
+            assert split_key in self._split_indices, f"Unknown split: {key}"
+            return [self._rows[idx] for idx in self._split_indices[split_key]]
         if isinstance(key, int):
             return self._rows[key]
         if isinstance(key, slice):
@@ -244,7 +240,6 @@ class MAPDataset(Sequence[TrainingRow]):
             self._dataframe,
             sample_ratio=ratio,
             stratify_cols=("QuestionId", "Category", "MC_Answer"),
-            random_seed=self._seed,
         )
 
     def sample_as_list(self, ratio: float = DEFAULT_SAMPLE_RATIO) -> list[TrainingRow]:
@@ -263,6 +258,7 @@ class MAPDataset(Sequence[TrainingRow]):
         )
         return evaluation, row.prediction
 
+
 if __name__ == "__main__":
     import click
     from rich.console import Console
@@ -274,12 +270,14 @@ if __name__ == "__main__":
         default=Path("datasets/33474_focus_train.csv"),
     )
     @click.option("--train-split", type=float, default=0.7, show_default=True)
-    @click.option("--seed", type=int, default=DEFAULT_SEED, show_default=True)
-    def main(csv_path: Path, train_split: float, seed: int) -> None:
+    @click.option("--seed", type=int, default=None, show_default=False, help="Override random seed for sampling")
+    def main(csv_path: Path, train_split: float, seed: int | None) -> None:
         configure_logger(__name__, console_level="DEBUG")
+        active_seed = configure_random_seed(override=seed)
+        logger.debug("Dataset CLI configured random seed: {}", active_seed)
         base_config = default_mlp_training_config()
         config = base_config.model_copy(update={"train_csv_path": csv_path, "train_split": train_split})
-        dataset = MAPDataset(csv_path=csv_path, config=config, seed=seed)
+        dataset = MAPDataset(csv_path=csv_path, config=config)
         console = Console()
         console.print(dataset.split_counts)
         console.print(dataset.sample_as_df(0.05).head())

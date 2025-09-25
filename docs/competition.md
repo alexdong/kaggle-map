@@ -112,3 +112,12 @@ Sample 3: Ground truth = "True_Incorrect:Calculation"
 MAP@3 = (1.0 + 0.5 + 0.0) / 3 = 0.5
 ```
 
+
+## Reproducibility Controls
+
+Deterministic experiments rely on a single random seed across the entire toolkit. By default the project uses `42`, but every CLI now exposes a `--seed` option and honours the `KAGGLE_MAP_RANDOM_SEED` environment variable. Examples:
+
+- `uv run -m kaggle_map.mlp.main fit --seed 1337`
+- `KAGGLE_MAP_RANDOM_SEED=2025 uv run -m kaggle_map.llm.evaluator --sample-ratio 0.1`
+
+If neither flag nor environment variable is supplied, the default seed is applied automatically. The active seed is propagated to NumPy, PyTorch (CPU and CUDA), and Python's `random` module before any stochastic operation runs.

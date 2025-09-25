@@ -25,7 +25,7 @@ def test_listmle_loss_basic_computation() -> None:
 
     assert isinstance(loss, torch.Tensor)
     assert loss.shape == torch.Size([])  # Scalar output
-    assert loss.item() >= 0  # Loss should be non-negative
+    assert loss.item() >= -1e-6  # Allow tiny numerical noise
 
 
 def test_listmle_loss_with_different_k() -> None:

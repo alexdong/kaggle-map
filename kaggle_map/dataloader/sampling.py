@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 from loguru import logger
 
+from kaggle_map.core.random_seed import configure_random_seed, get_active_seed
 from kaggle_map.utils.logger_config import configure_logger
 
 configure_logger(__name__)
@@ -26,16 +27,16 @@ def stratified_sample(
     sample_ratio: float = 0.1,
     stratify_cols: Sequence[str] = DEFAULT_STRATIFY_COLS,
     min_samples_per_stratum: int = 3,
-    random_seed: int = 42,
 ) -> pd.DataFrame:
     assert 0.0 < sample_ratio <= 1.0, f"sample_ratio must be between 0 and 1, got {sample_ratio}"
     assert min_samples_per_stratum > 0, "min_samples_per_stratum must be positive"
     assert stratify_cols, "stratify_cols must contain at least one column name"
 
+    seed = get_active_seed()
     available_cols = [col for col in stratify_cols if col in df.columns]
     if not available_cols:
         logger.warning("No stratification columns found in dataframe. Using simple random sampling.")
-        sampled = df.sample(frac=sample_ratio, random_state=random_seed)
+        sampled = df.sample(frac=sample_ratio, random_state=seed)
         return sampled.reset_index(drop=True)
 
     logger.info("Stratified sampling with ratio={} stratify_by={}", sample_ratio, available_cols)
@@ -50,7 +51,7 @@ def stratified_sample(
         guaranteed = min(min_samples_per_stratum, stratum_size)
         target_samples = min(max(guaranteed, requested), stratum_size)
 
-        sampled_group = group.sample(n=target_samples, random_state=random_seed)
+        sampled_group = group.sample(n=target_samples, random_state=seed)
         sampled_dfs.append(sampled_group)
 
     if not sampled_dfs:
@@ -69,6 +70,8 @@ def main() -> None:
     """Print a stratified 1% sample from the canonical full-train CSV."""
 
     logger.debug(f"Reading dataframe from {DEFAULT_INPUT_CSV}")
+    configure_random_seed()
+
     df = pd.read_csv(DEFAULT_INPUT_CSV)
     logger.info("Loaded {} rows from {}", len(df), DEFAULT_INPUT_CSV)
 
@@ -77,7 +80,6 @@ def main() -> None:
         sample_ratio=DEFAULT_SAMPLE_RATIO,
         stratify_cols=DEFAULT_STRATIFY_COLS,
         min_samples_per_stratum=3,
-        random_seed=42,
     )
 
     logger.success("Sampled {} rows ({}%)", len(sampled), DEFAULT_SAMPLE_RATIO * 100)

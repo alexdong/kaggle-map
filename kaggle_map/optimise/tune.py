@@ -14,6 +14,7 @@ from loguru import logger
 from kaggle_map.core.models import (
     MLPTrainingConfig,
 )
+from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader import MAPDataset
 from kaggle_map.mlp.main import evaluate, fit
 from kaggle_map.optimise.studies import create as create_study
@@ -44,6 +45,7 @@ def objective(trial: optuna.Trial, search_scope: tuple[str, ...]) -> float:
 
     dataset = MAPDataset(csv_path=config.train_csv_path, config=config)
     validation_rows = dataset["val"]
+    assert isinstance(validation_rows, list)
     result = evaluate(model, validation_rows, config)
     return result["validation_map@3"]
 
@@ -88,7 +90,14 @@ def run_search(
     multiple=True,
     help=("Restrict optimisation to specific hyperparameters, e.g. --scope learning_rate --scope dropout."),
 )
-def main(study_name: str, trials: int, search_scope: tuple[str, ...]) -> None:
+@click.option(
+    "--seed",
+    type=int,
+    default=42,
+    show_default=True,
+    help="Override random seed for all Optuna trials",
+)
+def main(study_name: str, trials: int, search_scope: tuple[str, ...], seed: int) -> None:
     """CLI entrypoint for launching an MLP hyperparameter search.
 
     Examples:
@@ -97,6 +106,9 @@ def main(study_name: str, trials: int, search_scope: tuple[str, ...]) -> None:
         uv run -m kaggle_map.optimise.tune --scope learning_rate --scope optimizer
         uv run kaggle_map/optimise/tune.py --trials 500 -s scheduler,dropout
     """
+    active_seed = configure_random_seed(override=seed)
+    logger.debug("Optuna CLI configured random seed: {}", active_seed)
+
     scope = parse_search_scope(search_scope)
     run_search(study_name, trials, search_scope=scope)
 

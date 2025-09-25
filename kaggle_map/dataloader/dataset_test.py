@@ -1,6 +1,7 @@
 """Tests for dataset utilities and MAPDataset wrapper."""
 
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,7 @@ from kaggle_map.core.models import (
     TrainingRow,
     default_mlp_training_config,
 )
+from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader.dataset import (
     MAPDataset,
     build_strata,
@@ -104,7 +106,7 @@ def sample_training_data() -> list[TrainingRow]:
 
 
 @pytest.fixture
-def temp_training_csv() -> Path:
+def temp_training_csv() -> Iterator[Path]:
     """Create temporary training CSV file with comprehensive test data."""
     training_data = {
         "row_id": [1, 2, 3, 4, 5, 6, 7, 8],
@@ -289,7 +291,8 @@ def test_stratified_splits_partition_sizes() -> None:
     rows = [_make_row(row_id=i, question_id=20 + i // 4, category="True_Correct") for i in range(12)]
     strata = build_strata(rows)
 
-    splits = stratified_splits(strata, train_ratio=0.6, seed=99)
+    configure_random_seed(override=99)
+    splits = stratified_splits(strata, train_ratio=0.6)
     assert set(splits) == {"train", "val", "test"}
 
     total_indices = sum(len(indices) for indices in splits.values())
@@ -499,6 +502,7 @@ def test_split_indexing_returns_training_rows(sample_csv: Path) -> None:
     config = _make_config(sample_csv)
     dataset = MAPDataset(csv_path=config.train_csv_path, config=config)
     split_rows = dataset["val"]
+    assert isinstance(split_rows, list)
     assert all(isinstance(row, TrainingRow) for row in split_rows)
     assert len(split_rows) == dataset.split_counts["val"]
 

@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 from kaggle_map.core.models import EvaluationRow
+from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
 from kaggle_map.mlp.embedding_cache import (
     clear_cache,
@@ -98,6 +99,7 @@ def cmd_precompute(dataset_path: str | Path) -> None:
 
 def main() -> None:
     """Main entry point for cache CLI."""
+    configure_random_seed()
     parser = argparse.ArgumentParser(
         description="Manage embedding cache for MLP training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
