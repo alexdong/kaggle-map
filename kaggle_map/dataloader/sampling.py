@@ -1,6 +1,13 @@
-"""Stratified sampling utilities for data loading."""
+"""Stratified sampling utilities for data loading.
+
+Example:
+    uv run -m kaggle_map.dataloader.sampling
+
+This prints a 1% stratified sample from ``datasets/33474_full_train.csv``.
+"""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import pandas as pd
 from loguru import logger
@@ -10,6 +17,8 @@ from kaggle_map.utils.logger_config import configure_logger
 configure_logger(__name__)
 
 DEFAULT_STRATIFY_COLS: tuple[str, ...] = ("QuestionId", "Category", "MC_Answer")
+DEFAULT_INPUT_CSV = Path("datasets/33474_full_train.csv")
+DEFAULT_SAMPLE_RATIO = 0.01
 
 
 def stratified_sample(
@@ -54,3 +63,31 @@ def stratified_sample(
     logger.info(f"Sampled {len(result)} rows from {len(df)} ({actual_ratio * 100:.1f}%)")
 
     return result
+
+
+def main() -> None:
+    """Print a stratified 1% sample from the canonical full-train CSV."""
+
+    logger.debug(f"Reading dataframe from {DEFAULT_INPUT_CSV}")
+    df = pd.read_csv(DEFAULT_INPUT_CSV)
+    logger.info("Loaded {} rows from {}", len(df), DEFAULT_INPUT_CSV)
+
+    sampled = stratified_sample(
+        df=df,
+        sample_ratio=DEFAULT_SAMPLE_RATIO,
+        stratify_cols=DEFAULT_STRATIFY_COLS,
+        min_samples_per_stratum=3,
+        random_seed=42,
+    )
+
+    logger.success("Sampled {} rows ({}%)", len(sampled), DEFAULT_SAMPLE_RATIO * 100)
+
+    if sampled.empty:
+        print("No rows sampled.")
+        return
+
+    print(sampled.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

@@ -13,8 +13,9 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from kaggle_map.core.models import EvaluationRow, Prediction
-from kaggle_map.dataloader import load_validation_data, stratified_sample
+from kaggle_map.core.models import EvaluationRow, Prediction, default_mlp_training_config
+from kaggle_map.dataloader import MAPDataset
+from kaggle_map.dataloader.sampling import stratified_sample
 from kaggle_map.llm.utils import build_prediction_prompt
 from kaggle_map.utils.gguf_model import (
     GGUFModelInferenceConfig,
@@ -244,7 +245,11 @@ def _finalize_results(scores: list[float], evaluation_results: list[dict[str, An
 
 def evaluate_with_llm(config: EvaluationConfig) -> float:
     logger.info(f"Loading validation data from {config.data_path}")
-    validation_pairs = load_validation_data(config.data_path)
+    assert config.data_path.exists(), f"Validation CSV not found: {config.data_path}"
+    dataset_config = default_mlp_training_config().model_copy(update={"train_csv_path": config.data_path})
+    dataset = MAPDataset(csv_path=config.data_path, config=dataset_config)
+    assert len(dataset) > 0, "Dataset cannot be empty"
+    validation_pairs = dataset.evaluation_pairs()
     logger.info(f"Loaded {len(validation_pairs)} validation samples")
 
     df = _prepare_dataframe(validation_pairs)

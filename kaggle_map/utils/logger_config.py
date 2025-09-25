@@ -18,7 +18,7 @@ def get_log_file_path(module_name: str) -> Path:
 
     Examples:
         kaggle_map.llm.evaluator -> logs/llm.evaluator.log
-        kaggle_map.core.dataset -> logs/core.dataset.log
+        kaggle_map.dataloader.dataset -> logs/dataloader.dataset.log
         __main__ -> logs/main.log
 
     Args:

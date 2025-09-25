@@ -54,7 +54,7 @@ def test_default_model_configs_exist():
 
 
 @patch("kaggle_map.llm.evaluator.load_llm_model")
-@patch("kaggle_map.llm.evaluator.load_validation_data")
+@patch("kaggle_map.llm.evaluator.MAPDataset")
 @patch("kaggle_map.llm.evaluator._prepare_dataframe")
 @patch("kaggle_map.llm.evaluator._sample_dataframe")
 @patch("kaggle_map.llm.evaluator.display_evaluation_details")
@@ -64,7 +64,7 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
     mock_display,  # noqa: ARG001
     mock_sample,
     mock_prepare,
-    mock_load_data,
+    mock_map_dataset,
     mock_load_llm,
 ):
     """Test that GPT-OSS models use OpenAI recommended inference parameters."""
@@ -75,7 +75,7 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
 
     # Setup mocks
     mock_llm = MagicMock()
-    mock_llm.return_value = {"choices": [{"text": "True_Misconception: Misconception 1"}]}
+    mock_llm.return_value = {"choices": [{"text": "1"}]}
     mock_load_llm.return_value = mock_llm
 
     # Arrange: Create realistic mathematical test data
@@ -89,7 +89,10 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
 
     ground_truth = Prediction(category=Category.TRUE_MISCONCEPTION, misconception="Misconception 1")
 
-    mock_load_data.return_value = [(eval_row, ground_truth)]
+    dataset_stub = MagicMock()
+    dataset_stub.evaluation_pairs.return_value = [(eval_row, ground_truth)]
+    dataset_stub.__len__.return_value = 1
+    mock_map_dataset.return_value = dataset_stub
     mock_prepare.return_value = pd.DataFrame(
         [
             {
@@ -106,9 +109,10 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
     mock_sample.return_value = mock_prepare.return_value
 
     # Create config for GPT-OSS
+    data_path = Path(__file__)
     config = EvaluationConfig(
         template_path=Path("kaggle_map/llm/prompts/predict.j2"),
-        data_path=Path("test_data.csv"),
+        data_path=data_path,
         sample_ratio=1.0,
         row_ids=None,
         model_name=GGUFModelName.GPT_OSS_20B,
@@ -131,7 +135,7 @@ def test_gpt_oss_uses_openai_parameters(  # noqa: PLR0913
 
 
 @patch("kaggle_map.llm.evaluator.load_llm_model")
-@patch("kaggle_map.llm.evaluator.load_validation_data")
+@patch("kaggle_map.llm.evaluator.MAPDataset")
 @patch("kaggle_map.llm.evaluator._prepare_dataframe")
 @patch("kaggle_map.llm.evaluator._sample_dataframe")
 @patch("kaggle_map.llm.evaluator.display_evaluation_details")
@@ -141,7 +145,7 @@ def test_gemma_uses_standard_parameters(  # noqa: PLR0913
     mock_display,  # noqa: ARG001
     mock_sample,
     mock_prepare,
-    mock_load_data,
+    mock_map_dataset,
     mock_load_llm,
 ):
     """Test that non-GPT-OSS models use standard inference parameters."""
@@ -152,7 +156,7 @@ def test_gemma_uses_standard_parameters(  # noqa: PLR0913
 
     # Setup mocks
     mock_llm = MagicMock()
-    mock_llm.return_value = {"choices": [{"text": "False_Misconception: Misconception 2"}]}
+    mock_llm.return_value = {"choices": [{"text": "2"}]}
     mock_load_llm.return_value = mock_llm
 
     # Arrange: Create realistic mathematical test data
@@ -166,7 +170,10 @@ def test_gemma_uses_standard_parameters(  # noqa: PLR0913
 
     ground_truth = Prediction(category=Category.FALSE_MISCONCEPTION, misconception="Misconception 2")
 
-    mock_load_data.return_value = [(eval_row, ground_truth)]
+    dataset_stub = MagicMock()
+    dataset_stub.evaluation_pairs.return_value = [(eval_row, ground_truth)]
+    dataset_stub.__len__.return_value = 1
+    mock_map_dataset.return_value = dataset_stub
     mock_prepare.return_value = pd.DataFrame(
         [
             {
@@ -183,9 +190,10 @@ def test_gemma_uses_standard_parameters(  # noqa: PLR0913
     mock_sample.return_value = mock_prepare.return_value
 
     # Create config for GEMMA
+    data_path = Path(__file__)
     config = EvaluationConfig(
         template_path=Path("kaggle_map/llm/prompts/predict.j2"),
-        data_path=Path("test_data.csv"),
+        data_path=data_path,
         sample_ratio=1.0,
         row_ids=None,
         model_name=GGUFModelName.GEMMA_3_27B_IT,

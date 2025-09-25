@@ -123,7 +123,11 @@ volume_mount_path = (CONTAINER_ROOT / "models").as_posix()
 
 
 def _build_inference_artifacts() -> InferenceArtifacts:
-    logger.info("Loading GGUF model %s with quantization %s", MODEL_NAME.value, DEFAULT_QUANTIZATION.value)
+    logger.info(
+        "Loading GGUF model {} with quantization {}",
+        MODEL_NAME.value,
+        DEFAULT_QUANTIZATION.value,
+    )
     inference_config = GGUFModelInferenceConfig.get_default_config(MODEL_NAME)
     llm = load_llm_model(MODEL_NAME)
     return InferenceArtifacts(llm=llm, inference_config=inference_config)
@@ -137,7 +141,7 @@ def _generate_from_model(
     prompt: str,
 ) -> str:
     formatted_prompt = format_chat_prompt(model_name, prompt)
-    logger.debug("Prompt length after formatting: %d", len(formatted_prompt))
+    logger.debug("Prompt length after formatting: {}", len(formatted_prompt))
     response = llm.create_completion(
         prompt=formatted_prompt,
         temperature=inference_config.temperature,
@@ -155,7 +159,7 @@ def _generate_from_model(
         if isinstance(message, dict):
             text = str(message.get("content", "")).strip()
     assert text, "LLM completion was empty."
-    logger.debug("Generated completion length: %d", len(text))
+    logger.debug("Generated completion length: {}", len(text))
     return text
 
 

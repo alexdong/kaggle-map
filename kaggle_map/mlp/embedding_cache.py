@@ -250,7 +250,7 @@ if __name__ == "__main__":
     from rich.console import Console
     from rich.table import Table
 
-    from kaggle_map.core.dataset import extract_correct_answers, load_training_data
+    from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
     from kaggle_map.utils.logger_config import configure_logger
 
     @dataclass(frozen=True)
@@ -373,7 +373,7 @@ if __name__ == "__main__":
         cache_path = _get_cache_path(args.dataset_path, args.model, args.strategy)
         if args.clear_cache and cache_path.exists():
             cache_path.unlink()
-            logger.info("Removed existing cache at %s", cache_path)
+            logger.info("Removed existing cache at {}", cache_path)
 
         first_duration = _time_request(eval_rows, metadata_tuples, args)
         _render_cache_table(console, cache_path)
