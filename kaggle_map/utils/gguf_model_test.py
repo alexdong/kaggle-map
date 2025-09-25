@@ -212,7 +212,7 @@ def test_default_configs_via_get_method() -> None:
     # Test GPT-OSS default config
     config = GGUFModelLoadConfig.get_default_config(GGUFModelName.GPT_OSS_20B)
     assert config.quantization == GGUFModelQuantizationLevel.Q2_K_L
-    assert config.n_ctx == 20480
+    assert config.n_ctx == 32768
     assert config.n_batch == 512
     assert config.n_gpu_layers == -1
     assert config.n_threads == 8
