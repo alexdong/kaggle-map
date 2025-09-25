@@ -26,12 +26,16 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
 from kaggle_map.core.models import EmbeddingModel, EmbeddingStrategy, EvaluationRow, TrainingRow
 from kaggle_map.embeddings import encode
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -156,8 +160,8 @@ def validate_cache(metadata: dict, dataset_path: Path, model: EmbeddingModel, st
 
 
 def get_or_compute_embeddings(
-    eval_rows: list[EvaluationRow],
-    metadata_tuples: list[tuple],
+    eval_rows: Sequence[EvaluationRow],
+    metadata_tuples: Sequence[tuple],
     dataset_path: Path,
     model: EmbeddingModel,
     strategy: EmbeddingStrategy,
@@ -201,7 +205,11 @@ def get_or_compute_embeddings(
     return embeddings, question_ids, predictions, mc_answers
 
 
-def precompute_all_embeddings(eval_rows: list[EvaluationRow], metadata_tuples: list[tuple], dataset_path: Path) -> None:
+def precompute_all_embeddings(
+    eval_rows: Sequence[EvaluationRow],
+    metadata_tuples: Sequence[tuple],
+    dataset_path: Path,
+) -> None:
     """Precompute embeddings for all model/strategy combinations."""
     models = [EmbeddingModel.QWEN, EmbeddingModel.GEMMA]
     strategies = [EmbeddingStrategy.DOUBLE_BLIND, EmbeddingStrategy.GOAL_DRIVEN]
@@ -261,14 +269,17 @@ if __name__ == "__main__":
         limit: int
         clear_cache: bool
 
-    def _select_subset(training_rows: list[TrainingRow], limit: int) -> list[TrainingRow]:
-        subset = training_rows[: min(len(training_rows), limit)]
+    def _select_subset(training_rows: Sequence[TrainingRow], limit: int) -> list[TrainingRow]:
+        subset = list(training_rows[: min(len(training_rows), limit)])
         if not subset:
             msg = "Dataset slice for embedding demo cannot be empty"
             raise ValueError(msg)
         return subset
 
-    def _derive_correct_answers(training_rows: list[TrainingRow], subset: list[TrainingRow]) -> dict[int, str]:
+    def _derive_correct_answers(
+        training_rows: Sequence[TrainingRow],
+        subset: Sequence[TrainingRow],
+    ) -> dict[int, str]:
         try:
             return extract_correct_answers(training_rows)
         except AssertionError as exc:  # pragma: no cover - defensive branch
@@ -283,8 +294,8 @@ if __name__ == "__main__":
             return fallback
 
     def _build_embedding_inputs(
-        subset: list[TrainingRow],
-        correct_answers: dict[int, str],
+        subset: Sequence[TrainingRow],
+        correct_answers: Mapping[int, str],
     ) -> tuple[list[EvaluationRow], list[tuple[int, str, str]]]:
         eval_rows: list[EvaluationRow] = []
         metadata: list[tuple[int, str, str]] = []
@@ -303,8 +314,8 @@ if __name__ == "__main__":
         return eval_rows, metadata
 
     def _time_request(
-        eval_rows: list[EvaluationRow],
-        metadata_tuples: list[tuple[int, str, str]],
+        eval_rows: Sequence[EvaluationRow],
+        metadata_tuples: Sequence[tuple[int, str, str]],
         args: DemoArguments,
     ) -> float:
         start = time.perf_counter()

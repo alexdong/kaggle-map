@@ -1,6 +1,7 @@
 """Database utilities for prompt workbench."""
 
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 
 from loguru import logger
@@ -35,7 +36,7 @@ def init_database(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
-def save_prompt(conn: sqlite3.Connection, prompt: str, row_ids: list[int]) -> int:
+def save_prompt(conn: sqlite3.Connection, prompt: str, row_ids: Sequence[int]) -> int:
     """Save a prompt to the database."""
     cursor = conn.cursor()
     row_ids_str = ",".join(map(str, row_ids))
@@ -49,7 +50,10 @@ def save_prompt(conn: sqlite3.Connection, prompt: str, row_ids: list[int]) -> in
 
 
 def update_evaluation_results(
-    conn: sqlite3.Connection, prompt_id: int, results: list[EvaluationResult], score: float
+    conn: sqlite3.Connection,
+    prompt_id: int,
+    results: Sequence[EvaluationResult],
+    score: float,
 ) -> None:
     """Update evaluation results for a prompt."""
     results_str = "\n".join(

@@ -6,6 +6,7 @@ Example:
 
 import asyncio
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -40,7 +41,7 @@ class PromptEvolutionConfig(BaseModel):
     template_path: Path = Field(..., description="Initial prompt template to evolve")
     output_dir: Path = Field(default=Path("logs/openevolve"), description="Directory for OpenEvolve artefacts")
     sample_ratio: Probability = 0.5
-    row_ids: list[int] | None = None
+    row_ids: Sequence[int] | None = None
     openevolve_config: Path | None = None
     max_iterations: PositiveInt = 100
     target_score: StrictProbability | None = None
@@ -55,9 +56,10 @@ class PromptEvolutionConfig(BaseModel):
         assert self.template_path.exists(), f"Template not found at {self.template_path}"
         assert self.template_path.is_file(), "Template path must point to a file"
         if self.row_ids is not None:
-            assert self.row_ids, "Row IDs cannot be an empty list"
-            assert len(set(self.row_ids)) == len(self.row_ids), "Row IDs must be unique"
-            assert all(rid > 0 for rid in self.row_ids), "Row IDs must be positive integers"
+            row_id_list = list(self.row_ids)
+            assert row_id_list, "Row IDs cannot be empty"
+            assert len(set(row_id_list)) == len(row_id_list), "Row IDs must be unique"
+            assert all(rid > 0 for rid in row_id_list), "Row IDs must be positive integers"
         if self.openevolve_config is not None:
             assert self.openevolve_config.exists(), f"Config not found at {self.openevolve_config}"
             assert self.openevolve_config.is_file(), "OpenEvolve config must be a file"
@@ -91,7 +93,7 @@ class PromptEvolutionRuntimeSettings(BaseModel):
 
     dataset_path: Path
     sample_ratio: Probability = 1.0
-    row_ids: list[int] | None = None
+    row_ids: Sequence[int] | None = None
     output_dir: Path
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -103,9 +105,10 @@ class PromptEvolutionRuntimeSettings(BaseModel):
         assert self.output_dir.exists(), f"Output directory missing at {self.output_dir}"
         assert self.output_dir.is_dir(), "Output path must be a directory"
         if self.row_ids is not None:
-            assert self.row_ids, "Row IDs cannot be empty"
-            assert len(set(self.row_ids)) == len(self.row_ids), "Row IDs must be unique"
-            assert all(rid > 0 for rid in self.row_ids), "Row IDs must be positive"
+            row_id_list = list(self.row_ids)
+            assert row_id_list, "Row IDs cannot be empty"
+            assert len(set(row_id_list)) == len(row_id_list), "Row IDs must be unique"
+            assert all(rid > 0 for rid in row_id_list), "Row IDs must be positive"
         return self
 
     @classmethod

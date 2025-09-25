@@ -1,6 +1,7 @@
 """LLM-based evaluator for student misconception predictions."""
 
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +40,7 @@ MAX_RESPONSE_TOKENS = -1  # Unlimited generation within context window
 class EvaluationConfig:
     data_path: Path
     sample_ratio: float
-    row_ids: list[int] | None
+    row_ids: Sequence[int] | None
     template_path: Path
     random_seed: int = field(default_factory=get_active_seed)
     model_name: GGUFModelName = GGUFModelName.GPT_OSS_20B
@@ -47,7 +48,7 @@ class EvaluationConfig:
 
 
 def save_evaluation_results_to_csv(
-    evaluation_results: list[dict],
+    evaluation_results: Sequence[Mapping[str, Any]],
     output_dir: Path = Path("logs"),
 ) -> Path:
     assert evaluation_results, "Cannot save empty evaluation results to CSV"
@@ -82,7 +83,7 @@ def save_evaluation_results_to_csv(
 
 
 def display_evaluation_details(
-    evaluation_results: list[dict],
+    evaluation_results: Sequence[Mapping[str, Any]],
 ) -> None:
     assert evaluation_results, "Cannot display empty evaluation results"
 
@@ -134,7 +135,7 @@ def display_evaluation_details(
     console.print(f"Average MAP@3: {avg_score:.4f}\n")
 
 
-def _prepare_dataframe(validation_pairs: list) -> pd.DataFrame:
+def _prepare_dataframe(validation_pairs: Sequence[tuple[EvaluationRow, Prediction]]) -> pd.DataFrame:
     data_rows = []
     for eval_row, ground_truth in validation_pairs:
         data_rows.append(
@@ -153,17 +154,18 @@ def _prepare_dataframe(validation_pairs: list) -> pd.DataFrame:
 
 def _sample_dataframe(
     df: pd.DataFrame,
-    row_ids: list[int] | None,
+    row_ids: Sequence[int] | None,
     sample_ratio: float,
 ) -> pd.DataFrame:
     seed = get_active_seed()
 
     if row_ids:
-        logger.info(f"Filtering data to specified row IDs: {row_ids}")
-        sampled_df = df[df["row_id"].isin(row_ids)]
-        if len(sampled_df) != len(row_ids):
+        row_id_list = list(row_ids)
+        logger.info(f"Filtering data to specified row IDs: {row_id_list}")
+        sampled_df = df[df["row_id"].isin(row_id_list)]
+        if len(sampled_df) != len(row_id_list):
             found_ids = set(sampled_df["row_id"].tolist())
-            missing_ids = set(row_ids) - found_ids
+            missing_ids = set(row_id_list) - found_ids
             logger.warning(f"Some row IDs not found in data: {missing_ids}")
         logger.info(f"Selected {len(sampled_df)} samples for evaluation")
         return pd.DataFrame(sampled_df)
@@ -217,8 +219,13 @@ def _evaluate(
     }
 
 
-def _finalize_results(scores: list[float], evaluation_results: list[dict[str, Any]], start_time: float) -> float:
-    avg_score = sum(scores) / len(scores) if scores else 0.0
+def _finalize_results(
+    scores: Sequence[float],
+    evaluation_results: Sequence[Mapping[str, Any]],
+    start_time: float,
+) -> float:
+    score_list = list(scores)
+    avg_score = sum(score_list) / len(score_list) if score_list else 0.0
     elapsed_time = time.time() - start_time
 
     hours, remainder = divmod(elapsed_time, 3600)
@@ -234,10 +241,12 @@ def _finalize_results(scores: list[float], evaluation_results: list[dict[str, An
     logger.success(f"\n{'=' * 50}")
     logger.success("Evaluation Complete")
     logger.success(f"{'=' * 50}")
-    logger.success(f"Samples evaluated: {len(scores)}")
+    count = len(score_list)
+    logger.success(f"Samples evaluated: {count}")
     logger.success(f"Average MAP@3: {avg_score:.4f}")
     logger.success(f"Total time: {time_str}")
-    logger.success(f"Time per sample: {elapsed_time / len(scores):.2f}s")
+    if count:
+        logger.success(f"Time per sample: {elapsed_time / count:.2f}s")
     logger.success(f"{'=' * 50}")
 
     display_evaluation_details(evaluation_results)

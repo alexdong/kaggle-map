@@ -27,6 +27,7 @@ Note: SentenceTransformer could technically be used but would be suboptimal for 
 large model due to memory constraints and inconsistency with project architecture.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import torch
@@ -71,7 +72,7 @@ class QwenEmbeddingModel:
         )
         return Path(model_path)
 
-    def encode(self, text: str | list[str], batch_size: int = 32) -> torch.Tensor:
+    def encode(self, text: str | Sequence[str], batch_size: int = 32) -> torch.Tensor:
         """Encode text(s) into embeddings.
 
         Args:
@@ -87,9 +88,14 @@ class QwenEmbeddingModel:
             return torch.Tensor(self.model.embed(text))
 
         # Batch encoding for list of texts
+        if not isinstance(text, Sequence):
+            msg = f"Expected str or Sequence[str], got {type(text)}"
+            raise TypeError(msg)
+
+        texts = list(text)
         embeddings = []
-        for i in range(0, len(text), batch_size):
-            batch = text[i : i + batch_size]
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
             batch_embeddings = [self.model.embed(t) for t in batch]
             embeddings.extend(batch_embeddings)
 

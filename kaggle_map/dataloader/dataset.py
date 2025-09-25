@@ -45,7 +45,7 @@ def load_training_data(csv_path: Path) -> list[TrainingRow]:
 
 
 def extract_correct_answers(
-    training_data: list[TrainingRow],
+    training_data: Sequence[TrainingRow],
 ) -> dict[QuestionId, Answer]:
     assert training_data, "Training data cannot be empty"
     correct_answers: dict[QuestionId, Answer] = {}
@@ -62,7 +62,7 @@ def extract_correct_answers(
 def is_answer_correct(
     question_id: QuestionId,
     student_answer: Answer,
-    correct_answers: dict[QuestionId, Answer],
+    correct_answers: Mapping[QuestionId, Answer],
 ) -> bool:
     correct_answer = correct_answers.get(question_id, "")
     return student_answer == correct_answer

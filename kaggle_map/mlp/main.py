@@ -7,6 +7,7 @@ usage, and ``uv run -m kaggle_map.mlp.main fit`` to train with defaults.
 """
 
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import click
@@ -224,7 +225,7 @@ def _process_single_prediction(
     model: QuestionSpecificMLP,
     eval_row: EvaluationRow,
     embedding_tensor: torch.Tensor,
-    correct_answers: dict[QuestionId, Answer],
+    correct_answers: Mapping[QuestionId, Answer],
     device: torch.device,
 ) -> SubmissionRow:
     """Core prediction logic for a single evaluation row.
@@ -301,7 +302,9 @@ def _process_single_prediction(
 
 
 def predict_batch(
-    model: QuestionSpecificMLP, evaluation_rows: list[EvaluationRow], config: MLPTrainingConfig
+    model: QuestionSpecificMLP,
+    evaluation_rows: Sequence[EvaluationRow],
+    config: MLPTrainingConfig,
 ) -> list[SubmissionRow]:
     assert evaluation_rows, "Evaluation rows list is empty"
 
@@ -364,7 +367,11 @@ def predict_batch(
     return submission_rows
 
 
-def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow], config: MLPTrainingConfig) -> dict[str, float]:
+def evaluate(
+    model: QuestionSpecificMLP,
+    test_data: Sequence[TrainingRow],
+    config: MLPTrainingConfig,
+) -> dict[str, float]:
     assert test_data, "Test data is empty, cannot evaluate model"
     eval_rows: list[EvaluationRow] = [
         EvaluationRow(

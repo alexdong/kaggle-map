@@ -1,5 +1,7 @@
 """Diverse text sampling using embeddings for maximum variety selection."""
 
+from collections.abc import Sequence
+
 import torch
 from loguru import logger
 from torch.nn.functional import cosine_similarity
@@ -15,7 +17,7 @@ MAX_DIVERSITY_RANGE = 2
 MAX_SHORT_TEXT_LENGTH = 200
 
 
-def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
+def calculate_diversity(embeddings: Sequence[torch.Tensor]) -> float:
     """Calculate average pairwise cosine distance as diversity score.
 
     Args:
@@ -28,12 +30,14 @@ def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
         f"Need at least {MIN_EMBEDDINGS_FOR_DIVERSITY} embeddings, got {len(embeddings)}"
     )
 
-    n = len(embeddings)
+    embedding_list = embeddings if isinstance(embeddings, list) else list(embeddings)
+
+    n = len(embedding_list)
     logger.debug(f"Calculating diversity for {n} embeddings")
 
     if n == MIN_EMBEDDINGS_FOR_DIVERSITY:
         # Simple case: just two embeddings
-        distance = 1 - cosine_similarity(embeddings[0], embeddings[1], dim=0).item()
+        distance = 1 - cosine_similarity(embedding_list[0], embedding_list[1], dim=0).item()
         logger.debug(f"  Distance between 2 embeddings: {distance:.3f}")
         return distance
 
@@ -41,7 +45,7 @@ def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
     distances: list[float] = []
     for i in range(n):
         for j in range(i + 1, n):
-            sim = cosine_similarity(embeddings[i], embeddings[j], dim=0).item()
+            sim = cosine_similarity(embedding_list[i], embedding_list[j], dim=0).item()
             dist: float = 1 - sim
             distances.append(dist)
             logger.debug(f"  Distance [{i},{j}]: {dist:.3f}")
@@ -53,7 +57,7 @@ def calculate_diversity(embeddings: list[torch.Tensor]) -> float:
 
 
 def select_diverse_samples(  # noqa: C901
-    texts: list[str],
+    texts: Sequence[str],
     n_samples: int = 3,
 ) -> tuple[list[int], float]:
     """Select n most diverse text samples using greedy selection.
@@ -70,19 +74,21 @@ def select_diverse_samples(  # noqa: C901
         - selected_indices: Indices of selected texts
         - diversity_score: Average pairwise distance (0-2)
     """
-    assert texts, "Cannot select from empty text list"
+    text_list = texts if isinstance(texts, list) else list(texts)
+
+    assert text_list, "Cannot select from empty text sequence"
     assert n_samples > 0, f"n_samples must be positive, got {n_samples}"
 
-    logger.info(f"Selecting {n_samples} diverse samples from {len(texts)} texts")
+    logger.info(f"Selecting {n_samples} diverse samples from {len(text_list)} texts")
 
     # Handle edge cases
-    if len(texts) <= n_samples:
-        logger.debug(f"  Texts ({len(texts)}) <= n_samples ({n_samples}), returning all")
-        return list(range(len(texts))), 0.0
+    if len(text_list) <= n_samples:
+        logger.debug(f"  Texts ({len(text_list)}) <= n_samples ({n_samples}), returning all")
+        return list(range(len(text_list))), 0.0
 
     if n_samples == 1:
         # Just return the longest text for richness
-        longest_idx = max(range(len(texts)), key=lambda i: len(texts[i]))
+        longest_idx = max(range(len(text_list)), key=lambda i: len(text_list[i]))
         logger.debug(f"  Single sample requested, returning longest text at index {longest_idx}")
         return [longest_idx], 0.0
 
@@ -91,9 +97,9 @@ def select_diverse_samples(  # noqa: C901
     model = GemmaEmbeddingModel.get_instance()
 
     # Encode all texts
-    logger.debug(f"Encoding {len(texts)} texts")
+    logger.debug(f"Encoding {len(text_list)} texts")
     embeddings = []
-    for i, text in enumerate(texts):
+    for i, text in enumerate(text_list):
         truncated = text[:MAX_SHORT_TEXT_LENGTH] if len(text) > MAX_SHORT_TEXT_LENGTH else text
         logger.debug(f"  Encoding text {i}: '{truncated}...'")
         embeddings.append(model.encode(text))
@@ -104,9 +110,9 @@ def select_diverse_samples(  # noqa: C901
     selected = []
 
     # Start with longest text (most informative)
-    first_idx = max(range(len(texts)), key=lambda i: len(texts[i]))
+    first_idx = max(range(len(text_list)), key=lambda i: len(text_list[i]))
     selected.append(first_idx)
-    logger.debug(f"  Selected first (longest): index {first_idx}, length {len(texts[first_idx])}")
+    logger.debug(f"  Selected first (longest): index {first_idx}, length {len(text_list[first_idx])}")
 
     # Select remaining samples
     for round_num in range(n_samples - 1):

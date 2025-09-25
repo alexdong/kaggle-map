@@ -1,4 +1,5 @@
 import time
+from collections.abc import Sequence
 
 import torch
 from loguru import logger
@@ -22,7 +23,7 @@ class GemmaEmbeddingModel:
             cls._instance = cls()
         return cls._instance
 
-    def encode(self, text: str | list[str], batch_size: int = 32) -> torch.Tensor:
+    def encode(self, text: str | Sequence[str], batch_size: int = 32) -> torch.Tensor:
         """Encode text(s) into embeddings.
 
         Args:
@@ -38,12 +39,15 @@ class GemmaEmbeddingModel:
             # Single text - keep backward compatibility
             return self.model.encode(text, convert_to_tensor=True)
 
-        # Batch encoding for list of texts
-        assert isinstance(text, list), f"Expected str or list[str], got {type(text)}"
-        assert all(isinstance(t, str) for t in text), "All items in list must be strings"
-        assert text, "Cannot encode empty list of texts"
+        if not isinstance(text, Sequence):  # Defensive: should never happen with typing
+            msg = f"Expected str or Sequence[str], got {type(text)}"
+            raise TypeError(msg)
 
-        return self.model.encode(text, batch_size=batch_size, convert_to_tensor=True)
+        texts = list(text)
+        assert texts, "Cannot encode empty sequence of texts"
+        assert all(isinstance(t, str) for t in texts), "All items in sequence must be strings"
+
+        return self.model.encode(texts, batch_size=batch_size, convert_to_tensor=True)
 
 
 if __name__ == "__main__":

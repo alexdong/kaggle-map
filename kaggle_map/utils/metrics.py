@@ -1,9 +1,11 @@
 """Evaluation metrics for the Kaggle MAP competition."""
 
+from collections.abc import Sequence
+
 from kaggle_map.core.models import Prediction
 
 
-def calculate_map_at_3(ground_truth: Prediction, predictions: list[Prediction]) -> float:
+def calculate_map_at_3(ground_truth: Prediction, predictions: Sequence[Prediction]) -> float:
     """Calculate Mean Average Precision at 3 (MAP@3) for a single prediction.
 
     MAP@3 awards full credit (1.0) if the correct prediction is in position 1,

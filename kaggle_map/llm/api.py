@@ -24,6 +24,7 @@ Quick reference
 """
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -83,7 +84,7 @@ def _validate_prompts(payload: dict[str, Any]) -> list[str]:
     return prompts
 
 
-def _completion_payload(texts: list[str]) -> dict[str, list[str]]:
+def _completion_payload(texts: Sequence[str]) -> dict[str, list[str]]:
     completions = [text.strip() for text in texts]
     assert all(completions), "Completion entries must not be empty."
     return {COMPLETIONS_KEY: completions}
