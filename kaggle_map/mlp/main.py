@@ -7,27 +7,17 @@ usage, and ``uv run -m kaggle_map.mlp.main fit`` to train with defaults.
 """
 
 import time
-from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
 
 import click
-import numpy as np
 import torch
 from loguru import logger
 from torch.nn import functional
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, Subset
 
-from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import (
-    RANDOM_SEED,
-    ActivationType,
     Answer,
-    ArchitectureSize,
     Category,
-    EmbeddingModel,
-    EmbeddingStrategy,
     EvaluationRow,
     MLPTrainingConfig,
     Prediction,
@@ -36,8 +26,10 @@ from kaggle_map.core.models import (
     TrainingRow,
     default_mlp_training_config,
 )
-from kaggle_map.embeddings import encode, get_input_embeddings_dimension
-from kaggle_map.mlp.dataset import DatasetArrays, MLPDataset
+from kaggle_map.dataloader import MAPDataset
+from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
+from kaggle_map.embeddings import encode
+from kaggle_map.mlp.checkpoint import load_checkpoint, save_checkpoint
 from kaggle_map.mlp.embedding_cache import get_or_compute_embeddings
 from kaggle_map.mlp.label_encoder import LabelEncoders
 from kaggle_map.mlp.loss import ListMLELoss
@@ -57,177 +49,134 @@ configure_logger(__name__)
 # MAP@3 evaluation metric requires exactly 3 predictions per question
 MAX_PREDICTIONS = 3
 
-EMBEDDING_TENSOR_DIMENSIONS = 2
-LEGACY_DEFAULT_EMBEDDING_DIM = 8192
 DEFAULT_MODEL_PATH = Path("models/mlp.pkl")
 
 
-@dataclass(frozen=True)
-class LoadedCheckpoint:
-    state_dict: dict[str, torch.Tensor]
-    raw_config: dict[str, Any]
-    question_predictions: dict[QuestionId, list[str]]
-    embedding_dim: int
-    is_new_format: bool
+class _EmbeddingBatchDataset(Dataset[dict[str, torch.Tensor]]):
+    """PyTorch dataset wrapping embedding tensors for training."""
 
-
-def _extract_question_predictions(training_data: list[TrainingRow]) -> dict[QuestionId, list[str]]:
-    question_predictions = defaultdict(list)
-    for row in training_data:
-        pred_str = str(row.prediction)
-        question_predictions[row.question_id].append(pred_str)
-
-    return {qid: list(set(preds)) for qid, preds in question_predictions.items()}
-
-
-def _load_training_question_predictions() -> dict[QuestionId, list[str]]:
-    training_rows = load_training_data(default_mlp_training_config().train_csv_path)
-    return _extract_question_predictions(training_rows)
-
-
-def _infer_embedding_dim_from_state_dict(state_dict: dict[str, torch.Tensor]) -> int:
-    trunk_weight = state_dict.get("trunk.0.weight")
-    if trunk_weight is None:
-        return LEGACY_DEFAULT_EMBEDDING_DIM
-    return trunk_weight.shape[1] - CORRECTNESS_EMBEDDING_DIMENSIONS
-
-
-def _prepare_loaded_checkpoint(checkpoint: object) -> LoadedCheckpoint:
-    is_new_format = isinstance(checkpoint, dict) and "state_dict" in checkpoint
-
-    if is_new_format:
-        mapping = cast("dict[str, Any]", checkpoint)
-        state_dict = cast("dict[str, torch.Tensor]", mapping["state_dict"])
-        raw_config = dict(cast("dict[str, Any]", mapping.get("config", {})))
-        embedding_dim = cast("int | None", raw_config.get("embedding_dim"))
-        if embedding_dim is None:
-            embedding_dim = _infer_embedding_dim_from_state_dict(state_dict)
-        question_predictions = cast("dict[QuestionId, list[str]] | None", mapping.get("question_predictions"))
-        if question_predictions is None:
-            question_predictions = _load_training_question_predictions()
-        return LoadedCheckpoint(
-            state_dict=state_dict,
-            raw_config=raw_config,
-            question_predictions=question_predictions,
-            embedding_dim=embedding_dim,
-            is_new_format=True,
+    def __init__(
+        self,
+        embeddings: torch.Tensor,
+        question_ids: torch.Tensor,
+        labels: torch.Tensor,
+        is_correct: torch.Tensor,
+    ) -> None:
+        assert embeddings.size(0) == question_ids.size(0) == labels.size(0) == is_correct.size(0), (
+            "All tensors must share the same leading dimension"
         )
+        self._embeddings = embeddings
+        self._question_ids = question_ids
+        self._labels = labels
+        self._is_correct = is_correct
 
-    legacy_state_dict = cast("dict[str, torch.Tensor]", checkpoint)
-    embedding_dim = _infer_embedding_dim_from_state_dict(legacy_state_dict)
-    question_predictions = _load_training_question_predictions()
-    legacy_config = {
-        "architecture_size": ArchitectureSize.XLARGE.value,
-        "dropout": 0.3,
-        "activation": ActivationType.GELU.value,
-        "embedding_model": EmbeddingModel.QWEN.value,
-        "embedding_strategy": EmbeddingStrategy.GOAL_DRIVEN.value,
-    }
+    def __len__(self) -> int:
+        return int(self._embeddings.size(0))
 
-    return LoadedCheckpoint(
-        state_dict=legacy_state_dict,
-        raw_config=legacy_config,
-        question_predictions=question_predictions,
-        embedding_dim=embedding_dim,
-        is_new_format=False,
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        return {
+            "embedding": self._embeddings[index],
+            "question_id": self._question_ids[index],
+            "label": self._labels[index],
+            "is_correct": self._is_correct[index],
+        }
+
+
+def _build_embedding_inputs(dataset: MAPDataset) -> tuple[list[EvaluationRow], list[tuple[int, str, str]]]:
+    correct_answers = dataset.correct_answers
+    eval_rows: list[EvaluationRow] = []
+    metadata: list[tuple[int, str, str]] = []
+    for row in dataset:
+        eval_rows.append(
+            EvaluationRow(
+                row_id=row.row_id,
+                question_id=row.question_id,
+                question_text=row.question_text,
+                mc_answer=row.mc_answer,
+                student_explanation=row.student_explanation,
+                correct_answer=correct_answers.get(row.question_id, ""),
+            )
+        )
+        metadata.append((row.question_id, str(row.prediction), row.mc_answer))
+    return eval_rows, metadata
+
+
+def _materialize_training_tensors(
+    dataset: MAPDataset,
+    config: MLPTrainingConfig,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    eval_rows, metadata = _build_embedding_inputs(dataset)
+    embeddings_np, question_ids_np, _predictions, _mc_answers = get_or_compute_embeddings(
+        eval_rows,
+        metadata,
+        dataset.csv_path,
+        config.embedding_model,
+        config.embedding_strategy,
     )
 
-
-@dataclass(frozen=True)
-class DataSplit:
-    """Train/validation/test split indices for dataset partitioning."""
-
-    train_indices: np.ndarray
-    val_indices: np.ndarray
-    test_indices: np.ndarray
-
-    @property
-    def train_size(self) -> int:
-        return len(self.train_indices)
-
-    @property
-    def val_size(self) -> int:
-        return len(self.val_indices)
-
-    @property
-    def test_size(self) -> int:
-        return len(self.test_indices)
-
-    @property
-    def total_size(self) -> int:
-        return self.train_size + self.val_size + self.test_size
-
-
-def _get_split_indices(n_samples: int, train_ratio: float = 0.7) -> DataSplit:
-    """Get train/val/test split indices."""
-    rng = np.random.Generator(np.random.PCG64(RANDOM_SEED))
-    indices = np.arange(n_samples)
-    rng.shuffle(indices)
-
-    train_size = int(n_samples * train_ratio)
-    val_size = int(n_samples * 0.15)
-
-    return DataSplit(
-        train_indices=indices[:train_size],
-        val_indices=indices[train_size : train_size + val_size],
-        test_indices=indices[train_size + val_size :],
+    embeddings = torch.from_numpy(embeddings_np).float()
+    question_ids = torch.as_tensor(question_ids_np, dtype=torch.long)
+    is_correct = torch.as_tensor(
+        [1 if row.category.is_correct_answer else 0 for row in dataset],
+        dtype=torch.long,
     )
+    return embeddings, question_ids, is_correct
 
 
-def fit(config: MLPTrainingConfig) -> tuple[QuestionSpecificMLP, MLPTrainingConfig]:
-    """Train an MLP model for misconception prediction.
+def _encode_labels(dataset: MAPDataset, label_encoders: LabelEncoders) -> torch.Tensor:
+    encoded = [
+        label_encoders.encode(
+            row.question_id,
+            str(row.prediction),
+            is_correct=row.category.is_correct_answer,
+        )
+        for row in dataset
+    ]
+    return torch.as_tensor(encoded, dtype=torch.long)
 
-    Args:
-        config: Training configuration
 
-    Returns:
-        Trained QuestionSpecificMLP model
-    """
-    strategy = config.embedding_strategy
+def _build_training_loaders(
+    dataset: MAPDataset,
+    label_encoders: LabelEncoders,
+    config: MLPTrainingConfig,
+) -> tuple[DataLoader, DataLoader]:
+    embeddings, question_ids, is_correct = _materialize_training_tensors(dataset, config)
+    labels = _encode_labels(dataset, label_encoders)
+
+    base_dataset = _EmbeddingBatchDataset(embeddings, question_ids, labels, is_correct)
+
+    split_indices = dataset.split_indices
+    train_subset = Subset(base_dataset, split_indices["train"])
+    val_subset = Subset(base_dataset, split_indices["val"])
+
+    train_loader = DataLoader(
+        train_subset,
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=False,
+    )
+    val_loader = DataLoader(
+        val_subset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=False,
+    )
+    return train_loader, val_loader
+
+
+def fit(config: MLPTrainingConfig) -> QuestionSpecificMLP:
+    dataset = MAPDataset(csv_path=config.train_csv_path, config=config)
+    question_predictions = dataset.question_predictions
 
     device = get_device()
-    logger.info(f"Training on {device} with embedding strategy: {strategy.value}")
-
-    training_data = load_training_data(config.train_csv_path)
-    correct_answers = extract_correct_answers(training_data)
-    question_predictions = _extract_question_predictions(training_data)
-
-    logger.info("Preparing embeddings...")
-
-    # First pass: Create all EvaluationRows and collect metadata
-    eval_rows = []
-    metadata_tuples = []
-    for row in training_data:
-        eval_row = EvaluationRow(
-            row_id=row.row_id,
-            question_id=row.question_id,
-            question_text=row.question_text,
-            mc_answer=row.mc_answer,
-            student_explanation=row.student_explanation,
-            correct_answer=correct_answers.get(row.question_id, ""),
-        )
-        eval_rows.append(eval_row)
-        metadata_tuples.append((row.question_id, str(row.prediction), row.mc_answer))
-
-    # Get embeddings from cache or compute them
-    embeddings, question_ids, predictions, mc_answers = get_or_compute_embeddings(
-        eval_rows, metadata_tuples, config.train_csv_path, config.embedding_model, strategy
-    )
-
-    embedding_dim = embeddings.shape[1]
-    logger.info(f"Embedding dimension: {embedding_dim}")
-
-    expected_embedding_dim = get_input_embeddings_dimension(strategy, config.embedding_model)
-    assert embedding_dim == expected_embedding_dim, (
-        "Observed embedding dimension does not match expected dimension from embedding configuration: "
-        f"observed={embedding_dim}, expected={expected_embedding_dim}, "
-        f"model={config.embedding_model.value}, strategy={strategy.value}"
-    )
+    logger.info(f"Training on {device} with embedding strategy: {config.embedding_strategy.value}")
 
     model = QuestionSpecificMLP(
         question_predictions,
         embedding_model=config.embedding_model,
-        embedding_strategy=strategy,
+        embedding_strategy=config.embedding_strategy,
         architecture_size=config.architecture_size,
         dropout=config.dropout,
         activation=config.activation,
@@ -239,34 +188,20 @@ def fit(config: MLPTrainingConfig) -> tuple[QuestionSpecificMLP, MLPTrainingConf
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(f"Model parameters: {total_params:,}")
 
-    n_samples = len(embeddings)
-    split = _get_split_indices(n_samples, config.train_split)
-    logger.info(f"Data split - Train: {split.train_size}, Val: {split.val_size}")
-
-    train_arrays = DatasetArrays(
-        embeddings=embeddings[split.train_indices],
-        question_ids=question_ids[split.train_indices],
-        predictions=predictions[split.train_indices],
-        mc_answers=mc_answers[split.train_indices],
-    )
-
-    val_arrays = DatasetArrays(
-        embeddings=embeddings[split.val_indices],
-        question_ids=question_ids[split.val_indices],
-        predictions=predictions[split.val_indices],
-        mc_answers=mc_answers[split.val_indices],
-    )
-
     label_encoders = LabelEncoders(
         true_label_encoders=model.true_label_encoders,
         false_label_encoders=model.false_label_encoders,
     )
 
-    train_dataset = MLPDataset(train_arrays, correct_answers, label_encoders)
-    val_dataset = MLPDataset(val_arrays, correct_answers, label_encoders)
+    split_counts = dataset.split_counts
+    logger.info(
+        "Data split - Train: %d, Val: %d, Test: %d",
+        split_counts["train"],
+        split_counts["val"],
+        split_counts["test"],
+    )
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size * 2, shuffle=False, num_workers=0)
+    train_loader, val_loader = _build_training_loaders(dataset, label_encoders, config)
 
     setup = TrainingSetup(
         model=model,
@@ -280,8 +215,7 @@ def fit(config: MLPTrainingConfig) -> tuple[QuestionSpecificMLP, MLPTrainingConf
 
     logger.info(f"Training complete. Best val loss: {result.history.get('best_val_loss', 'N/A')}")
 
-    # Return both model and config for saving
-    return result.model, config
+    return result.model
 
 
 def _process_single_prediction(
@@ -403,9 +337,6 @@ def predict_batch(
     assert embeddings.size(0) == len(eval_rows_with_answers), (
         f"Embedding count mismatch: got {embeddings.size(0)}, expected {len(eval_rows_with_answers)}"
     )
-    assert embeddings.dim() == EMBEDDING_TENSOR_DIMENSIONS, (
-        f"Expected {EMBEDDING_TENSOR_DIMENSIONS}D embeddings, got {embeddings.dim()}D"
-    )
 
     # Ensure embeddings are on CPU for numpy conversion if needed
     if embeddings.is_cuda:
@@ -466,124 +397,6 @@ def evaluate(model: QuestionSpecificMLP, test_data: list[TrainingRow], config: M
     }
 
 
-def save(model: QuestionSpecificMLP, filepath: Path, config: MLPTrainingConfig | None = None) -> None:
-    """Save model to disk with configuration.
-
-    Args:
-        model: Model to save
-        filepath: Path to save the model
-        config: Optional training config to save with model
-    """
-    logger.info(f"Saving model to {filepath}")
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    # Save both model state and configuration
-    # Extract architecture info from the model
-    first_layer = model.trunk[0]
-    assert hasattr(first_layer, "in_features"), "First trunk layer must expose in_features"
-    total_input_dim = cast("int", first_layer.in_features)
-    correctness_dim = getattr(model, "correctness_embedding_dim", CORRECTNESS_EMBEDDING_DIMENSIONS)
-    embedding_dim = getattr(model, "embedding_dim", total_input_dim - correctness_dim)
-
-    # Reconstruct question_predictions from the model's encoders
-    question_predictions = {}
-    for qid, encoder in model.true_label_encoders.items():
-        if qid not in question_predictions:
-            question_predictions[qid] = []
-        question_predictions[qid].extend(encoder.classes_.tolist())
-    for qid, encoder in model.false_label_encoders.items():
-        if qid not in question_predictions:
-            question_predictions[qid] = []
-        question_predictions[qid].extend(encoder.classes_.tolist())
-
-    save_dict = {
-        "state_dict": model.state_dict(),
-        "config": {
-            "embedding_dim": embedding_dim,
-            "architecture_size": config.architecture_size.value if config else ArchitectureSize.XLARGE.value,
-            "dropout": config.dropout if config else 0.3,
-            "activation": config.activation.value if config else ActivationType.GELU.value,
-            "embedding_model": (
-                config.embedding_model.value
-                if config
-                else cast("EmbeddingModel", getattr(model, "embedding_model", EmbeddingModel.QWEN)).value
-            ),
-            "embedding_strategy": (
-                config.embedding_strategy.value
-                if config
-                else cast(
-                    "EmbeddingStrategy",
-                    getattr(model, "embedding_strategy", EmbeddingStrategy.GOAL_DRIVEN),
-                ).value
-            ),
-        },
-        "question_predictions": question_predictions,
-    }
-    torch.save(save_dict, filepath)
-
-
-def load(filepath: Path) -> tuple[QuestionSpecificMLP, MLPTrainingConfig | None]:
-    """Load model from disk with configuration.
-
-    Args:
-        filepath: Path to the saved model
-
-    Returns:
-        Loaded model
-    """
-    logger.info(f"Loading model from {filepath}")
-    assert filepath.exists(), f"Model file not found: {filepath}"
-
-    checkpoint = torch.load(filepath, weights_only=False)
-    loaded = _prepare_loaded_checkpoint(checkpoint)
-
-    config_dict = loaded.raw_config
-    architecture_size = ArchitectureSize(config_dict.get("architecture_size", "xlarge"))
-    raw_dropout = config_dict.get("dropout", 0.3)
-    dropout = float(raw_dropout) if isinstance(raw_dropout, str) else float(cast("float", raw_dropout))
-    activation = ActivationType(config_dict.get("activation", "gelu"))
-
-    embedding_model = EmbeddingModel(config_dict.get("embedding_model", EmbeddingModel.QWEN.value))
-    raw_strategy_value = config_dict.get("embedding_strategy", EmbeddingStrategy.GOAL_DRIVEN.value)
-    normalized_strategy_value = "goal_driven" if raw_strategy_value == "semantic" else raw_strategy_value
-    embedding_strategy = EmbeddingStrategy(normalized_strategy_value)
-
-    expected_embedding_dim = get_input_embeddings_dimension(embedding_strategy, embedding_model)
-    assert loaded.embedding_dim == expected_embedding_dim, (
-        "Loaded embedding dimension does not match expected dimension for embedding configuration: "
-        f"loaded={loaded.embedding_dim}, expected={expected_embedding_dim}, "
-        f"model={embedding_model.value}, strategy={embedding_strategy.value}"
-    )
-
-    model = QuestionSpecificMLP(
-        loaded.question_predictions,
-        embedding_model=embedding_model,
-        embedding_strategy=embedding_strategy,
-        architecture_size=architecture_size,
-        dropout=dropout,
-        activation=activation,
-        correctness_embedding_dim=CORRECTNESS_EMBEDDING_DIMENSIONS,
-    )
-    model.load_state_dict(loaded.state_dict)
-
-    device = get_device()
-    model = model.to(device)
-    logger.debug(f"Model loaded and moved to device: {device}")
-
-    loaded_config: MLPTrainingConfig | None = None
-    if loaded.is_new_format:
-        loaded_config = MLPTrainingConfig(
-            embedding_dim=loaded.embedding_dim,
-            architecture_size=architecture_size,
-            dropout=dropout,
-            activation=activation,
-            embedding_model=embedding_model,
-            embedding_strategy=embedding_strategy,
-        )
-
-    return model, loaded_config
-
-
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli() -> None:
     """Train and evaluate MLP models for misconception prediction."""
@@ -611,14 +424,14 @@ def fit_command() -> None:
 
     try:
         logger.info("Loading training data...")
-        model, train_config = fit(config)
+        model = fit(config)
     except KeyboardInterrupt as exc:
         logger.info("Operation cancelled by user")
         raise click.Abort() from exc
 
     output_path = model_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    save(model, output_path, train_config)
+    save_checkpoint(model, output_path, config)
     logger.success(f"Model saved to {output_path}")
 
 
@@ -638,12 +451,10 @@ def eval_command() -> None:
     logger.info(f"Loading model from {model_path}...")
 
     try:
-        model, config = load(model_path)
+        model, config = load_checkpoint(model_path)
     except KeyboardInterrupt as exc:
         logger.info("Operation cancelled by user")
         raise click.Abort() from exc
-
-    assert config is not None, "Loaded model missing MLPTrainingConfig; retrain with the latest pipeline"
 
     logger.info("Evaluating model performance...")
     assert train_data.exists(), f"Training data not found: {train_data}"

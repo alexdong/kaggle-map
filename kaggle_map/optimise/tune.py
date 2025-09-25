@@ -5,18 +5,17 @@ Run ``uv run -m kaggle_map.optimise.tune --help`` or
 """
 
 from functools import partial
-from typing import Any
 
 import click
 import optuna
 import torch
 from loguru import logger
 
-from kaggle_map.core.dataset import load_training_data
 from kaggle_map.core.models import (
     MLPTrainingConfig,
 )
-from kaggle_map.mlp.main import _get_split_indices, evaluate, fit
+from kaggle_map.dataloader import MAPDataset
+from kaggle_map.mlp.main import evaluate, fit
 from kaggle_map.optimise.studies import create as create_study
 from kaggle_map.optimise.studies import save as save_study
 from kaggle_map.utils.logger_config import configure_logger
@@ -24,17 +23,28 @@ from kaggle_map.utils.logger_config import configure_logger
 configure_logger(__name__)
 
 
+def parse_search_scope(raw_scope: tuple[str, ...]) -> tuple[str, ...]:
+    if not raw_scope:
+        return ()
+
+    parsed: list[str] = []
+    for token in raw_scope:
+        for part in token.split(","):
+            name = part.strip()
+            if name and name not in parsed:
+                parsed.append(name)
+    return tuple(parsed)
+
+
 def objective(trial: optuna.Trial, search_scope: tuple[str, ...]) -> float:
     """Optuna objective that trains the MLP and returns validation MAP@3."""
 
     config = MLPTrainingConfig.sample_from_trial(trial, search_scope=search_scope)
-    model, trained_config = fit(config)
+    model = fit(config)
 
-    training_data = load_training_data(config.train_csv_path)
-    n_samples = len(training_data)
-    split = _get_split_indices(n_samples, config.train_split)
-    validation_rows = [training_data[i] for i in split.val_indices]
-    result = evaluate(model, validation_rows, trained_config)
+    dataset = MAPDataset(csv_path=config.train_csv_path, config=config)
+    validation_rows = dataset["val"]
+    result = evaluate(model, validation_rows, config)
     return result["validation_map@3"]
 
 
@@ -87,7 +97,8 @@ def main(study_name: str, trials: int, search_scope: tuple[str, ...]) -> None:
         uv run -m kaggle_map.optimise.tune --scope learning_rate --scope optimizer
         uv run kaggle_map/optimise/tune.py --trials 500 -s scheduler,dropout
     """
-    run_search(study_name, trials, search_scope=search_scope)
+    scope = parse_search_scope(search_scope)
+    run_search(study_name, trials, search_scope=scope)
 
 
 if __name__ == "__main__":

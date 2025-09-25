@@ -6,8 +6,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.dataset import extract_correct_answers, load_training_data
 from kaggle_map.core.models import EvaluationRow
+from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
 from kaggle_map.mlp.embedding_cache import (
     clear_cache,
     list_cached_embeddings,
