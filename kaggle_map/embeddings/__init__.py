@@ -1,12 +1,15 @@
 """Utilities for computing embeddings for MLP training."""
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import torch
 
 from kaggle_map.core.models import EmbeddingModel, EmbeddingStrategy, EvaluationRow
-from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
-from kaggle_map.embeddings.qwen import QwenEmbeddingModel
+
+if TYPE_CHECKING:
+    from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
+    from kaggle_map.embeddings.qwen import QwenEmbeddingModel
 
 
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
@@ -20,12 +23,17 @@ def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: Embedding
 
 def get_model(model: EmbeddingModel) -> "QwenEmbeddingModel | GemmaEmbeddingModel":
     if model == EmbeddingModel.QWEN:
+        from kaggle_map.embeddings.qwen import QwenEmbeddingModel
+
         return QwenEmbeddingModel.get_instance()
+
+    from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
+
     return GemmaEmbeddingModel.get_instance()
 
 
 def _encode_single(
-    row: EvaluationRow, strategy: EmbeddingStrategy, model_instance: GemmaEmbeddingModel | QwenEmbeddingModel
+    row: EvaluationRow, strategy: EmbeddingStrategy, model_instance: "GemmaEmbeddingModel | QwenEmbeddingModel"
 ) -> torch.Tensor:
     """Encode a single evaluation row."""
     assert row.correct_answer is not None, "Correct answer is required for embeddings"
@@ -57,7 +65,7 @@ def _encode_single(
 def _encode_batch(
     rows: Sequence[EvaluationRow],
     strategy: EmbeddingStrategy,
-    model_instance: GemmaEmbeddingModel | QwenEmbeddingModel,
+    model_instance: "GemmaEmbeddingModel | QwenEmbeddingModel",
 ) -> torch.Tensor:
     """Encode a batch of evaluation rows."""
     row_list = rows if isinstance(rows, list) else list(rows)
@@ -118,11 +126,16 @@ def encode(
     assert strategy in EmbeddingStrategy, f"Invalid embedding strategy: {strategy}"
     assert model in EmbeddingModel, f"Invalid embedding model: {model}"
 
-    model_instance = get_model(model)
-
     if isinstance(row, EvaluationRow):
+        assert row.correct_answer is not None, "Correct answer is required for embeddings"
+        model_instance = get_model(model)
         return _encode_single(row, strategy, model_instance)
     if isinstance(row, Sequence):
-        return _encode_batch(row, strategy, model_instance)
+        row_sequence = row if isinstance(row, list) else list(row)
+        for evaluation_row in row_sequence:
+            assert evaluation_row.correct_answer is not None, "Correct answer is required for embeddings"
+
+        model_instance = get_model(model)
+        return _encode_batch(row_sequence, strategy, model_instance)
     msg = f"Expected EvaluationRow or Sequence[EvaluationRow], got {type(row)}"
     raise TypeError(msg)
