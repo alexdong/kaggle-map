@@ -105,24 +105,24 @@ def test_encode_single_goal_driven_gemma(mock_embedder, create_evaluation_row):
 
 def test_encode_single_goal_driven_qwen_unified(mock_embedder, create_evaluation_row):
     """Test current single-row encode with GOAL_DRIVEN strategy for Qwen."""
-    mock_embedder.model_type_dim = 8192
+    mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
         result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
 
-        assert result.shape == (8192,), f"Expected shape (8192,), got {result.shape}"
+        assert result.shape == (4096,), f"Expected shape (4096,), got {result.shape}"
         assert isinstance(result, torch.Tensor)
         assert mock_embedder.encode.call_count == 1
 
 
 def test_encode_single_goal_driven_qwen(mock_embedder, create_evaluation_row):
     """Test current single-row encode with GOAL_DRIVEN strategy for Qwen."""
-    mock_embedder.model_type_dim = 8192
+    mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
         result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
 
-        assert result.shape == (8192,), f"Expected shape (8192,), got {result.shape}"
+        assert result.shape == (4096,), f"Expected shape (4096,), got {result.shape}"
         assert mock_embedder.encode.call_count == 1
 
 
@@ -170,11 +170,11 @@ def test_encode_batch_goal_driven_gemma(mock_embedder, create_evaluation_row):
 
 def test_encode_batch_empty_list(mock_embedder):
     """Test batch encoding with empty list."""
-    mock_embedder.model_type_dim = 8192
+    mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
         result = encode([], EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
 
-        assert result.shape == (0, 8192), f"Expected shape (0, 8192), got {result.shape}"
+        assert result.shape == (0, 4096), f"Expected shape (0, 4096), got {result.shape}"
         assert mock_embedder.encode.call_count == 0
 
 

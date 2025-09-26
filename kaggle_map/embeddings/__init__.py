@@ -15,19 +15,38 @@ if TYPE_CHECKING:
 def get_input_embeddings_dimension(strategy: EmbeddingStrategy, model: EmbeddingModel) -> int:
     """Return embedding dimensionality for the given model and strategy."""
 
-    # DOUBLE_BLIND concatenates two embeddings, GOAL_DRIVEN uses single
-    # QWEN produces 8192-dim embeddings, GEMMA produces 768-dim embeddings
-    base_dim = 8192 if model == EmbeddingModel.QWEN else 768
+    # NOTE: We read the real embedding dimensionalities from the model specs
+    # rather than the cache artefacts. Qwen3-Embedding-8B (via llama.cpp) yields
+    # 4096-d vectors, while EmbeddingGemma-300M produces 768-d vectors. The
+    # DOUBLE_BLIND strategy concatenates two embeddings, effectively doubling
+    # the model-specific dimensionality before we append the correctness head.
+    base_dim = 4096 if model == EmbeddingModel.QWEN else 768
     return base_dim * 2 if strategy == EmbeddingStrategy.DOUBLE_BLIND else base_dim
 
 
 def get_model(model: EmbeddingModel) -> "QwenEmbeddingModel | GemmaEmbeddingModel":
     if model == EmbeddingModel.QWEN:
-        from kaggle_map.embeddings.qwen import QwenEmbeddingModel
+        try:
+            from kaggle_map.embeddings.qwen import QwenEmbeddingModel  # noqa: PLC0415
+        except ImportError as exc:  # pragma: no cover - defensive guard
+            msg = (
+                "Failed to import QwenEmbeddingModel. Remove stale artefacts with "
+                "`rm -rf .cache/embeddings` and reinstall embedding extras via "
+                "`uv pip install -e .[embeddings]`."
+            )
+            raise AssertionError(msg) from exc
 
         return QwenEmbeddingModel.get_instance()
 
-    from kaggle_map.embeddings.gemma import GemmaEmbeddingModel
+    try:
+        from kaggle_map.embeddings.gemma import GemmaEmbeddingModel  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - defensive guard
+        msg = (
+            "Failed to import GemmaEmbeddingModel. Remove stale artefacts with "
+            "`rm -rf .cache/embeddings` and reinstall embedding extras via "
+            "`uv pip install -e .[embeddings]`."
+        )
+        raise AssertionError(msg) from exc
 
     return GemmaEmbeddingModel.get_instance()
 

@@ -6,10 +6,11 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from kaggle_map.core.models import EvaluationRow
+from kaggle_map.core.models import EmbeddingModel, EmbeddingStrategy, EvaluationRow
 from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
-from kaggle_map.mlp.embedding_cache import (
+from kaggle_map.embeddings import get_input_embeddings_dimension
+from kaggle_map.embeddings.cache import (
     clear_cache,
     list_cached_embeddings,
     precompute_all_embeddings,
@@ -87,10 +88,10 @@ def cmd_precompute(dataset_path: str | Path) -> None:
 
     console.print("[yellow]Precomputing embeddings for all model/strategy combinations...[/yellow]")
     console.print("This will compute 4 combinations:")
-    console.print("  • QWEN + GOAL_DRIVEN (8192 dims)")
-    console.print("  • QWEN + DOUBLE_BLIND (16384 dims)")
-    console.print("  • GEMMA + GOAL_DRIVEN (768 dims)")
-    console.print("  • GEMMA + DOUBLE_BLIND (1536 dims)")
+    for model in (EmbeddingModel.QWEN, EmbeddingModel.GEMMA):
+        for strategy in (EmbeddingStrategy.GOAL_DRIVEN, EmbeddingStrategy.DOUBLE_BLIND):
+            dims = get_input_embeddings_dimension(strategy, model)
+            console.print(f"  • {model.value.upper()} + {strategy.value.upper()} ({dims} dims)")
 
     precompute_all_embeddings(eval_rows, metadata_tuples, path)
 
