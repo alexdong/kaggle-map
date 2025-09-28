@@ -226,6 +226,9 @@ class MAPDataset(Sequence[TrainingRow]):
         assert matches, f"No rows found for question {question_id}"
         return matches
 
+    def evaluation_rows(self) -> list[EvaluationRow]:
+        return [self._row_to_pair(row)[0] for row in self._rows]
+
     def evaluation_pairs(self) -> list[tuple[EvaluationRow, Prediction]]:
         pairs = [self._row_to_pair(row) for row in self._rows]
         assert len(pairs) == len(self._rows), "Each training row must yield exactly one evaluation pair"

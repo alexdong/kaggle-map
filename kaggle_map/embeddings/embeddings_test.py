@@ -84,7 +84,7 @@ def test_encode_single_goal_driven_gemma_creates_unified_embedding(mock_embedder
     """Test GOAL_DRIVEN strategy creates single embedding from all text components."""
     with patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
-        result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, row)
 
         assert result.shape == (768,), f"Expected shape (768,), got {result.shape}"
         assert isinstance(result, torch.Tensor)
@@ -96,7 +96,7 @@ def test_encode_single_goal_driven_gemma(mock_embedder, create_evaluation_row):
     """Test GOAL_DRIVEN strategy creates unified embedding."""
     with patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
-        result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, row)
 
         assert result.shape == (768,), f"Expected shape (768,), got {result.shape}"
         # Should call encode once with unified text
@@ -108,7 +108,7 @@ def test_encode_single_goal_driven_qwen_unified(mock_embedder, create_evaluation
     mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
-        result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
+        result = encode(EmbeddingModel.QWEN, EmbeddingStrategy.GOAL_DRIVEN, row)
 
         assert result.shape == (4096,), f"Expected shape (4096,), got {result.shape}"
         assert isinstance(result, torch.Tensor)
@@ -120,7 +120,7 @@ def test_encode_single_goal_driven_qwen(mock_embedder, create_evaluation_row):
     mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
-        result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
+        result = encode(EmbeddingModel.QWEN, EmbeddingStrategy.GOAL_DRIVEN, row)
 
         assert result.shape == (4096,), f"Expected shape (4096,), got {result.shape}"
         assert mock_embedder.encode.call_count == 1
@@ -131,7 +131,7 @@ def test_encode_requires_correct_answer_for_goal_driven(create_evaluation_row):
     row = create_evaluation_row(correct_answer=None)
 
     with pytest.raises(AssertionError, match="Correct answer is required"):
-        encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, row)
 
 
 # =============================================================================
@@ -145,7 +145,7 @@ def test_encode_batch_goal_driven_gemma_unified(mock_embedder, create_evaluation
         rows = [create_evaluation_row(row_id=i) for i in range(5)]
 
         # encode now accepts list of rows
-        result = encode(rows, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, rows)
 
         assert result.shape == (5, 768), f"Expected shape (5, 768), got {result.shape}"
         # Should make ONE batch call
@@ -161,7 +161,7 @@ def test_encode_batch_goal_driven_gemma(mock_embedder, create_evaluation_row):
     with patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         rows = [create_evaluation_row(row_id=i) for i in range(5)]
 
-        result = encode(rows, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, rows)
 
         assert result.shape == (5, 768), f"Expected shape (5, 768), got {result.shape}"
         # Should make ONE batch call
@@ -172,7 +172,7 @@ def test_encode_batch_empty_list(mock_embedder):
     """Test batch encoding with empty list."""
     mock_embedder.model_type_dim = 4096
     with patch("kaggle_map.embeddings.qwen.QwenEmbeddingModel.get_instance", return_value=mock_embedder):
-        result = encode([], EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.QWEN)
+        result = encode(EmbeddingModel.QWEN, EmbeddingStrategy.GOAL_DRIVEN, [])
 
         assert result.shape == (0, 4096), f"Expected shape (0, 4096), got {result.shape}"
         assert mock_embedder.encode.call_count == 0
@@ -183,7 +183,7 @@ def test_encode_batch_single_item(mock_embedder, create_evaluation_row):
     with patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         rows = [create_evaluation_row()]
 
-        result = encode(rows, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, rows)
 
         # Should return 2D tensor even for single item
         assert result.shape == (1, 768), f"Expected shape (1, 768), got {result.shape}"
@@ -193,7 +193,7 @@ def test_encode_backward_compatibility(mock_embedder, create_evaluation_row):
     """Test that single row still works after batch changes."""
     with patch("kaggle_map.embeddings.gemma.GemmaEmbeddingModel.get_instance", return_value=mock_embedder):
         row = create_evaluation_row()
-        result = encode(row, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        result = encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, row)
 
         # Should still return 1D tensor for single row
         assert result.shape == (768,), f"Expected shape (768,), got {result.shape}"
@@ -218,7 +218,7 @@ def test_encode_validates_strategy_parameter():
     )
 
     with pytest.raises(AssertionError, match="Invalid embedding strategy"):
-        encode(row, cast("EmbeddingStrategy", "INVALID_STRATEGY"), EmbeddingModel.GEMMA)
+        encode(EmbeddingModel.GEMMA, cast("EmbeddingStrategy", "INVALID_STRATEGY"), row)
 
 
 def test_encode_validates_model_parameter():
@@ -235,7 +235,7 @@ def test_encode_validates_model_parameter():
     )
 
     with pytest.raises(AssertionError, match="Invalid embedding model"):
-        encode(row, EmbeddingStrategy.GOAL_DRIVEN, cast("EmbeddingModel", "INVALID_MODEL"))
+        encode(cast("EmbeddingModel", "INVALID_MODEL"), EmbeddingStrategy.GOAL_DRIVEN, row)
 
 
 def test_encode_batch_requires_correct_answer_for_goal_driven(create_evaluation_row):
@@ -246,7 +246,7 @@ def test_encode_batch_requires_correct_answer_for_goal_driven(create_evaluation_
     ]
 
     with pytest.raises(AssertionError, match="Correct answer is required"):
-        encode(rows, EmbeddingStrategy.GOAL_DRIVEN, EmbeddingModel.GEMMA)
+        encode(EmbeddingModel.GEMMA, EmbeddingStrategy.GOAL_DRIVEN, rows)
 
 
 if __name__ == "__main__":

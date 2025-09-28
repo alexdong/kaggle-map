@@ -128,33 +128,31 @@ def _encode_batch(
 
 
 def encode(
-    row: EvaluationRow | Sequence[EvaluationRow],
-    strategy: EmbeddingStrategy,
     model: EmbeddingModel,
+    strategy: EmbeddingStrategy,
+    row: EvaluationRow | Sequence[EvaluationRow],
 ) -> torch.Tensor:
-    """Encode evaluation row(s) into embeddings.
+    """Encode evaluation row(s) using the requested embedding model and strategy.
 
     Args:
-        row: Single EvaluationRow or list of EvaluationRows
-        strategy: Embedding strategy to use
-        model: Embedding model to use
+        model: Logical embedding model to load (e.g. Qwen, Gemma).
+        strategy: Embedding composition strategy to apply.
+        row: Single evaluation row or an iterable of rows to embed.
 
     Returns:
-        torch.Tensor: Embeddings (1D for single row, 2D for batch)
+        torch.Tensor: Embedding tensor (1D for a single row, 2D for batches).
     """
-    assert strategy in EmbeddingStrategy, f"Invalid embedding strategy: {strategy}"
     assert model in EmbeddingModel, f"Invalid embedding model: {model}"
+    assert strategy in EmbeddingStrategy, f"Invalid embedding strategy: {strategy}"
+
+    model_instance = get_model(model)
 
     if isinstance(row, EvaluationRow):
-        assert row.correct_answer is not None, "Correct answer is required for embeddings"
-        model_instance = get_model(model)
         return _encode_single(row, strategy, model_instance)
-    if isinstance(row, Sequence):
-        row_sequence = row if isinstance(row, list) else list(row)
-        for evaluation_row in row_sequence:
-            assert evaluation_row.correct_answer is not None, "Correct answer is required for embeddings"
 
-        model_instance = get_model(model)
-        return _encode_batch(row_sequence, strategy, model_instance)
+    if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+        rows = row if isinstance(row, list) else list(row)
+        return _encode_batch(rows, strategy, model_instance)
+
     msg = f"Expected EvaluationRow or Sequence[EvaluationRow], got {type(row)}"
     raise TypeError(msg)
