@@ -47,7 +47,10 @@ def get_or_compute_embeddings(
     )
 
     eval_rows = dataset.evaluation_rows()
-    return encode(model, strategy, eval_rows)
+    embeddings = encode(model, strategy, eval_rows)
+    torch.save(embeddings, cache_path)
+    logger.info("Saved embeddings cache to {}", cache_path)
+    return embeddings
 
 
 def build_embedding_cache(model: EmbeddingModel, strategy: EmbeddingStrategy) -> Path:
