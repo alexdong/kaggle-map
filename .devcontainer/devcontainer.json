@@ -4,7 +4,9 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "runArgs": ["--gpus=all"],
+  "runArgs": [
+    "--gpus=all"
+  ],
   "remoteUser": "vscode",
   "containerEnv": {
     "PYTHONUNBUFFERED": "1"
