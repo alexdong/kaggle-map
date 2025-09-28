@@ -37,38 +37,18 @@ def get_or_compute_embeddings(
     if cache_path.exists():
         return torch.load(cache_path)
 
-    config = default_mlp_training_config()
-    dataset = MAPDataset(csv_path=dataset_path, config=config)
-    logger.info(
-        "Computing embeddings for {} rows with {}/{}",
-        len(dataset),
-        model.value,
-        strategy.value,
-    )
-
-    eval_rows = dataset.evaluation_rows()
-    embeddings = encode(model, strategy, eval_rows)
-    torch.save(embeddings, cache_path)
-    logger.info("Saved embeddings cache to {}", cache_path)
-    return embeddings
-
-
-def build_embedding_cache(model: EmbeddingModel, strategy: EmbeddingStrategy) -> Path:
-    """Compute and cache embeddings for the canonical training set."""
     dataset_path = DEFAULT_DATASET_PATH
     assert dataset_path.exists(), f"Training dataset missing: {dataset_path}"
 
     config = default_mlp_training_config()
     dataset = MAPDataset(csv_path=dataset_path, config=config)
 
-    pairs = dataset.evaluation_pairs()
-    eval_rows = [row for row, _ in pairs]
-    assert eval_rows, "Training dataset must yield evaluation rows"
-
-    get_or_compute_embeddings(model, strategy, dataset_path)
+    eval_rows = dataset.evaluation_rows()
+    embeddings = encode(model, strategy, eval_rows)
     cache_path = _get_cache_path(dataset_path, model, strategy)
-    logger.info("Cache ready at {}", cache_path)
-    return cache_path
+    torch.save(embeddings, cache_path)
+    logger.info(f"Saved {embeddings.shape} embeddings to cache: {cache_path}")
+    return embeddings
 
 
 def preview_cached_embedding(model: EmbeddingModel, strategy: EmbeddingStrategy, row_id: int) -> None:
@@ -130,10 +110,22 @@ if __name__ == "__main__":
     @cli.command()
     @_cache_options
     def build(model: str, strategy: str) -> None:  # pragma: no cover - CLI utility
-        cache_path = build_embedding_cache(
+        # Remove the old cache if it exists
+        cache_path = _get_cache_path(
+            dataset_path=DEFAULT_DATASET_PATH,
             model=EmbeddingModel(model),
             strategy=EmbeddingStrategy(strategy),
         )
+        if cache_path.exists():  # pragma: no cover - CLI utility
+            cache_path.unlink()
+            logger.info(f"Removed old cache: {cache_path}")
+
+        embeddings = get_or_compute_embeddings(
+            model=EmbeddingModel(model),
+            strategy=EmbeddingStrategy(strategy),
+            dataset_path=DEFAULT_DATASET_PATH,
+        )
+        logger.info(f"Computed embeddings shape: {embeddings.shape}")
         click.echo(f"cache: {cache_path}")
 
     @cli.command()
