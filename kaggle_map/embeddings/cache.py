@@ -1,6 +1,6 @@
 """Embedding cache helpers for MLP training."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 
 import torch
@@ -9,7 +9,6 @@ from loguru import logger
 from kaggle_map.core.models import (
     EmbeddingModel,
     EmbeddingStrategy,
-    RowId,
     default_mlp_training_config,
 )
 from kaggle_map.dataloader.dataset import MAPDataset
@@ -18,11 +17,6 @@ from kaggle_map.embeddings import encode
 DEFAULT_DATASET_PATH = Path("datasets/train.csv")
 DEFAULT_CLI_MODEL = EmbeddingModel.QWEN
 DEFAULT_CLI_STRATEGY = EmbeddingStrategy.DOUBLE_BLIND
-
-# To find the precomputed embedding for a given `row_id`, we need to
-# locate its index in the `Sequence[RowId]` and then use it to look up
-# the corresponding row in the `Tensor` of embeddings.
-type Embedding = tuple[Sequence[RowId], torch.Tensor]
 
 
 def _get_cache_path(dataset_path: Path, model: EmbeddingModel, strategy: EmbeddingStrategy) -> Path:
@@ -38,7 +32,7 @@ def get_or_compute_embeddings(
     model: EmbeddingModel,
     strategy: EmbeddingStrategy,
     dataset_path: Path,
-) -> Embedding:
+) -> torch.Tensor:
     cache_path = _get_cache_path(dataset_path, model, strategy)
     if cache_path.exists():
         return torch.load(cache_path)
@@ -53,8 +47,7 @@ def get_or_compute_embeddings(
     )
 
     eval_rows = dataset.evaluation_rows()
-    embeddings_tensor = encode(model, strategy, eval_rows)
-    return [row.row_id for row in eval_rows], embeddings_tensor
+    return encode(model, strategy, eval_rows)
 
 
 def build_embedding_cache(model: EmbeddingModel, strategy: EmbeddingStrategy) -> Path:
@@ -69,44 +62,35 @@ def build_embedding_cache(model: EmbeddingModel, strategy: EmbeddingStrategy) ->
     eval_rows = [row for row, _ in pairs]
     assert eval_rows, "Training dataset must yield evaluation rows"
 
-    metadata: list[tuple[int, str, str]] = [
-        (row.question_id, str(prediction), row.mc_answer) for row, prediction in pairs
-    ]
-
-    get_or_compute_embeddings(eval_rows, metadata, dataset_path, model, strategy)
-
+    get_or_compute_embeddings(model, strategy, dataset_path)
     cache_path = _get_cache_path(dataset_path, model, strategy)
     logger.info("Cache ready at {}", cache_path)
     return cache_path
 
 
-def preview_cached_embedding(*, model: EmbeddingModel, strategy: EmbeddingStrategy, row_id: int) -> None:
+def preview_cached_embedding(model: EmbeddingModel, strategy: EmbeddingStrategy, row_id: int) -> None:
     """Print a cached embedding summary for ``row_id``."""
     dataset_path = DEFAULT_DATASET_PATH
     assert dataset_path.exists(), f"Training dataset missing: {dataset_path}"
 
     cache_path = _get_cache_path(dataset_path, model, strategy)
-    embeddings, question_ids, predictions, mc_answers, _ = load_embeddings(cache_path)
+    embeddings = torch.load(cache_path)
 
+    # To find the precomputed embedding for a given `row_id`, we need to
+    # locate its index in the `Sequence[RowId]` and then use it to look up
+    # the corresponding row in the `Tensor` of embeddings.
     config = default_mlp_training_config()
     dataset = MAPDataset(csv_path=dataset_path, config=config)
-    pairs = dataset.evaluation_pairs()
-    eval_rows = [row for row, _ in pairs]
-
+    eval_rows = dataset.evaluation_rows()
     assert embeddings.shape[0] == len(eval_rows), "Cached embeddings size mismatch; rebuild cache"
-
     row_index = next((idx for idx, row in enumerate(eval_rows) if row.row_id == row_id), -1)
     assert row_index >= 0, f"row_id {row_id} not found in training dataset"
 
     embedding_tensor = embeddings[row_index]
     assert isinstance(embedding_tensor, torch.Tensor) or torch.is_tensor(embedding_tensor)
 
-    question_id = int(question_ids[row_index])
-    prediction = str(predictions[row_index])
-    mc_answer = str(mc_answers[row_index])
-
     preview = embedding_tensor[: min(8, embedding_tensor.shape[0])].tolist()
-    print(f"row_id={row_id} question_id={question_id} mc_answer={mc_answer} prediction={prediction}")
+    print(f"row_id={row_id}")
     print(f"embedding_dim={embedding_tensor.shape[0]} preview={preview}")
 
 
