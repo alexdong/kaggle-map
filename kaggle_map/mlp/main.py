@@ -30,7 +30,7 @@ from kaggle_map.core.models import (
 from kaggle_map.core.random_seed import configure_random_seed
 from kaggle_map.dataloader import MAPDataset
 from kaggle_map.dataloader.dataset import extract_correct_answers, load_training_data
-from kaggle_map.embeddings.cache import get_or_compute_embeddings_tensor
+from kaggle_map.embeddings.cache import DEFAULT_DATASET_PATH, get_or_compute_embeddings
 from kaggle_map.mlp.checkpoint import load_checkpoint, save_checkpoint
 from kaggle_map.mlp.label_encoder import LabelEncoders
 from kaggle_map.mlp.loss import ListMLELoss
@@ -49,12 +49,11 @@ configure_logger(__name__)
 # Maximum predictions per question as required by Kaggle MAP competition format
 # MAP@3 evaluation metric requires exactly 3 predictions per question
 MAX_PREDICTIONS = 3
-EMBEDDING_TENSOR_RANK = 2
 
 DEFAULT_MODEL_PATH = Path("models/mlp.pkl")
 
 
-class _EmbeddingBatchDataset(Dataset[dict[str, torch.Tensor]]):
+class EncodedMAPDataset(Dataset[dict[str, torch.Tensor]]):
     """PyTorch dataset wrapping embedding tensors for training."""
 
     def __init__(
@@ -84,75 +83,34 @@ class _EmbeddingBatchDataset(Dataset[dict[str, torch.Tensor]]):
         }
 
 
-def _build_embedding_inputs(dataset: MAPDataset) -> tuple[list[EvaluationRow], list[tuple[int, str, str]]]:
-    correct_answers = dataset.correct_answers
-    eval_rows: list[EvaluationRow] = []
-    metadata: list[tuple[int, str, str]] = []
-    for row in dataset:
-        eval_rows.append(
-            EvaluationRow(
-                row_id=row.row_id,
-                question_id=row.question_id,
-                question_text=row.question_text,
-                mc_answer=row.mc_answer,
-                student_explanation=row.student_explanation,
-                correct_answer=correct_answers.get(row.question_id, ""),
-            )
-        )
-        metadata.append((row.question_id, str(row.prediction), row.mc_answer))
-    return eval_rows, metadata
-
-
-def _materialize_training_tensors(
-    dataset: MAPDataset,
-    config: MLPTrainingConfig,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    eval_rows, metadata = _build_embedding_inputs(dataset)
-    embeddings, question_ids_np, _predictions, _mc_answers = get_or_compute_embeddings_tensor(
-        eval_rows,
-        metadata,
-        dataset.csv_path,
-        config.embedding_model,
-        config.embedding_strategy,
-    )
-
-    assert embeddings.dim() == EMBEDDING_TENSOR_RANK, (
-        f"Expected {EMBEDDING_TENSOR_RANK}D embeddings tensor, got {embeddings.dim()}D"
-    )
-    question_ids = torch.as_tensor(question_ids_np, dtype=torch.long)
-    is_correct = torch.as_tensor(
-        [1 if row.category.is_correct_answer else 0 for row in dataset],
-        dtype=torch.long,
-    )
-    return embeddings, question_ids, is_correct
-
-
-def _encode_labels(dataset: MAPDataset, label_encoders: LabelEncoders) -> torch.Tensor:
-    encoded = [
-        label_encoders.encode(
-            row.question_id,
-            str(row.prediction),
-            is_correct=row.category.is_correct_answer,
-        )
-        for row in dataset
-    ]
-    return torch.as_tensor(encoded, dtype=torch.long)
-
-
 def _build_training_loaders(
     dataset: MAPDataset,
     label_encoders: LabelEncoders,
     config: MLPTrainingConfig,
 ) -> tuple[DataLoader, DataLoader]:
-    embeddings, question_ids, is_correct = _materialize_training_tensors(dataset, config)
-    labels = _encode_labels(dataset, label_encoders)
+    embeddings = get_or_compute_embeddings_tensor(
+        config.embedding_model, config.embedding_strategy, DEFAULT_DATASET_PATH
+    )
+    question_ids = torch.as_tensor([row.question_id for row in dataset])
+    is_correct = torch.as_tensor(
+        [1 if row.category.is_correct_answer else 0 for row in dataset],
+        dtype=torch.long,
+    )
+    labels = torch.as_tensor(
+        [
+            label_encoders.encode(
+                row.question_id,
+                str(row.prediction),
+                is_correct=row.category.is_correct_answer,
+            )
+            for row in dataset
+        ]
+    )
 
-    base_dataset = _EmbeddingBatchDataset(embeddings, question_ids, labels, is_correct)
-
+    base_dataset = EncodedMAPDataset(embeddings, question_ids, labels, is_correct)
     split_indices = dataset.split_indices
     train_subset = Subset(base_dataset, split_indices["train"])
     val_subset = Subset(base_dataset, split_indices["val"])
-
     train_loader = DataLoader(
         train_subset,
         batch_size=config.batch_size,
@@ -177,7 +135,6 @@ def fit(config: MLPTrainingConfig) -> QuestionSpecificMLP:
 
     device = get_device()
     logger.info(f"Training on {device} with embedding strategy: {config.embedding_strategy.value}")
-
     model = QuestionSpecificMLP(
         question_predictions,
         embedding_model=config.embedding_model,
@@ -320,9 +277,6 @@ def predict_batch(
     device = get_device()
     logger.debug(f"Device selection: using {device}")
     assert config is not None, "MLPTrainingConfig must be provided for prediction"
-    assert embeddings.dim() == EMBEDDING_TENSOR_RANK, (
-        f"Expected {EMBEDDING_TENSOR_RANK}D embeddings tensor, got {embeddings.dim()}D"
-    )
     assert embeddings.size(0) == len(evaluation_rows), (
         f"Embedding count mismatch: got {embeddings.size(0)}, expected {len(evaluation_rows)}"
     )
@@ -380,14 +334,10 @@ def evaluate(
         for row in test_data
     ]
 
-    metadata_tuples = [(row.question_id, str(row.prediction), row.mc_answer) for row in test_data]
-
-    embeddings, _, _, _ = get_or_compute_embeddings_tensor(
-        embedding_rows,
-        metadata_tuples,
-        config.train_csv_path,
+    embeddings = get_or_compute_embeddings(
         config.embedding_model,
         config.embedding_strategy,
+        config.train_csv_path,
     )
 
     logger.info(f"Starting batch evaluation of {len(test_data)} samples")
@@ -429,26 +379,13 @@ def cli(seed: int | None) -> None:
 @cli.command(name="fit")
 def fit_command() -> None:
     """Train an MLP model and persist it to ``models/mlp.pkl``."""
-
     config = default_mlp_training_config()
-    assert config.learning_rate > 0.0, "Learning rate must be positive"
-
     model_path = DEFAULT_MODEL_PATH
     train_data = config.train_csv_path
-
-    logger.info("Starting model training with parameters:")
-    logger.info(f"  Training data: {train_data}")
-    logger.info(f"  Epochs: {config.epochs}")
-    logger.info(f"  Batch size: {config.batch_size}")
-    logger.info(f"  Learning rate: {config.learning_rate}")
-    logger.info(f"  Train split: {config.train_split}")
-    logger.info(f"  Random seed: {config.random_seed}")
-    logger.info(f"  Model path: {model_path}")
-
     assert train_data.exists(), f"Training data not found: {train_data}"
 
     try:
-        logger.info("Loading training data...")
+        logger.info(f"Starting model training with parameters: {config}")
         model = fit(config)
     except KeyboardInterrupt as exc:
         logger.info("Operation cancelled by user")
@@ -463,7 +400,6 @@ def fit_command() -> None:
 @cli.command(name="eval")
 def eval_command() -> None:
     """Evaluate the default MLP checkpoint against the training data."""
-
     model_path = DEFAULT_MODEL_PATH
     config_defaults = default_mlp_training_config()
     train_data = config_defaults.train_csv_path
@@ -472,8 +408,6 @@ def eval_command() -> None:
     logger.info(f"  Model path: {model_path}")
     logger.info(f"  Training data: {train_data}")
     logger.info(f"  Train split: {config_defaults.train_split}")
-
-    logger.info(f"Loading model from {model_path}...")
 
     try:
         model, config = load_checkpoint(model_path)
